@@ -1,0 +1,77 @@
+# 阶段三存储收敛验证记录（R3.1–R3.9）
+
+> 对应 tasks.md 阶段三验收（spec §5.3.1、§8.4，design §2.9 阶段三）。
+> 验证日期：2026-09-21。执行环境：本地 Windows 11（Docker Desktop 可用）+ CI 等价全量 pytest。
+
+## 1. 部署清单收敛（R3.8 验收）
+
+`docker compose config` 校验通过（0 退出码），服务清单如下：
+
+| 类别 | 服务 | 镜像 | 说明 |
+|---|---|---|---|
+| 应用 | backend | 自建（target: server） | FastAPI 主服务（编排域） |
+| 应用 | retrieval-worker | 同 backend | Celery worker，`deploy.replicas`/CPU/内存可独立伸缩 |
+| 应用 | kb_ingest | 自建（kb_ingest/Dockerfile） | 结构化法律库导入/检索服务 |
+| 存储① PG | postgres | postgres:16-alpine | **统一 PG**：编排侧 `public` schema + 知识库侧 `retrieval` schema，`pg_isready` 探针 |
+| 存储② MySQL | mysql | mysql:8.0 | Text2SQL 数据源（spec §5.3.1-6 保留），`mysqladmin ping` 探针 |
+| 存储③ Redis | redis | redis/redis-stack-server:7.4-alpine | db0 缓存 / db1 Celery / db2 checkpoint（R3.2 分片），`redis-cli ping` 探针 |
+| 存储④ Neo4j | neo4j | 自建（neo4j_seeded） | 知识图谱（保留），7474 HTTP 探针 |
+| 存储⑤ Milvus | milvus (+etcd) | milvusdb/milvus:v2.4.17 | **唯一向量后端**（legal + retrieval_kb 集合），9091/healthz 探针 |
+| 存储⑥ MinIO | minio | minio/minio:RELEASE.2023-03-20… | 对象存储（documents bucket），Milvus 亦复用该实例（MINIO_ADDRESS=minio:9000） |
+
+- ✅ 6 类存储各一实例，无双 PG / Redis / Milvus
+- ✅ `kb_postgres` / `docker/pgvector/*` / `kb_pgdata` 卷全部移除（R3.7）
+- ✅ retrieval-worker 独立伸缩：`RETRIEVAL_WORKER_REPLICAS/CPUS/MEMORY`（.env.example 已声明），变更副本数无需重启 backend
+- ✅ DATABASE_URL 默认 `postgresql+psycopg://postgres:postgrespass@postgres:5432/agentix`（.env/.env.example 已同步）
+
+## 2. readiness / healthcheck 覆盖（R3.9 验收）
+
+| 存储 | 探针 | 状态 |
+|---|---|---|
+| PG | `pg_isready -U postgres -d agentix` | ✅ compose healthcheck |
+| MySQL | `mysqladmin ping` | ✅ compose healthcheck |
+| Redis | `redis-cli ping` | ✅ compose healthcheck |
+| Neo4j | HTTP 7474 wget | ✅ compose healthcheck |
+| Milvus | `curl :9091/healthz`（start_period 30s） | ✅ compose healthcheck |
+| MinIO | `curl :9000/minio/health/live` | ✅ compose healthcheck |
+| 主服务 | `/health`、`/liveness`、`/readiness`（R1.10） | ✅ |
+
+> 说明：本记录在开发机产出，readiness 以 compose healthcheck 定义 + 单元/离线验证为准；
+> 起统一栈后 `docker compose ps` 应显示上述 6 类存储 healthy（部署时人工复核一遍即可）。
+
+## 3. 能力不退化验证
+
+- **Text2SQL（MySQL）**：MySQL 服务与 `data/init_mysql.sql` / `insert_sample_data.sql` 初始化保留，连接配置（MYSQL_*）未变；`scripts/data/verify_ingestion_pipeline.py` 就绪探测已更新为 MySQL:3306 + Milvus:19530。
+- **知识图谱（Neo4j）**：`neo4j_seeded` 构建目标与 APOC 配置未动。
+- **向量检索统一 Milvus**：`retrieval_kb`（R3.4/R3.6）+ `legal`（R3.7）两集合同实例；`VECTOR_STORE_BACKEND=milvus` 与 `VECTOR_NORMALIZE=false` 的组合被**启动校验**拦截（`retrieval/settings.py::validate_app_settings`，经 `agentix/main.py::_run_settings_validation` 在 lifespan 启动期执行）：**生产环境直接拒绝启动**，开发环境记 `ERROR` 日志但放行（不阻断，避免把校验变成新的故障源）。
+- **元数据统一 PG**：R3.5 `scripts/migration/migrate_metadata.py` 幂等迁移（dry-run → 迁移 → 重跑零差异已验证）；`SQLModel.metadata.schema = retrieval_schema()` 仅在 PG 下生效（`is_postgres()` 分派，R3.1）。
+- **跨域 JOIN**：编排域与检索域共享同一 engine（R3.1 测试 `test_retrieval_engine_is_shared_engine`），跨域关联经应用层完成（spec 允许口径）。
+
+## 4. pgvector 零残留核查（R3.7 收口）
+
+`grep -rn "pgvector|kb_postgres|searchable_documents"`（排除 .venv/archive/node_modules）：
+
+| 命中 | 性质 | 处置 |
+|---|---|---|
+| `kb_service/services/milvus_store.py`、`vector_store.py` docstring | 「替代原 pgvector」历史说明 | 保留（变更溯源价值） |
+| `tests/test_r37_pgvector_removal.py` | 迁移守卫测试文件名 | 保留 |
+| `docs/guides/TECH_STACK_GUIDE.md` | 「原基于 pgvector，R3.7 起迁移」 | 保留 |
+| `docker-compose.yml` | 「pgvector/kb_postgres 已移除」注释 | 保留 |
+| 其余（代码/配置/部署/运维文档） | — | **已全部清除** |
+
+## 5. 测试基线
+
+- R3.7 新增 `tests/test_r37_pgvector_removal.py`（15 用例，fake Collection：主键确定性 / L2 归一化 / expr 转义 / upsert 幂等 / 增量跳过 / expr 下推 / company 超量召回 / threshold / metric 校验 / 主键删除 / shim 继承）。
+- 全量 pytest（2026-09-21，本地 .venv py310）：**1149 passed / 7 skipped / 0 failed**（6m53s），较阶段二基线 1112 净增 37（R3.7 的 15 例 + 融合批次增量）。
+
+## 6. 本阶段修复的连带缺陷（回归收获）
+
+1. **r31 setdefault 失效**：单文件 `os.environ.setdefault("DATABASE_URL", sqlite)` 在组合跑时因导入顺序失效（p35 先实例化 settings 单例），上移 `tests/conftest.py` 统一兜底。
+2. **p35 契约失真**：kb_ingest/.env.example 残留 PG* 死配置、缺 MILVUS_* 声明；p35 `main_only` 清单未随 R3.7 语义更新——均已修正。
+3. **R3.6 版本目录排序不稳定**：`resolve_fresh_version_dir` 按目录 mtime 排序，Windows 上同刻创建目录导致回填选错版本，改为按 `index.faiss` mtime（`fix(migration) e1b2dd6`）。
+
+## 7. 回滚点
+
+- R3.7：revert `7ab5af6`（pgvector 侧代码未删历史，rebuild 索引即可回退）
+- R3.8：revert `79fde3e`（还原 docker-compose）
+- 整体：回退至 R2.7 提交点；迁移脚本幂等可重跑（源数据保留）

@@ -1,0 +1,52 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.mypy_cache
+
+# Node.js (frontend build artifacts)
+web/node_modules
+web/dist
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+
+# Documentation
+docs
+*.md
+LICENSE
+
+# Data (mounted as volumes)
+data/lightrag/*
+data/neo4j/*
+uploads/*

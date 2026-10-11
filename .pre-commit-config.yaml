@@ -1,0 +1,83 @@
+# pre-commit 钩子配置
+# 安装：pre-commit install
+# 全量运行：pre-commit run --all-files
+# 详见 CONTRIBUTING.md「代码规范」一节
+
+default_language_version:
+  python: python3.10
+
+repos:
+  # ---- 通用文件卫生 ----
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        # ⚠️ 排除清单：这些文件的多行字符串（prompt 模板）里，尾随/空行空白是
+        # **有意的字节内容**——删除会改变送给模型的 prompt，并击穿
+        # `tests/test_p23_prompt_prefix.py` 的逐字节相等断言。
+        # 对应 ruff 的 W291/W293 忽略（见 pyproject.toml [tool.ruff.lint].ignore）。
+        exclude: |
+          (?x)^(
+            agentix/application/agents/kg_sub_graph/agentic_rag_agents/components/cypher_tools/node\.py|
+            agentix/application/agents/kg_sub_graph/agentic_rag_agents/components/validate_final_answer/prompts\.py|
+            agentix/application/agents/kg_sub_graph/agentic_rag_agents/retrievers/cypher_examples/base\.py|
+            agentix/application/agents/kg_sub_graph/prompts/kg_prompts\.py|
+            agentix/application/agents/kg_sub_graph/prompts/schema_utils\.py|
+            agentix/application/agents/lg_states\.py|
+            agentix/application/agents/utils\.py|
+            kb_ingest/kb_service/services/processor\.py|
+            .*\.md$
+          )$
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-toml
+      - id: check-json
+        exclude: ^web/(tsconfig.*\.json|package-lock\.json)$
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ---- Python 代码质量 ----
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.7
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^(agentix|scripts|evals|tests|kb_ingest)/.*\.py$
+
+  # ---- 格式化（**渐进式**：暂不阻断提交）----
+  # 仓库既有风格自洽但尚未全量 black 化（~100 个文件）。直接把 black 设为阻断钩子
+  # 会让所有贡献者的首个提交失败。故先以 `manual` 阶段提供，便于本地按需格式化：
+  #     pre-commit run black --all-files --hook-stage manual
+  # 全量迁移完成后，把 `stages` 改回默认（即可阻断）。
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        files: ^(agentix|scripts|evals|tests|kb_ingest)/.*\.py$
+        stages: [manual]
+
+  # ---- 类型检查（渐进式：只检查已标注的公共接口）----
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-PyYAML, types-requests]
+        args: [--config-file=pyproject.toml]
+        files: ^agentix/domain/.*\.py$
+        pass_filenames: false
+        entry: mypy agentix/domain
+
+  # ---- 自定义守卫：架构依赖规则（本地钩子，零依赖）----
+  - repo: local
+    hooks:
+      - id: architecture-guards
+        name: 架构依赖规则守卫（domain/application/infrastructure 分层）
+        entry: python -m pytest tests/test_p17_domain_layer.py tests/test_p22_obs_scope.py -q --no-header -p no:cacheprovider
+        language: system
+        pass_filenames: false
+        files: ^agentix/.*\.py$

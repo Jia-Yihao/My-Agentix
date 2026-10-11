@@ -1,0 +1,9 @@
+{"id": 1, "class": "liveness_http", "kind": "http", "method": "GET", "path": "/liveness"}
+{"id": 2, "class": "metrics_http", "kind": "http", "method": "GET", "path": "/metrics"}
+{"id": 3, "class": "docs_http", "kind": "http", "method": "GET", "path": "/docs"}
+{"id": 4, "class": "openapi_http", "kind": "http", "method": "GET", "path": "/openapi.json"}
+{"id": 5, "class": "root_http", "kind": "http", "method": "GET", "path": "/"}
+{"id": 6, "class": "api_probe_http", "kind": "http", "method": "GET", "path": "/api"}
+{"id": 7, "class": "stream_answer", "kind": "stream", "chunks": 2}
+{"id": 8, "class": "stream_progress", "kind": "stream", "progress": true, "chunks": 2}
+{"id": 9, "class": "emitter_cpu", "kind": "cpu", "frames": 1000}

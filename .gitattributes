@@ -1,0 +1,33 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Markdown 处理
+*.md text
+
+# 二进制文件（不做换行归一化）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+*.pdf binary
+*.onnx binary
+*.pt binary
+*.pth binary
+*.h5 binary
+*.pkl binary
+*.parquet binary
+*.feather binary
+
+# 语言特定
+*.py text diff=python
+*.ts text
+*.js text
+*.vue text
+*.yaml text
+*.yml text
+*.toml text
+
+# Makefile 保留 tab
+Makefile text eol=lf

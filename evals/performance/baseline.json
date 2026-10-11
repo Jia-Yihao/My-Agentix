@@ -1,0 +1,128 @@
+{
+  "meta": {
+    "recorded_at": "2026-10-05T13:44:02+00:00",
+    "iterations": 3,
+    "protocol": "perf_counter ms/query; p50/p90/p95/p99 nearest-rank; qps=1000/mean（顺序）",
+    "note": "recorded by perf_gate.py --record"
+  },
+  "queries": [
+    {
+      "class": "liveness_http",
+      "kind": "http",
+      "p50": 3.211,
+      "p90": 76.992,
+      "p95": 76.992,
+      "p99": 76.992,
+      "max": 76.992,
+      "mean": 27.362,
+      "qps": 36.55,
+      "count": 3.0
+    },
+    {
+      "class": "metrics_http",
+      "kind": "http",
+      "p50": 3.075,
+      "p90": 3.521,
+      "p95": 3.521,
+      "p99": 3.521,
+      "max": 3.521,
+      "mean": 3.119,
+      "qps": 320.6,
+      "count": 3.0
+    },
+    {
+      "class": "docs_http",
+      "kind": "http",
+      "p50": 1.332,
+      "p90": 1.455,
+      "p95": 1.455,
+      "p99": 1.455,
+      "max": 1.455,
+      "mean": 1.313,
+      "qps": 761.81,
+      "count": 3.0
+    },
+    {
+      "class": "openapi_http",
+      "kind": "http",
+      "p50": 2.558,
+      "p90": 104.193,
+      "p95": 104.193,
+      "p99": 104.193,
+      "max": 104.193,
+      "mean": 36.425,
+      "qps": 27.45,
+      "count": 3.0
+    },
+    {
+      "class": "root_http",
+      "kind": "http",
+      "p50": 3.042,
+      "p90": 3.875,
+      "p95": 3.875,
+      "p99": 3.875,
+      "max": 3.875,
+      "mean": 3.302,
+      "qps": 302.89,
+      "count": 3.0
+    },
+    {
+      "class": "api_probe_http",
+      "kind": "http",
+      "p50": 1.877,
+      "p90": 2.834,
+      "p95": 2.834,
+      "p99": 2.834,
+      "max": 2.834,
+      "mean": 2.142,
+      "qps": 466.96,
+      "count": 3.0
+    },
+    {
+      "class": "stream_answer",
+      "kind": "stream",
+      "p50": 0.465,
+      "p90": 2.969,
+      "p95": 2.969,
+      "p99": 2.969,
+      "max": 2.969,
+      "mean": 1.293,
+      "qps": 773.61,
+      "count": 3.0
+    },
+    {
+      "class": "stream_progress",
+      "kind": "stream",
+      "p50": 0.333,
+      "p90": 0.585,
+      "p95": 0.585,
+      "p99": 0.585,
+      "max": 0.585,
+      "mean": 0.387,
+      "qps": 2585.98,
+      "count": 3.0
+    },
+    {
+      "class": "emitter_cpu",
+      "kind": "cpu",
+      "p50": 0.783,
+      "p90": 0.831,
+      "p95": 0.831,
+      "p99": 0.831,
+      "max": 0.831,
+      "mean": 0.779,
+      "qps": 1283.42,
+      "count": 3.0
+    }
+  ],
+  "overall": {
+    "p50": 1.882,
+    "p90": 3.521,
+    "p95": 76.992,
+    "p99": 104.193,
+    "max": 104.193,
+    "mean": 8.458,
+    "qps": 118.23,
+    "count": 27.0
+  }
+}

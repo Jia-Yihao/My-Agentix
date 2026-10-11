@@ -1,0 +1,36 @@
+# 企业化 P1-7.1：staging 环境 override（与 docker-compose.yml 叠加使用）
+# 用法：docker compose -f docker-compose.yml -f docker/compose.override.staging.yml up -d
+# 与生产差异（配置矩阵见 docs/runbooks/staging-environment.md）：
+#   - 开启监控栈三服务（生产按需）
+#   - 独立 compose 项目名，避免误伤 dev/prod 容器
+#   - 数据卷独立（staging_ 前缀），可随时 whole-wipe
+#   - 小容量资源上限（Milvus/Postgres 限内存）
+
+name: agentix-staging
+
+services:
+  backend:
+    environment:
+      APP_ENV: staging
+      DEBUG: "false"
+      REQUIRE_API_KEY: "true"
+      # staging 与 prod 同口径开启的企业级开关
+      RATE_LIMIT_ENABLED: "true"
+      LLM_MAX_CONCURRENCY: "10"
+      PROMPT_INJECTION_DETECTION_ENABLED: "true"
+      PROMPT_INJECTION_INGEST_BLOCK: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://prometheus:9090"
+    restart: unless-stopped
+
+  retrieval-worker:
+    environment:
+      APP_ENV: staging
+      DEBUG: "false"
+    restart: unless-stopped
+
+  prometheus:
+    profiles: ["monitoring"]
+  alertmanager:
+    profiles: ["monitoring"]
+  grafana:
+    profiles: ["monitoring"]

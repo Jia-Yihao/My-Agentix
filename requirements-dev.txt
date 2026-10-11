@@ -1,0 +1,33 @@
+# Development / CI / test dependencies.
+# 安装：pip install -r requirements-dev.txt
+# （本文件会先拉入 requirements.txt 运行时依赖，再装测试与工具链。）
+#
+# 生产镜像 / Docker 只装 requirements.txt，不装本文件。
+-r requirements.txt
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+
+# Development / lint
+black==24.1.1
+ruff==0.5.7
+flake8==7.0.0
+mypy==1.8.0
+pre-commit==3.6.0
+types-PyYAML
+types-requests
+
+# Interactive debugging (scripts / notebooks)
+IPython
+
+# Ragas 忠实度报告（P2-2，observe-only；evals/ragas_report.py）。
+# ⚠️ 版本组合经实测钉死（2026-10-09，numpy<2 约束下的兼容集）：
+# ragas 0.4.3 硬依赖 datasets>=4.0.0，其默认解析的 datasets 5.x 要求
+# pyarrow>=24，而 pyarrow 26 起要求 numpy>=2——与运行时 numpy<2.0.0 硬冲突。
+# 本组合（datasets 4.4.0 + pyarrow 21.0.0）在 numpy 1.26.4 下 import 实测通过、
+# pip check 零冲突；升级 numpy 前不得动这三个钉。
+ragas==0.4.3
+datasets==4.4.0
+pyarrow==21.0.0

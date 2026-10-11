@@ -1,0 +1,5 @@
+# web 构建上下文瘦身（P2-3）：依赖与产物不进镜像（镜像内 npm ci 重建）。
+node_modules
+dist
+.git
+*.log

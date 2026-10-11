@@ -1,0 +1,40 @@
+classDiagram
+    class 法规 {
+        +string name
+        +date 生效日期
+        +string 发文字号
+        +string 效力层级
+    }
+    class 法条 {
+        +string 条号
+        +string 法规
+        +string 内容
+        +string[] 关键词
+    }
+    class 章节 {
+        +string 标题
+        +int 层级
+        +string 所属法
+    }
+    class 案由 {
+        +string 名称
+        +string 类别
+    }
+    class 司法解释 {
+        +string name
+        +string 发布机关
+        +date 日期
+        +string 文号
+    }
+    class 机关 {
+        +string name
+        +string 层级
+    }
+    法条 --|> 章节 : 属于
+    章节 --|> 法规 : 属于
+    法条 --> 法条 : 引用
+    法条 --> 案由 : 对应案由
+    法条 --> 司法解释 : 有司法解释
+    法规 --> 机关 : 制定机关
+    司法解释 --> 机关 : 制定机关
+    法规 --> 法规 : 上位法

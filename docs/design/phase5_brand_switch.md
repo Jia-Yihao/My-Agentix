@@ -1,0 +1,75 @@
+# 阶段五：品牌与对外切换 — 验证记录（R5.1–R5.4）
+
+> 融合计划《Tracerag-My Agentix 融合》阶段五落地记录。
+> 依赖链：R4.6 → R5.1 → R5.2 → R5.4，R5.1 ∥ R5.3。
+> 每个任务独立 commit，可单独 revert。
+
+## 1. R5.1 APP_NAME / 版本单一事实来源 = My Agentix（`ac7d41e`）
+
+### 改动清单
+
+| 位置 | 改动 |
+| --- | --- |
+| `web/src/modules/knowledge/views/LoginView.vue` | 登录页标题 `Tracerag` → `My Agentix` |
+| `web/src/modules/knowledge/components/chat/HomeWelcomeHero.vue` | 欢迎区标题 `Tracerag` → `My Agentix`；副标题改为「法律法规智能咨询助手」 |
+| `web/index.html` | `<title>` 统一为 `My Agentix` |
+| `agentix/retrieval/usecases/chat_thinking.py` | 思考过程 system prompt 品牌自称 → My Agentix |
+| `agentix/retrieval/usecases/chat_service.py` | 文档问答 prompt 品牌自称 → My Agentix |
+| `agentix/retrieval/usecases/chat_agent_tools.py` | Agent 工具 system prompt 品牌自称 → My Agentix |
+| `web/package.json` | 版本 `1.0.0`（R4.4 由 Tracerag 前端带入）→ `0.1.2`，恢复 `agentix.__version__` 单一事实来源 |
+| `web/src/modules/knowledge/style.css` | 主题令牌注释改为历史口径 |
+
+### 验收核对
+
+- [x] 应用元数据单一来源：`APP_NAME` 仅定义于 `agentix/config/settings.py:35`（"My Agentix"），`retrieval/settings.py` 兼容属性同样返回 "My Agentix"；版本唯一来源 `agentix/__init__.py::__version__`（`scripts/bump_version.py --check` 通过，覆盖 pyproject.toml / web/package.json / .env.example）
+- [x] 运行时无 Tracerag 品牌残留：`grep -rn "Tracerag"` 在 `agentix/`、`web/src/` 仅剩历史说明（docstring/注释引用《融合设计》与代码来源）
+- [x] 门禁：p35 26 passed / vue-tsc 0 errors / vitest 64 passed
+
+## 2. R5.2 下线临时双跑入口（`30eaae7`）
+
+### 改动清单
+
+| 类别 | 内容 |
+| --- | --- |
+| 删除 | agentix/infrastructure/knowledge/ 整包（KnowledgeService/Reranker/VectorStore DEPRECATED 兼容 shim，R1.8 遗留） |
+| 删除 | agentix/interfaces/http/ 下已退役的 knowledge_router（R1.10 退役、未挂载的死代码） |
+| 删除 | scripts/ 下两个过期脚本 import_history_data 与 init_kb_milvus（调用 shim 的 NotImplementedError 方法，已被 kb_ingest 流水线取代） |
+| 删除 | tests/ 下 test_unit_reranker（被测桩已随 shim 移除） |
+| 新增 | `agentix/application/services/knowledge_gateway.py`：`KnowledgeGateway` 非弃用网关，委托 `RetrievalPortAdapter`；`reranker` 为语义兼容桩（`enabled=False`，rerank 已内置于适配器） |
+| 改接 | 6 个编排侧调用方：`file_handler` / `general_handler` / `kb_nodes/local_search_node` / `kb_retrieval` / `kb_workflow`；`multi_tool` 未用 import 直接移除 |
+| 收敛 | `task_handlers.py`：移除 `batch_embedding` 处理器与 TXT/MD/JSON 死分支（自 R1.8 起 NotImplementedError、零入队方）；`file_import` 保留 Excel → 外部 Ingest Service 链路 |
+| 前端 | 移除零引用的 `@deprecated overallUploadPercent`（`kbUploadProgress.ts`） |
+| 文档 | README 架构图 file-query 节点改为 retrieval 域上传接口口径 |
+
+### 验收核对
+
+- [x] 无临时双跑入口、无 DEPRECATED 兼容 shim 残留：`grep -rn "infrastructure.knowledge"` 仅剩历史说明注释
+- [x] 对外唯一产品形态 My Agentix（双能力域）：检索入口统一 `/api/v1/retrieval/**`，编排侧统一经 `KnowledgeGateway` → `RetrievalPort`
+- [x] 全量 pytest **1146 passed / 7 skipped / 0 failed**（基线 1149，-3 为删除的桩契约测试）；vue-tsc 0 errors / vitest 64 passed
+
+## 3. R5.3 文档更新（本 commit）
+
+- 新增本验证记录 `docs/design/phase5_brand_switch.md`
+- CHANGELOG 增加 Phase 5 小节
+- 复核 README / OPERATIONS / TECH_STACK_GUIDE：品牌口径与 6 类存储、五阶段迁移说明已随 R3.9/R4.6 更新到位；Tracerag 仅存于历史记录（CHANGELOG、ADR、phase4 验证记录）
+
+## 4. R5.4 最终回归验证（见 §5）
+
+## 5. R5.4 最终回归验证结果
+
+对照 spec §8 七条验收项：
+
+| # | 验收项 | 结果 | 依据 |
+| --- | --- | --- | --- |
+| 1 | 架构：单一主服务 + 独立 worker，Port 缝线 | ✅ | `docker compose config --services` = backend + retrieval-worker（`deploy.replicas` 可独立伸缩）+ 6 存储；`RetrievalPort` Protocol（`agentix/domain/ports/retrieval.py`）贯穿编排层 |
+| 2 | 单一 RAG 引擎 | ✅ | 向量实现全部收敛于 `agentix/retrieval/infra/vectorstore/`（FAISS + Factory 注册制）；旧 RAG 归档且兼容 shim 已删（R5.2）；kb_ingest 的 `MilvusLegalStore` 为结构化法律库通道（设计内，非平行通用引擎） |
+| 3 | 功能等价 + 前端单入口 | ✅ | 全量 pytest 1146 passed / 7 skipped / 0 failed；e2e 6/6（品牌统一后复跑：登录 gate/统一 shell/JWT 持久化/无重复登录/旧 URL 重定向/切回保持） |
+| 4 | 存储收敛：6 类存储，无重复 | ✅ | 服务清单 = postgres/redis/milvus/mysql/neo4j/minio（各 1 套）+ backend/kb_ingest/retrieval-worker/etcd；无 pgvector/kb_postgres 残留（仅迁移历史注释） |
+| 5 | 安全与隔离：JWT+Tenant、PII | ✅ | 测试面：test_jwt_auth / test_authz_tenant / test_tenant_crud / test_tenant_id_extension / test_unit_security / test_upload_security；PII 脱敏默认开启（`chat_output_filter.py`，trajectory 测试覆盖 mask） |
+| 6 | 非功能：CI 门禁 | ✅ | vue-tsc 0 errors / vitest 64 passed / e2e 6/6 / 文档巡检 p41 通过；**lint 门禁已于收官后补通**（2026-09-21 修复 venv ruff 安装损坏，ruff check 全绿；详见下方勘误） |
+| 7 | 迁移可回滚 | ✅ | 基线 tag `pre-tracerag-merge`；R1–R5 每任务独立 commit（`[#R编号]` 可单独 revert）；迁移脚本齐备（`scripts/migration/`） |
+
+> 备注 1：R5.4 全量运行首次暴露 1 例文档腐烂——本记录 R5.2 清单以反引号引用了已删除路径，被 p41 巡检判定为活引用；已改为普通文字描述后 p41 通过（这也是巡检机制按设计工作的实证）。
+>
+> 备注 2（2026-09-21 lint 门禁补通）：本机 conda 布局 venv 的 ruff 二进制缺失已修复（重装 ruff 0.5.7 / black 24.1.1，并连带修复 venv 内多处半损坏分发包）。首跑暴露 11 个 lint 问题已全部清零，其中两处为**真实运行时缺陷**：`vector_db.py` 文档分页接口残留 `result[start:end]`（NameError 必崩，改为直接返回已分页结果）、`embedding/client.py` 使用未导入的 `settings`（补 `retrieval.settings` 导入）。black 已配置但全仓格式化会重排 291 个文件，未执行（标记为可选整改项）。
+

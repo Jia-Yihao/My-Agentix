@@ -1,0 +1,358 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentix"
+version = "0.2.0"
+description = "My Agentix — 生产导向的 Agent 平台：基于 LangGraph 三层 Multi-Agent + Agent Core 2.0 + 多路知识检索的可扩展智能体构建与运行平台，领域知识经适配层接入、平台与业务域解耦"
+readme = "README.md"
+# 支持 Python 3.10–3.13；CI 验证 3.10 下界，本地开发环境统一使用 Python 3.12.13。
+requires-python = ">=3.10,<3.14"
+license = { file = "LICENSE" }
+authors = [
+    { name = "JYh" },
+]
+maintainers = [
+    { name = "JYh" },
+]
+keywords = [
+    "agent",
+    "multi-agent",
+    "langgraph",
+    "graphrag",
+    "rag",
+    "knowledge-graph",
+    "legal-tech",
+    "fastapi",
+    "llm",
+    "neo4j",
+    "milvus",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
+
+# 依赖声明为单一事实来源（requirements.txt 与其保持同步）。
+# 版本约束策略见 docs/VERSIONING.md：核心框架钉小版本，工具库给上下界。
+#
+# ⚠️ 修正记录：此前本列表与 requirements.txt **实际已漂移**（下面注释声称同步，
+# 但 4 个包的 spec 相冲突，其中 2 个是互斥区间/功能不兼容）。CI 与 Docker 都
+# 走 `pip install -r requirements.txt` 再 `pip install -e . --no-deps`，
+# 那个 `--no-deps` 恰好把冲突藏住了 —— 所以漂移不会让 CI 红，只会让
+# 「按 pyproject 安装」的下游用户拿到错的版本。现已全部对齐到
+# requirements.txt（并以本仓库 .venv 实测版本为最终证据）。
+# 守卫：tests/test_dependency_consistency.py
+dependencies = [
+    # ---- Web 框架 ----
+    "fastapi==0.142.2",
+    "starlette==1.7.0",
+    "uvicorn[standard]==0.27.0",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.4.0",
+    # 完整性补齐：agentix 内 9 处直连 import，原仅靠 fastapi/pydantic/sqlalchemy 传递
+    "typing-extensions==4.16.0",
+    "email-validator>=2.0.0",
+    "setuptools>=61.0,<84",
+    "gunicorn",
+    "aiofiles",
+    # ---- LLM 集成 ----
+    "openai>=1.58.1,<2",
+    "anthropic==0.18.1",
+    "langchain==0.3.30",
+    "langchain-community==0.3.27",
+    "langchain-openai==0.2.14",
+    "langchain-neo4j==0.3.0",
+    "langchain-core>=0.3.85,<0.4.0",
+    # ---- 机器学习 ----
+    "numpy<2.0.0",
+    "scikit-learn==1.5.0",
+    # 完整性补齐：cypher_tools/visualize generate_chart 直连 import
+    "pandas==2.3.3",
+    # ---- Agent 框架 ----
+    "langgraph==0.2.60",
+    "langgraph-checkpoint==2.0.26",
+    "langgraph-checkpoint-redis==0.0.8",
+    # ---- GraphRAG ----
+    "lightrag-hku>=0.0.3,<2.0.0",
+    # ---- 向量数据库与 Embedding ----
+    # 需 2.4 的 partition_key API；与服务器 milvus v2.4.17 对齐（实测装 2.4.15）
+    "pymilvus>=2.4.0,<2.5",
+    # ---- 数据库 ----
+    "sqlalchemy==2.0.25",
+    "pymysql==1.1.1",
+    "redis==5.0.1",
+    "neo4j==5.27.0",
+    # ---- 传递依赖冲突显式钉死（此前未声明，`pip check` 报 2 处不一致）----
+    # pymilvus 2.4.x 硬性要求 grpcio<=1.67.1；OTel gRPC exporter 1.44.0 在
+    # py<3.13 下要求 grpcio>=1.63.2 —— 交集 [1.63.2, 1.67.1]（原先解析到 1.84.0）
+    "grpcio>=1.63.2,<=1.67.1",
+    # playwright 1.40.0 精确要求 greenlet==3.0.1（SQLAlchemy 仅要求 !=0.4.17）
+    "greenlet==3.0.1",
+    # ---- HTTP 客户端 ----
+    "httpx==0.26.0",
+    # 完整性补齐：file_handler/image_handler/kb_retrieval/task_handlers 直连 import
+    "aiohttp==3.14.3",
+    # 完整性补齐：chat.py 直连 import
+    "anyio==4.15.1",
+    "requests==2.33.0",
+    "websockets==14.2",
+    "bcrypt==4.1.2",
+    "PyJWT==2.15.0",
+    # ---- 通用工具 ----
+    "python-dotenv==1.2.2",
+    "python-multipart==0.0.31",
+    "pyyaml==6.0.1",
+    "jinja2==3.1.6",
+    # R2: 2.0.0 无 cp312 wheel（源码编译需 MSVC），2.1.0 起提供 3.12 wheel
+    "pyahocorasick==2.1.0",
+    # 完整性补齐：text2cypher 校验器/cypher 工具直连 import
+    "regex==2026.7.19",
+    # ---- 网页抓取与数据抽取 ----
+    "beautifulsoup4==4.12.3",
+    "lxml==6.1.0",
+    "fake-useragent==1.4.0",
+    "playwright==1.40.0",
+    # ---- 可观测性（agentix/observability/tracing.py；导入侧有 OTEL_AVAILABLE 兜底）----
+    "opentelemetry-sdk==1.44.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+    # ---- 日志与监控 ----
+    "loguru==0.7.2",
+    "prometheus-client==0.19.0",
+    # ---- 检索能力域（R1.12 从 Tracerag 收敛）----
+    "sqlmodel==0.0.22",
+    "psycopg[binary]==3.2.9",
+    "celery==5.6.3",
+    "boto3==1.43.3",
+    # 完整性补齐：s3_minio/documents 直连 import（须落在 boto3 的 >=1.43.3,<1.44.0 内）
+    "botocore==1.43.99",
+    "pymupdf==1.25.3",
+    "itsdangerous>=2.1.0",
+    "langchain-text-splitters>=0.3.9,<0.4",
+    "langgraph-prebuilt>=0.2.0",
+    # R2: 必须对齐 langgraph 0.2.60 的约束——原写 >=0.2.0 与 langgraph 0.2.60
+    # 自身要求的 <0.2.0 互斥，会让「按 pyproject 安装」直接解析失败
+    "langgraph-sdk>=0.1.42,<0.2.0",
+    "faiss-cpu>=1.7.0",
+    # image_handler.py 硬依赖 PIL——属运行时，不是 viz 可选
+    "pillow",
+    # M-P1-5 真 token 计数（requirements.txt 已列、此前 pyproject 漏列 ⇒ 单独
+    # `pip install -e .` 会静默退化成 len//4 估算；导入侧有兜底故不会报错）
+    "tiktoken==0.13.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==7.4.4",
+    "pytest-asyncio==0.23.3",
+    "pytest-cov==4.1.0",
+]
+dev = [
+    "black==24.1.1",
+    "ruff==0.5.7",
+    "flake8==7.0.0",
+    "mypy==1.8.0",
+    "pre-commit==3.6.0",
+    "types-PyYAML",
+    "types-requests",
+]
+viz = [
+    "IPython",
+    "matplotlib",
+    "seaborn",
+]
+
+[project.urls]
+Homepage = "https://github.com/Jia-Yihao/Legelbot"
+Repository = "https://github.com/Jia-Yihao/Legelbot"
+Documentation = "https://github.com/Jia-Yihao/Legelbot/blob/main/docs/architecture/README.md"
+Changelog = "https://github.com/Jia-Yihao/Legelbot/blob/main/CHANGELOG.md"
+"Issue Tracker" = "https://github.com/Jia-Yihao/Legelbot/issues"
+Discussions = "https://github.com/Jia-Yihao/Legelbot/discussions"
+
+[project.scripts]
+# MCP server 可执行入口：pip install -e . 后任意 MCP 宿主可直接挂载
+# 2026-10-06 修复：原指向 agentix.mcp.server（模块不存在，agentix/mcp/ 目录不存在），
+# 导致 `pip install -e .` 后 agentix-mcp-server 命令一执行即 ImportError；实现在
+# agentix/capabilities/mcp/server.py。
+agentix-mcp-server = "agentix.capabilities.mcp.server:main"
+
+# ---------------------------------------------------------------------------
+# 打包：只收 agentix 包，避免把 tests/ web/ scripts/ 打进去
+# ---------------------------------------------------------------------------
+[tool.setuptools.packages.find]
+include = ["agentix*"]
+exclude = ["tests*", "web*", "evals*", "scripts*", "kb_ingest*"]
+
+[tool.setuptools.package-data]
+agentix = ["py.typed"]
+
+# ---------------------------------------------------------------------------
+# 代码风格
+# ---------------------------------------------------------------------------
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+extend-exclude = '''
+/(
+    \.venv
+  | web
+  | \.git
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [".venv", "web", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+]
+# ---------------------------------------------------------------------------
+# 忽略清单（棘轮冻结：既有债不新增，逐批清偿）
+#
+# 分三类，每类都写明「为什么不修」。**新增代码不应引入下列任何一条**；
+# 清偿进度记录在 CHANGELOG 的 [Unreleased] 段。
+# ---------------------------------------------------------------------------
+ignore = [
+    # --- ① 交给格式化工具 -----------------------------------------------
+    "E501",   # 行长由 black / formatter 决定，不重复执法
+    "B008",   # FastAPI 依赖注入惯用 `Depends()` 作默认值（框架约定）
+
+    # --- ② 刻意的既有风格（改动面大、收益纯风格，统一冻结）--------------
+    # typing 现代化：全仓统一使用 `typing.List/Dict/Optional`（~2200 处），
+    # 风格自洽且可读；一次性改写会淹没真正的功能改动，故冻结。
+    "UP006", "UP007", "UP035", "UP037", "UP038",
+    "UP036", "UP033", "UP032", "UP028", "UP027", "UP015", "UP009",
+    "I001",   # import 排序：部分文件有 sys.path 前置注入，需逐个人工确认
+    "C408",   # `dict()` / `list()` 调用式字面量：多位于 legacy vendored 子树
+    "E402",   # 模块级 import 不在顶部：scripts/evals 的 sys.path 注入是有意为之
+    "F401",   # 未使用 import：含包级 re-export 与 legacy 子树，需逐个人工确认
+    "SIM108", # 三元表达式可读性优先
+
+    # --- ③ 字符串字面量内的空白：**不可修** -----------------------------
+    # prompt 模板的多行字符串里，尾随/空行空白是**有意的字节内容**，
+    # 删除会改变送给模型的 prompt，并击穿 `test_p23` 的逐字节相等断言。
+    "W291", "W293",
+
+    # --- ④ 其余既有债（棘轮冻结，待逐批清偿）----------------------------
+    "W292",   # 文件末尾缺换行
+    "E401", "E702",
+    "F541",   # 无占位符的 f-string
+    "F601", "F811", "F841",
+    "B006", "B007", "B018", "B904", "B905",
+    "C401", "C416",
+    "SIM102", "SIM103", "SIM105", "SIM114", "SIM117", "SIM118",
+    "SIM201", "SIM222", "SIM300",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 批次 C2（audit §2 C2）：tests 清零后不再享有任何豁免——与生产代码同一
+# 严格 select（E/W/F/I/B/C4/UP/SIM + 全仓 ignore 冻结清单）。
+"scripts/**" = ["E402"]
+"__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agentix"]
+
+# ---------------------------------------------------------------------------
+# 类型检查（渐进式：先覆盖领域层）
+# ---------------------------------------------------------------------------
+[tool.mypy]
+# 跟随 requires-python 的下界：mypy 的 python_version 决定「哪些语法/标准库
+# 可用」，设得比真实下界高，就会漏掉在低版本上必炸的写法。
+# 原值 3.12 与 requires-python(已修正为 >=3.10) / ruff·black(py310) 不一致。
+# 实测在 3.10 目标下 `mypy agentix/domain` 仍为 Success（15 files, 0 issues）。
+python_version = "3.10"
+# `follow_imports = "silent"` 是关键：
+# mypy 默认会**跟随 import 并对其类型检查**，于是 `mypy agentix/domain` 实际
+# 会检查整个依赖图（实测 67 个错误全在 infrastructure/interfaces，且耗时 24 分钟）。
+# `silent` 表示「仍读取被导入模块的类型信息，但不上报它们的错误」——
+# 正好对应渐进式策略：本阶段只对 domain 层负责，不替存量代码背债。
+follow_imports = "silent"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = ["^\\.venv/", "^web/", "^build/", "^dist/"]
+
+[[tool.mypy.overrides]]
+module = ["agentix.domain.*"]
+disallow_untyped_defs = true
+warn_unused_ignores = true
+
+# ---------------------------------------------------------------------------
+# 测试
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# kb_ingest：tests/test_legal_metadata.py 等用例按顶层包导入 kb_service（位于 kb_ingest/ 下）
+pythonpath = [".", "kb_ingest"]
+addopts = "-v --strict-markers"
+markers = [
+    "integration: 依赖外部服务（Docker / LLM / 数据库），CI 默认跳过（-m 'not integration'）",
+    "slow: 耗时较长的测试",
+    "eval: 评估集相关测试",
+]
+
+[tool.coverage.run]
+source = ["agentix"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    # ——— 以下为**确认不属本服务**的代码，计入分母会稀释覆盖率、掩盖真实缺口 ———
+    # Streamlit UI 组件：本服务是 FastAPI，这套 UI 从未被挂载（0% 且永远不会被覆盖）。
+    "*/agentic_rag_agents/ui/*",
+    # 一次性数据导入脚本（离线批处理，非运行时代码路径）。
+    "*/agentic_rag_agents/ingest/*",
+]
+# 说明：`agentic_rag_agents` 其余部分（workflows / components / retrievers，约 3069 stmts）
+# **保留在分母内**——它确在主链路被调用（实测 47% 覆盖），
+# 不因"是内嵌框架代码"就整体豁免。只有"默认配置下不可达"的部分才 omit。
+#
+# 注：`interfaces/http/knowledge_router.py` 为知识库路由，默认挂载，
+# 属运行时代码路径，因此不设 omit 条目。
+
+[tool.coverage.report]
+# 与 [tool.coverage.run].omit 保持一致：`report` 阶段也需显式 omit，
+# 否则已采集的数据仍会被计入分母（实测：只配 run 时数字不变）。
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/agentic_rag_agents/ui/*",
+    "*/agentic_rag_agents/ingest/*",
+]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+# S6 工程化验收标准 ②：`pytest -m "not integration"` 下覆盖率 ≥ 60%。
+# 批次 13 达成（实测 61%）后才启用 fail_under —— 在此之前启用只会让 CI 一直红，
+# 反而让人习惯性忽略它。
+fail_under = 60

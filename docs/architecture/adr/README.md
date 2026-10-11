@@ -1,0 +1,45 @@
+# 架构决策记录 (ADR)
+
+本目录记录 My Agentix 的重大架构决策。每条 ADR 描述一个**不可轻率推翻**的设计选择，
+包含背景、决策、理由、后果与备选方案。
+
+## 为什么写 ADR
+
+- **可追溯**：后来者能理解「为什么是这样」，而非只看到「是这样」
+- **防反复**：避免同一问题被反复讨论、方案来回摇摆
+- **可评审**：架构评审有据可依
+
+## 格式
+
+采用 [Michael Nygard 的经典格式](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)：
+
+```
+# ADR-NNNN：<决策标题>
+- 状态：提议 / 已采纳 / 已废弃 / 被 ADR-XXXX 取代
+- 日期
+- 背景 (Context)
+- 决策 (Decision)
+- 理由 (Rationale)  ← 含备选方案与取舍
+- 后果 (Consequences)  ← 正面 / 负面 / 缓解
+```
+
+## 索引
+
+| ADR | 标题 | 状态 | 日期 |
+|-----|------|------|------|
+| [0001](0001-layered-architecture-with-ports.md) | 采用分层架构 + 端口抽象（依赖倒置） | 已采纳 | 2026-09-11 |
+| [0002](0002-registry-based-plugin-mechanism.md) | 采用注册表驱动的可插拔扩展机制 | 已采纳 | 2026-09-11 |
+| [0003](0003-declarative-configuration-single-source.md) | 配置声明单一事实来源（Pydantic Settings） | 已采纳 | 2026-09-11 |
+| [0004](0004-dual-orm-coexistence.md) | 双 ORM（SQLAlchemy + SQLModel）长期共存 | 已采纳 | 2026-09-21 |
+| [0005](0005-dual-retrieval-channels.md) | 双检索通道边界与选择矩阵 | 已采纳 | 2026-09-21 |
+| [0006](0006-infrastructure-criticality.md) | 关键基础设施边界与降级策略（PG/向量图谱=关键，Redis/外搜/遥测=可选显式降级） | 已采纳 | 2026-09-20 |
+
+## 如何新增 ADR
+
+1. 复制一份现有 ADR 作为模板，编号取 `最大编号 + 1`
+2. 文件名：`NNNN-<kebab-case-slug>.md`
+3. 在本索引表格中追加一行
+4. 在 PR 描述中说明该决策的动机与影响面
+5. 若该决策取代了旧 ADR，请在双方文件中互相标注
+
+> 微小实现细节不需要 ADR——只记录**影响面广、推翻成本高**的决策。

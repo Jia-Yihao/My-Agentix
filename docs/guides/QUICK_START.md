@@ -1,0 +1,455 @@
+# My Agentix 快速启动指南
+
+## 🚀 快速开始
+
+### 1. 启动所有服务
+
+```bash
+# 使用 Docker Compose（推荐）
+docker compose up -d
+
+# 查看服务状态
+docker compose ps
+
+# 查看日志
+docker compose logs -f backend
+```
+
+服务端口：
+- **FastAPI Server**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+- **kb_ingest**: http://localhost:8100（/docs 可看其 API 文档）
+- **PostgreSQL**: localhost:15432
+- **Neo4j Browser**: http://localhost:17474
+- **MySQL**: localhost:13306
+- **Redis**: localhost:6379
+- **Milvus**: localhost:19530
+- **MinIO API / Console**: http://localhost:9000 / http://localhost:9001
+- **Grafana**: http://localhost:3000、**Prometheus**: http://localhost:9090
+
+---
+
+## 🧪 测试检索流程
+
+### 测试 1: 配置验证
+
+```bash
+python3 -c "
+from agentix.config.settings import settings
+print('Embedding:', settings.EMBEDDING_MODEL, '@', settings.EMBEDDING_BASE_URL)
+print('Reranker:', settings.RERANK_MODEL, '@', settings.RERANK_BASE_URL)
+print('Recall:', settings.RERANK_MAX_CANDIDATES, '→ Return:', settings.RERANK_TOP_N)
+"
+```
+
+**预期输出**:
+```
+Embedding: <your-embedding-model> @ <your-embedding-base-url>
+Reranker: <your-rerank-model> @ <your-rerank-base-url>
+Recall: 20 → Return: 6
+```
+
+---
+
+### 测试 2: 知识库检索
+
+```bash
+# 知识检索走 kb_ingest 服务（主应用 8000 无 knowledge 路由；默认端口 8100，
+# compose 映射 "${KB_INGEST_PORT:-8100}:8000"；开鉴权时需带 X-API-Key）
+curl -X POST "http://localhost:8100/api/v1/knowledge/search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "合同违约的法律后果是什么？",
+    "top_k": 6
+  }' | jq
+```
+
+**预期响应**:
+```json
+{
+  "results": [
+    {
+      "content": "法条：民法典第577条\n内容：当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任...",
+      "score": 0.95,
+      "rerank_score": 0.98,
+      "metadata": {
+        "provision_id": "...",
+        "name": "民法典第577条",
+        "category": "合同编"
+      }
+    }
+  ],
+  "total": 6
+}
+```
+
+**日志输出** (server logs):
+```
+[INFO] Embedding query using bge-m3
+[INFO] Milvus search: recall_k=20
+[INFO] Reranker enabled: custom @ http://your-rerank-host:9997/v1
+[INFO] Reranked 20 docs → Top 6
+```
+
+---
+
+### 测试 3: 对话接口
+
+```bash
+# 测试对话接口
+curl -X POST "http://localhost:8000/api/v1/chat/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test_user_001",
+    "session_id": "session_001",
+    "message": "合同违约怎么赔偿？",
+    "stream": false
+  }' | jq
+```
+
+**预期响应**:
+```json
+{
+  "message": "合同违约的法律后果如下：...",
+  "session_id": "session_001",
+  "message_id": "...",
+  "route": "graphrag-query",
+  "route_logic": "...",
+  "sources": []
+}
+```
+
+---
+
+## 📊 检索工作流详解
+
+### 完整流程
+
+```
+用户查询: "合同违约怎么赔偿？"
+    │
+    ▼
+┌─────────────────────────────────────────────┐
+│ Step 1: Embedding 向量化                     │
+│ ─────────────────────────────────────────── │
+│ API: http://your-embedding-host:9997/v1/embeddings │
+│ Model: bge-m3                               │
+│ Input: "合同违约怎么赔偿？"                       │
+│ Output: [0.023, -0.145, ..., 0.089] (1024维)│
+└────────────────┬────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────┐
+│ Step 2: Milvus 向量召回                      │
+│ ─────────────────────────────────────────── │
+│ Collection: legal                           │
+│ Query Vector: 1024-dim                      │
+│ Top K: 20 (RERANK_MAX_CANDIDATES)           │
+│ Results: 20个相关法条文档                    │
+└────────────────┬────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────┐
+│ Step 3: Reranker 精排                        │
+│ ─────────────────────────────────────────── │
+│ API: http://your-rerank-host:9997/v1/rerank     │
+│ Model: bge-reranker-large                   │
+│ Input: Query + 20 documents                 │
+│ Process: Cross-encoder 交叉编码相关性打分    │
+│ Output: Top 6 (RERANK_TOP_N)                │
+└────────────────┬────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────┐
+│ Step 4: LLM 生成答案                         │
+│ ─────────────────────────────────────────── │
+│ API: http://your-llm-host:8000/v1/chat/...   │
+│ Model: Qwen3-30B-A3B                        │
+│ Context: Top 6 法条文档                      │
+│ Output: 自然语言答案                         │
+└────────────────┬────────────────────────────┘
+                 │
+                 ▼
+    返回用户: "合同违约的法律后果：..."
+```
+
+---
+
+## 🔧 常见操作
+
+知识入库/检索统一走 **kb_ingest 服务**（`http://localhost:8100`，前缀 `/api/v1/knowledge`），现有 5 个端点：
+
+### 上传 Excel 入库
+
+```bash
+curl -X POST "http://localhost:8100/api/v1/knowledge/ingest/excel/upload" \
+  -F "file=@data/your_laws.xlsx"
+# 或按主机本地路径入库：POST /ingest/excel（body 见 /docs 的 ExcelIngestRequest）
+```
+
+### 批量导入（MySQL 源）
+
+```bash
+curl -X POST "http://localhost:8100/api/v1/knowledge/ingest/mysql" \
+  -H "Content-Type: application/json" \
+  -d '{"table": "provisions"}'
+```
+
+### 检索
+
+```bash
+# 向量检索
+curl -X POST "http://localhost:8100/api/v1/knowledge/search" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "违约责任", "top_k": 6}' | jq
+
+# 向量 + 重排混合检索
+curl -X POST "http://localhost:8100/api/v1/knowledge/search/hybrid" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "违约责任", "vector_top_k": 20, "rerank_top_k": 6}' | jq
+```
+
+> LightRAG 图谱侧语料导入使用 `scripts/init_lightrag.py`
+> （语料文件 `data/legal/legal_lightrag_corpus.json`）。
+
+**kb_ingest 完整 API 文档**: http://localhost:8100/docs
+
+---
+
+## 🐛 调试和监控
+
+### 查看实时日志
+
+```bash
+# 查看服务器日志（compose 服务名是 backend）
+docker compose logs -f backend
+
+# 查看 Neo4j 日志
+docker compose logs -f neo4j
+
+# 查看 Milvus 日志
+docker compose logs -f milvus
+```
+
+### 关键日志位置
+
+在日志中查找以下信息：
+
+**Embedding 调用**:
+```
+[INFO] Embedding query using bge-m3
+[DEBUG] OpenAI API base: http://your-embedding-host:9997/v1
+```
+
+**Milvus 检索**:
+```
+[INFO] Milvus search: recall_k=20
+[DEBUG] Found 20 candidates with similarity > 0.7
+```
+
+**Reranker 调用**:
+```
+[INFO] Reranker enabled: custom @ http://your-rerank-host:9997/v1
+[DEBUG] Sending 20 documents for reranking
+[INFO] Reranked 20 docs → Top 6
+```
+
+### 测试外部服务连通性
+
+```bash
+# 测试 Embedding 服务
+curl -X POST "http://your-embedding-host:9997/v1/embeddings" \
+  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "bge-m3", "input": "测试文本"}' | jq
+
+# 测试 Reranker 服务
+curl -X POST "http://your-rerank-host:9997/v1/rerank" \
+  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "bge-reranker-large",
+    "query": "合同违约",
+    "documents": ["合同违约责任", "民法典第577条"],
+    "top_n": 2
+  }' | jq
+
+# 测试 LLM 服务
+curl -X POST "http://your-llm-host:8000/v1/chat/completions" \
+  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen3-30B-A3B",
+    "messages": [{"role": "user", "content": "你好"}]
+  }' | jq
+```
+
+---
+
+## ⚙️ 性能调优
+
+### 检索参数调整
+
+编辑 `.env` 文件：
+
+```bash
+# 高准确率配置（牺牲速度）
+RERANK_MAX_CANDIDATES=50  # 召回更多候选
+RERANK_TOP_N=5            # 返回 Top 5
+KB_SIMILARITY_THRESHOLD=0.8  # 提高相似度阈值
+
+# 低延迟配置（牺牲准确率）
+RERANK_MAX_CANDIDATES=10  # 召回更少候选
+RERANK_TOP_N=3            # 返回 Top 3
+KB_SIMILARITY_THRESHOLD=0.6  # 降低相似度阈值
+
+# 平衡配置（当前默认）⭐
+RERANK_MAX_CANDIDATES=20
+RERANK_TOP_N=6
+KB_SIMILARITY_THRESHOLD=0.7
+```
+
+修改后重启服务：
+```bash
+docker compose restart backend
+```
+
+### 缓存配置优化
+
+```bash
+# Redis 语义缓存设置
+REDIS_CACHE_EXPIRE=43200      # 缓存过期时间（12小时）
+REDIS_CACHE_THRESHOLD=0.92    # 语义相似度阈值
+REDIS_CACHE_MAX_SIZE=1000     # 最大缓存条目数
+
+# 对话历史保留
+CONVERSATION_HISTORY_TTL=259200        # 3天
+CONVERSATION_HISTORY_MAX_MESSAGES=200  # 每个会话最多200条消息
+```
+
+---
+
+## 🎯 API 端点速查
+
+### 知识库管理（kb_ingest 服务，`http://localhost:8100`，前缀 `/api/v1/knowledge`）
+- `POST /ingest/excel` - 按主机路径导入 Excel
+- `POST /ingest/excel/upload` - 上传 Excel 导入
+- `POST /ingest/mysql` - 从 MySQL 拉取入库
+- `POST /search` - 向量检索
+- `POST /search/hybrid` - 向量 + 重排混合检索
+
+### 对话接口（主应用 8000）
+- `POST /api/v1/chat/` - 发送对话消息
+- `GET /api/v1/chat/history/{session_id}` - 获取对话历史
+- `DELETE /api/v1/chat/session/{session_id}` - 删除会话（含历史）
+
+### 知识图谱 / GraphRAG
+- 无独立 HTTP 端点——经主链路以工具形式调用（KG 子图工具
+  `cypher_query` / `microsoft_graphrag_query` 等，见 `agentix/tools/` 注册面）
+
+完整 API 文档: http://localhost:8000/docs（主应用）、http://localhost:8100/docs（kb_ingest）
+
+---
+
+## 📦 依赖服务检查
+
+```bash
+# 检查 Docker 服务状态
+docker compose ps
+
+# 预期输出（compose 只给监控栈写了 container_name，其余容器名形如 <项目名>-<服务名>-1）：
+# NAME            SERVICE        STATUS
+# my-agentix-backend-1          backend            Up 5 minutes
+# my-agentix-kb-ingest-1        kb_ingest          Up 5 minutes
+# my-agentix-postgres-1         postgres           Up 5 minutes (healthy)
+# my-agentix-neo4j-1            neo4j              Up 5 minutes
+# my-agentix-mysql-1            mysql              Up 5 minutes
+# my-agentix-redis-1            redis              Up 5 minutes
+# my-agentix-milvus-1           milvus             Up 5 minutes
+# my-agentix-etcd-1             etcd               Up 5 minutes
+# my-agentix-minio-1            minio              Up 5 minutes
+
+# 检查端口占用
+netstat -tuln | grep -E '8000|8100|15432|17474|13306|6379|19530|9000'
+
+# 测试数据库连接
+docker compose exec neo4j cypher-shell -u neo4j -p <your-neo4j-password> "MATCH (n) RETURN count(n) as total"
+docker compose exec redis redis-cli ping
+```
+
+---
+
+## 🚨 常见问题
+
+### 问题 1: Embedding 服务连接失败
+
+**症状**: 日志显示 `Connection refused` 或 `Timeout`
+
+**解决方案**:
+```bash
+# 1. 检查服务是否可达
+curl -I http://your-embedding-host:9997/v1/embeddings
+
+# 2. 检查 API Key 是否正确
+grep EMBEDDING_API_KEY .env
+
+# 3. 查看详细错误日志
+docker compose logs -f backend | grep -i embedding
+```
+
+### 问题 2: Reranker 返回空结果
+
+**症状**: 日志显示 `Reranker returned no results`
+
+**解决方案**:
+```bash
+# 1. 测试 Reranker 端点
+curl -X POST "http://your-rerank-host:9997/v1/rerank" \
+  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "bge-reranker-large", "query": "test", "documents": ["doc1"], "top_n": 1}'
+
+# 2. 检查配置
+python3 -c "from agentix.config.settings import settings; print(settings.RERANK_BASE_URL, settings.RERANK_ENDPOINT)"
+
+# 3. 临时禁用 Reranker 测试
+# 编辑 .env: RERANK_ENABLED=false
+# docker compose restart backend
+```
+
+### 问题 3: Milvus 连接失败
+
+**症状**: `Connection to Milvus failed`
+
+**解决方案**:
+```bash
+# 1. 检查 Milvus 容器状态
+docker compose ps milvus
+
+# 2. 重启 Milvus
+docker compose restart milvus etcd minio
+
+# 3. 查看 Milvus 日志
+docker compose logs -f milvus
+
+# 4. 验证端口
+telnet localhost 19530
+```
+
+---
+
+## 📚 更多文档
+
+- **项目架构**: [docs/architecture/README.md](../architecture/README.md)
+- **爬虫指南**: [crawler_guide.md](crawler_guide.md)
+- **知识图谱**: [legal_domain_schema.md](../design/legal_domain_schema.md)
+- **API 文档**: http://localhost:8000/docs
+
+> 2026-10-06 完整性审查：本节原引用的 `INTEGRATION_SUMMARY.md`、
+> `INTEGRATION_VERIFICATION.md`、`CLAUDE.md` 在仓库中并不存在（死链），已移除/替换。
+
+---
+
+**祝使用愉快！** 🎉
+
+如有问题，请查看日志文件或参考上述文档。

@@ -1,0 +1,24 @@
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant L1 as L1 路由(lg_builder)
+    participant L2 as L2 graphrag子图(multi_tool)
+    participant TC as text2cypher节点
+    participant N4 as Neo4j(法律本体)
+    participant SUM as summarize节点
+    participant FE as 前端(ChatWidget)
+
+    U->>L1: "租房合同违约怎么办？"
+    L1->>L1: analyze_and_route_query → graphrag-query（法律scope）
+    L1->>L2: create_research_plan(question)
+    L2->>L2: guardrails + planner（法律实体拆解）
+    L2->>TC: 生成 Cypher（法律schema + few-shot）
+    TC->>N4: MATCH (f:法条)-[:对应案由]->(:案由{名称:"合同违约"}) RETURN f
+    N4-->>TC: 法条记录(法规名, 条号, 内容)
+    TC-->>L2: cyphers[].records
+    L2->>SUM: 依据 records 生成带[出处]答复
+    SUM-->>L2: answer + 内部 citations
+    L2-->>L1: {answer, cyphers}
+    L1->>L1: 由 records 抽取 sources(法规名+条号)
+    L1-->>FE: AIMessage(content, sources=[{law,article,content_snippet}])
+    FE->>FE: 渲染「法条引用卡片」+ 底部免责声明

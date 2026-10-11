@@ -1,0 +1,194 @@
+# OWASP LLM Top 10（2025）对照自评
+
+> 性质：**当前态自评**——只陈述"已实现/未覆盖"，不写"计划"。
+> 对照基准：OWASP Top 10 for LLM Applications 2025 版（LLM01–LLM10）。
+> 所有代码位置均为仓库实测行号；随代码演进可能漂移，以文件为准。
+> 结论约定：每条三栏——风险 → 现有缓解（含代码位置）→ 残余风险与改进项。
+> 未覆盖项**如实标注**，本文档的价值就在"敢写自己没做什么"。
+
+## 总览
+
+| # | 风险 | 覆盖状态 |
+|---|---|---|
+| LLM01 | 提示注入 | 已覆盖（三层防线） |
+| LLM02 | 敏感信息泄露 | 已覆盖（PII 脱敏 + 轨迹脱敏） |
+| LLM03 | 供应链 | **未专项覆盖**（有部分缓解，见正文） |
+| LLM04 | 数据与模型投毒 | 已覆盖（入库扫描 + 证据门禁） |
+| LLM05 | 不当输出处理 | 已覆盖（错误脱敏 + 引用正确性门） |
+| LLM06 | 过度授权 | 已覆盖（L0-L3 风险分级 + HITL fail-closed） |
+| LLM07 | 系统提示泄露 | **部分覆盖**（无专门防线） |
+| LLM08 | 向量库/检索弱点 | 已覆盖（kb_ingest 鉴权 + 注入扫描） |
+| LLM09 | 虚假信息 | 已覆盖（grounding + 证据门禁 + 一致性校验） |
+| LLM10 | 无界消耗 | 已覆盖（四维预算 + 并发/重试上限） |
+
+---
+
+## LLM01 提示注入（Prompt Injection）
+
+**风险**：知识库文档、用户输入或外部工具返回内容中夹带指令，诱导模型忽略系统约束、泄露配置或执行越权动作。
+
+**现有缓解（三层防线）**：
+
+1. **数据定界**：检索文档在进入上下文前经 `agentix/security/prompt_injection.py` 的
+   `_neutralize_boundary_tokens`（中和可闭合定界的标记）与 `wrap_document_content`
+   （包一层显式数据边界）处理——即使文档内容长得像指令，也只能作为"被引用的数据"存在，无法闭合逃逸出数据区。
+2. **入库扫描**：`scan_chunks_for_injection`（同文件）在知识库入库（kb_ingest）阶段
+   逐块扫描注入模式，observe-only 记录、可配置升级为拦截。
+3. **出站过滤**：`agentix/security/output_filter.py` 的 `mask` 对模型输出做复扫，
+   防止注入得手后的敏感内容外泄。
+4. **请求级检测**：`detect_prompt_injection` 对用户输入做模式扫描，命中即标记。
+
+**残余风险**：语义级（非模式级）注入无法靠正则全拦；入库扫描默认 observe-only，拦截需显式开启；多跳注入（文档 A 指示模型读文档 B）仍在观察面。改进项：语义检测模型化、默认 fail-closed 评估。
+
+---
+
+## LLM02 敏感信息泄露（Sensitive Information Disclosure）
+
+**风险**：用户对话、记忆写入、轨迹落盘等环节把 PII 或隐私内容持久化/外发。
+
+**现有缓解**：
+
+- **记忆写入脱敏**：`agentix/agent/memory/service.py` 的 `redact_pii`——内置中英
+  姓名/地址/电话等模式（`_PII_PATTERNS`），记忆写入前统一脱敏。
+- **轨迹脱敏**：`agentix/application/services/trajectory.py` 的 `redact_and_truncate`
+  在轨迹落盘前脱敏并截断载荷；默认不捕获完整 payload（`OBSERVABILITY_PAYLOAD_CAPTURE`
+  默认关），捕获属显式 opt-in。
+- **评测面 PII 检查**：`evals/run_eval.py` 集成 `detect_pii`，把 PII 泄露作为可量化回归项。
+
+**残余风险**：脱敏模式是规则集，非常规格式（拼音名、分段电话）可能漏检；LLM 提供商侧的日志留存不在本项目控制内。
+
+---
+
+## LLM03 供应链（Supply Chain）
+
+**风险**：依赖包被投毒、带 CVE 的传递依赖、构建产物被篡改。
+
+**现有缓解（部分）**：
+
+- 依赖**钉版**（`requirements.txt` / `pyproject.toml`），重建可复现。
+- CI 定期跑 `pip-audit`（`.github/workflows/` 中 security 相关 workflow）扫描已知 CVE。
+- 代码扫描：CodeQL（`.github/workflows/codeql.yml`）+ secrets 扫描（`.github/workflows/secrets-scan.yml`）。
+
+**残余风险（如实标注：本项未专项治理）**：无 SBOM 生成与锁定哈希（pip hash-checking mode 未启用）；钉版只锁直接依赖的版本号，不锁构建输入完整性；GitHub Actions 第三方 action 未按 commit SHA 钉定。改进项：SBOM（cyclonedx）、pip hash 钉定、action SHA 钉定。
+
+---
+
+## LLM04 数据与模型投毒（Data and Model Poisoning）
+
+**风险**：恶意文档进入知识库，长期影响所有检索增强回答。
+
+**现有缓解**：
+
+- **入库注入扫描**：kb_ingest 调用 `scan_chunks_for_injection`（见 LLM01）在写入向量库前扫描。
+- **效力过滤与证据门禁**：入库与检索侧有内容效力过滤；回答侧证据门禁
+  （`EVIDENCE_GATE_MODE`，见 `docs/architecture/configuration.md` §5）要求回答被检索证据支撑，低质/投毒内容难以进入最终回答。
+
+**残余风险**：微妙的事实性投毒（改一个数字）模式扫描与效力过滤都难以识别；依赖人工抽检。改进项：入库 diff 审计留痕、异常一致性检测。
+
+---
+
+## LLM05 不当输出处理（Improper Output Handling）
+
+**风险**：模型输出被下游直接信任/执行，错误信息泄露内部结构。
+
+**现有缓解**：
+
+- **错误信息脱敏**：`agentix/retrieval/domain/policies/errors.py` 的 `sanitize_error`
+  在错误回传用户前剥离内部路径、堆栈等实现细节。
+- **引用正确性门**：`evals/run_eval.py` 的 `score_citation_correctness` 把"引用是否真的支撑答案"作为评测指标，防幻觉引用进入基线。
+- **出站过滤**：见 LLM01 第 4 点（output_filter 复扫）。
+
+**残余风险**：输出到工具调用的参数解析（text2SQL、cypher 生成）依赖各自的校验器，覆盖面以工具为单位，非全局保证。
+
+---
+
+## LLM06 过度授权（Excessive Agency）
+
+**风险**：工具拥有超出任务所需的权限，或高风险动作无人工把关。
+
+**现有缓解**：
+
+- **工具风险分级**：所有工具注册时声明 L0–L3 风险级（`agentix/tools/__init__.py`
+  的 `RiskLevel`；注册面 `agentix/tools/registry_init.py`）——L0 只读，L3 高危。
+- **HITL fail-closed**：高风险工具在无人工审批时**拒绝执行**而非放行
+  （`agentix/tools/gateway/human_review.py`；审批面 `agentix/interfaces/http/ops_router.py`）。
+- **工具选择治理**：`TOOL_SELECTION_ENABLED` / `TOOL_SELECTION_MAX_RISK`（配置见
+  `docs/architecture/configuration.md` §5）按风险上限过滤可用工具。
+
+**残余风险**：风险级是人工标注，新工具漏标即为盲区；审批面的操作者鉴权依赖机器面 API Key。
+
+---
+
+## LLM07 系统提示泄露（System Prompt Leakage）
+
+**风险**：攻击者诱导模型复述系统提示，泄露指令与防御逻辑。
+
+**现有缓解（部分）**：
+
+- 静态前缀 + 指令指纹机制（上下文工程批次）**不对外暴露**配置内容；
+  `/api/v1` 各端点不提供任何返回系统提示的调试面。
+- 出站过滤（见 LLM01）可拦截部分按指纹匹配的泄露内容。
+
+**残余风险（如实标注：无专门防线）**：没有针对"复述系统提示"的专项检测/拒答策略；提示对模型供应商天然可见。改进项：泄露模式测试集进回归（可经 promptfoo 红队维度补充）。
+
+---
+
+## LLM08 向量库/检索弱点（Vector and Embedding Weaknesses）
+
+**风险**：检索/入库服务无鉴权暴露，向量库被未授权改写或读出。
+
+**现有缓解**：
+
+- **kb_ingest router 级 API Key**：`kb_ingest/kb_service/api/deps.py` 的 `require_api_key`
+  以 FastAPI 依赖方式挂在 `/api` 全部端点（router 级，继承到每个路由），校验
+  `X-API-Key` 请求头；开关 `KB_REQUIRE_API_KEY`、密钥 `KB_API_KEY`（独立于主应用
+  `API_KEY`——密钥不复用，防止对外凭证获得对内写权限），常量时间比较防时序侧信道；
+  未启用时启动期大声告警（`kb_ingest/kb_service/main.py`）。
+- **密钥隔离的理由**：同上文件 docstring——本服务是**写入**语义（改 Milvus 集合），
+  对外 Key 一旦复用即权限抬升。
+
+**残余风险**：`KB_REQUIRE_API_KEY` 默认 false（保持既有部署行为），安全态需显式开启；Milvus/Neo4j 等底层库自身未设应用层鉴权（依赖网络边界）。改进项：默认开启鉴权、底层库访问控制。
+
+---
+
+## LLM09 虚假信息（Misinformation）
+
+**风险**：模型生成无证据支撑的内容并被当作事实消费。
+
+**现有缓解**：
+
+- **grounding 校验 + 证据门禁**：回答须被检索证据支撑（`EVIDENCE_GATE_MODE`）。
+- **claim_check**：`evals/claim_check.py` 对答案做声称一致性检查（只标记不判分，不自动改分）。
+- **judge 相关性**：`evals/run_eval.py` 的 `judge_similarity`（LLM-as-judge，默认关；
+  判官不可用时诚实失败 `JudgeError`，不伪造分数）。
+- **引用打分**：`score_citations` / `score_citation_correctness` 把引用质量纳入回归。
+
+**残余风险**：judge 指标默认关（未校准前无资格进门禁，README §4.4 口径）；"看起来有据"不等于"事实正确"，证据本身错误无法在此层拦截。
+
+---
+
+## LLM10 无界消耗（Unbounded Consumption）
+
+**风险**：单请求或全局资源被无上限消耗，成本/可用性失控。
+
+**现有缓解（四维预算 + 并发/重试上限）**：
+
+- **token 预算**：`TOKEN_BUDGET_PER_REQUEST`（单请求）、`AGENT_CONTEXT_BUDGET_TOKENS`
+  （上下文）、`LG_TOKEN_HISTORY_BUDGET`（历史窗口，默认 0 关）。
+- **轮数/工具调用上限**：`MAX_ITERATIONS` 限制主循环轮数；`AGENT_TOOL_ROUND_CONCURRENCY`
+  限制工具并发。
+- **重试/降级上限**：`LLM_FALLBACK_MAX_ATTEMPTS`（降级链尝试上限）、
+  `RETRY_BUDGET_TOKENS`（重试 token 预算）。
+- **并发控制**：`LLM_MAX_CONCURRENCY`、`ADMISSION_MAX_CONCURRENT_RUNS`（准入控制）+
+  `ADMISSION_MAX_QUEUE`（排队上限）、`LOAD_SHEDDING_ENABLED`（过载卸载）。
+
+**残余风险**：预算维度覆盖单请求与准入面，缺账户级长期用量配额（当前无多租户计费场景）。
+
+---
+
+## 与外部工具的衔接
+
+- **promptfoo 红队**（提示注入/越狱 probes）作为 LLM01/LLM07 的活体验证入口，
+  见根目录 `promptfooconfig.yaml`（如存在）与 `evals/` 评测体系说明。
+- 本文档应在安全相关变更（新工具、新防线、依赖面变化）时同步修订，
+  修订纪律同 `docs/architecture/` 各文档：当前时态、路径可校验。
