@@ -1,0 +1,30 @@
+# EditorConfig 统一编辑器配置
+# https://editorconfig.org
+# 说明：本项目主力语言为 Python（4 空格）、前端 TS/Vue（2 空格），
+#       统一 UTF-8 与 LF 换行，避免跨平台差异污染 diff。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+[*.{js,ts,jsx,tsx,vue,json,yaml,yml,css,scss,html}]
+indent_size = 2
+
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.{toml,ini,cfg}]
+indent_size = 2

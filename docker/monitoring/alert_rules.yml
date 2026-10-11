@@ -1,0 +1,96 @@
+# My Agentix 告警规则（企业化 P0-2，起步 4 条）
+# 全部基于 observability/metrics.py 实际暴露的指标：
+#   http_requests_total{method,endpoint,status} / http_request_duration_seconds_bucket
+#   up{}（Prometheus 内置抓取探针）/ rate_limit_triggered_total（P0-3 新增）
+groups:
+  - name: agentix-availability
+    rules:
+      # 1) 后端实例失联：抓取目标 down 超过 1 分钟
+      - alert: My AgentixBackendDown
+        expr: up{job="agentix-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "My Agentix backend 抓取失败（实例不可达）"
+          description: "Prometheus 已连续 1 分钟无法抓取 backend:8000/metrics。检查容器状态与端口。"
+
+      # 2) 5xx 错误率：5 分钟窗口内 5xx 占比超过 1%
+      - alert: My AgentixHighErrorRate
+        expr: >
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_requests_total[5m])), 0.001) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HTTP 5xx 错误率超过 1%（持续 5 分钟）"
+          description: "5xx 突增通常意味着依赖故障或代码异常；结合 trace_id 与日志定位。"
+
+      # 3) P95 延迟：5 分钟窗口内请求 P95 超过 10 秒
+      - alert: My AgentixHighP95Latency
+        expr: >
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP P95 延迟超过 10s（持续 5 分钟）"
+          description: "多为 LLM 上游变慢或检索链路劣化；对比 llm_request_duration 与 rag_retrieval_duration 分项。"
+
+      # 4) 限流触发激增：可能是单点滥用或突发流量（P0-3 指标）
+      - alert: My AgentixRateLimitStorm
+        expr: sum(rate(rate_limit_triggered_total[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "限流触发速率异常（>5 次/秒，持续 5 分钟）"
+          description: "排查是否为滥用、爬虫或正常业务高峰；必要时调整 RATE_LIMIT_GLOBAL_RPM/BURST。"
+
+      # 5) 组件降级（P1-2.1 指标 degraded_total{component}）：
+      #    出现新降级事件即告警——降级=功能可用但质量/持久性受损（如会话不再持久化）
+      - alert: My AgentixComponentDegraded
+        expr: increase(degraded_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "组件进入降级态：{{ $labels.component }}"
+          description: "按 oncall runbook 排查树处理：checkpointer 降级=会话不持久化；chat 降级=检索通道部分失败。恢复后可手动 reset 指标视图。"
+
+      # 6) 熔断器打开（P1-2.2 指标 circuit_state{name}，2=open）
+      - alert: My AgentixCircuitOpen
+        expr: max by (name) (circuit_state) == 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "熔断器 OPEN：{{ $labels.name }}"
+          description: "下游连续失败已达阈值，请求被快速拒绝进入降级响应。检查上游 LLM/依赖可用性；恢复探测成功后自动回 CLOSED。"
+
+      # 7) grounding 低分率突增（P2 O1 指标 grounding_low_score_total）
+      #    答案证据锚定低分 = 检索质量或模型幻觉风险的先导信号。
+      - alert: My AgentixGroundingLowScoreSpike
+        expr: sum(increase(grounding_low_score_total[30m])) > 10
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "30 分钟内 grounding 低分答案超过 10 条"
+          description: "证据锚定低分率突增：优先排查检索质量（kb 数据/索引新鲜度/authority 排序）与模型输出漂移。观测口径，不拦截交付。"
+
+      # 8) Model Gateway fallback 连锁触发（P2 O1 指标 gateway_fallback_total）
+      #    主模型持续失败 → 链内兜底接管；连锁触发提示主模型/配额/网络异常。
+      - alert: My AgentixGatewayFallbackCascade
+        expr: sum(increase(gateway_fallback_total[15m])) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "15 分钟内 Gateway fallback 触发超过 5 次"
+          description: "主模型失败后由 fallback 链兜底成功（成本与延迟上升）。检查主模型可用性、API 配额与网络；观察 {{ $labels.primary_model }} → {{ $labels.fallback_model }}。"

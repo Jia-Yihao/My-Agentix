@@ -1,0 +1,107 @@
+# Core Framework
+fastapi==0.142.2  # S2 安全批：0.109.1→0.142.2 解除 starlette<0.36 钉死；行为由全量套件验证，失败即回退 0.109.1
+starlette==1.7.0  # S2 安全批：0.35.1→1.7.0（≥1.3.1 修复 14 项 CVE；fastapi 0.142 无上界）
+uvicorn[standard]==0.27.0
+pydantic==2.13.5  # R2: 对齐 py310 基线实测版本（1256 passed 组合）
+pydantic-settings==2.4.0
+typing-extensions==4.16.0  # 完整性补齐：agentix 内 9 处直连 import，原仅靠 fastapi/pydantic/sqlalchemy 传递
+email-validator>=2.0.0
+setuptools>=61.0,<84  # S1 安全批：81→83 修复 pip-audit 2 项
+gunicorn
+aiofiles
+
+# LLM Integration
+openai>=1.58.1,<2
+anthropic==0.18.1
+langchain==0.3.30  # S1 安全批：0.3.7→0.3.30（0.3.x 线内修复；1.x 需整体迁移，另期）
+langchain-community==0.3.27  # S1 安全批：0.3.4→0.3.27
+langchain-openai==0.2.14
+langchain-neo4j==0.3.0
+langchain-core>=0.3.85,<0.4.0  # S1 安全批：下界抬到 0.3.85（0.3.x 线内最高修复版）
+# langsmith 不显式钉死：0.8.18 起要求 websockets>=15，与 websockets==14.2（uvicorn 0.27 legacy API 及
+# google-genai <15 上界）冲突；其 1 项残余 CVE 记入交付说明，待 uvicorn 升级时一并处理。
+# langsmith 作为 langchain 家族传递依赖已在依赖树中；LangSmith 看板经 LANGCHAIN_TRACING_V2
+# 等环境变量启用（默认关），见 .env.example 与 README §9。
+
+# Machine Learning
+numpy<2.0.0
+scikit-learn==1.5.0  # S1 安全批：1.4.2→1.5.0 修复 2 项 CVE（与 numpy<2、scipy 1.11 兼容）
+pandas==2.3.3  # 完整性补齐：cypher_tools/visualize generate_chart 直连 import，原仅靠 lightrag/pymilvus 传递
+
+# Agent Framework
+langgraph==0.2.60
+langgraph-checkpoint==2.0.26
+# P0-1: Redis 持久化 checkpointer（AsyncRedisSaver，需 RediSearch 模块支持）
+langgraph-checkpoint-redis==0.0.8
+
+# LightRAG - Lightweight GraphRAG Alternative（P2-4：补上界，避免大版本破坏）
+lightrag-hku>=0.0.3,<2.0.0
+
+# Vector Database & Embeddings
+pymilvus>=2.4.0,<2.5  # R3.4: 与服务器 milvus v2.4.17 对齐（partition_key 需 2.4）
+
+# 传递依赖冲突显式钉死（此前未声明，导致 `pip check` 报 2 处不一致）
+# pymilvus 2.4.x 硬性要求 grpcio<=1.67.1；OTel gRPC exporter 1.44.0 在 py<3.13
+# 下要求 grpcio>=1.63.2 —— 交集即 [1.63.2, 1.67.1]。原先解析到 1.84.0（不受支持）
+grpcio>=1.63.2,<=1.67.1
+# playwright 1.40.0 精确要求 greenlet==3.0.1（SQLAlchemy 2.0.25 仅要求 !=0.4.17）
+greenlet==3.0.1
+
+# Database
+sqlalchemy==2.0.25
+pymysql==1.1.1  # S1 安全批：1.1.0→1.1.1
+redis==5.0.1
+neo4j==5.27.0
+
+# HTTP Client
+httpx==0.26.0
+aiohttp==3.14.3  # 完整性补齐：file_handler/image_handler/kb_retrieval/task_handlers 直连 import，原仅靠 openai/lightrag 传递
+anyio==4.15.1  # 完整性补齐：chat.py 直连 import，原仅靠 starlette/openai 传递
+requests==2.33.0  # S1 安全批：2.31.0→2.33.0 修复 6 项 CVE
+websockets==14.2  # S2：google-genai 需要 >=13,<15；S2 升级触发解析跳到 16.1.1 会破坏 Gemini 传输
+bcrypt==4.1.2
+PyJWT==2.15.0  # S1 安全批：2.10.1→2.15.0 修复 20 项 CVE
+# Utilities
+python-dotenv==1.2.2  # S1 安全批：1.0.0→1.2.2
+python-multipart==0.0.31  # S1 安全批：0.0.6→0.0.31 修复 16+2 项；Form 解析兼容性由全量套件验证
+pyyaml==6.0.1
+jinja2==3.1.6  # S1 安全批：3.1.3→3.1.6 修复 8 项 CVE
+pyahocorasick==2.1.0  # R2: 2.0.0 无 cp312 wheel（源码编译需 MSVC），2.1.0 起提供 3.12 wheel
+regex==2026.7.19  # 完整性补齐：text2cypher 校验器/cypher 工具直连 import，原仅靠 tiktoken 传递
+
+# Web Scraping & Data Extraction
+beautifulsoup4==4.12.3
+lxml==6.1.0  # S1 安全批：5.1.0→6.1.0 修复 2 项 libxml CVE（python-docx 传递依赖，套件验证）
+fake-useragent==1.4.0
+playwright==1.40.0
+
+# Logging & Monitoring
+loguru==0.7.2
+prometheus-client==0.19.0
+# 企业化 P0-4：OTel 转硬依赖——生产不再允许"未安装→静默禁用追踪"
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+
+# Retrieval domain (R1.12 from Tracerag)
+sqlmodel==0.0.22
+psycopg[binary]==3.2.9
+celery==5.6.3
+boto3==1.43.3
+botocore==1.43.99  # 完整性补齐：s3_minio/documents 直连 import（须落在 boto3 的 >=1.43.3,<1.44.0 内）
+pymupdf==1.25.3
+itsdangerous>=2.1.0
+langchain-text-splitters>=0.3.9,<0.4  # S1 安全批：0.3.9 修复 4 项（上界随 langchain-core 0.3 线）
+langgraph-prebuilt>=0.2.0
+langgraph-sdk>=0.1.42,<0.2.0  # R2: 对齐 langgraph 0.2.60 的约束（原 >=0.2.0 与其冲突）
+faiss-cpu>=1.7.0
+# qdrant-client>=1.9.0  # Qdrant 客户端（可选）
+
+# 可视化（生产可选：charts.py 在缺包时优雅降级；image_handler 硬依赖 pillow）
+pillow
+matplotlib
+seaborn
+
+# 测试 / 开发工具链见 requirements-dev.txt（CI 与本地开发：
+#   pip install -r requirements-dev.txt
+# ）。运行时镜像 / Docker 只装本文件，不再把 pytest/black/ruff 打进生产层。
+tiktoken==0.13.0  # F1b M-P1-5: real token counting (CONTEXT_REAL_TOKEN_COUNT_ENABLED)

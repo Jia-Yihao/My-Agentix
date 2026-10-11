@@ -1,0 +1,20 @@
+# My Agentix Alertmanager 配置（企业化 P0-2，起步最小配置）
+# 默认 receiver 输出到日志（webhook 留空）；接入企业通知渠道时替换
+# webhook_configs 的 url（钉钉/企微/Slack 网关均可）。
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: default
+
+receivers:
+  - name: default
+    webhook_configs:
+      # 占位：未配置真实渠道时 Alertmanager 会在日志中记录通知尝试。
+      # 接入时替换为实际 webhook url，例如钉钉机器人网关。
+      - url: http://localhost:5001/agentix-alerts
+        send_resolved: true

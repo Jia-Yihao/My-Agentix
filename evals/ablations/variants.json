@@ -1,0 +1,53 @@
+{
+  "comment": "Agent 消融实验变体定义（ChatGPT 评估建议 §七）。每个变体 = 一组特性开关，由 run_ablation.py 以 AGENTIX_ABLATION_* 环境变量注入在线评估（run_eval.py --live）。本文件是变体的唯一事实源；开关的读取端与接线状态见 agentix/config/ablation.py（WIRED_FLAGS / UNWIRED_FLAGS），run_ablation.py 会据此拒绝「声明了未接线开关」的变体（当前 UNWIRED_FLAGS 为空，七变体均可执行）。",
+  "wiring_status": {
+    "as_of": "2026-09-26",
+    "wired": ["retrieval_enabled", "router_enabled", "tools_enabled", "memory_enabled", "multi_agent"],
+    "unwired": [],
+    "note": "接线已落地到生产管线。multi_agent 于 Phase 19（2026-09-26）接线：lg_builder.get_active_graph 按开关在扁平图与 supervisor 拓扑（lg_supervisor.supervisor_dispatch，Manager Proposer/Reviewer）间切换；默认 False=扁平图零变化。"
+  },
+  "variants": [
+    {
+      "id": "A_llm_only",
+      "label": "LLM only",
+      "description": "裸 LLM 直答：无检索、无路由、无工具",
+      "flags": { "retrieval_enabled": false, "router_enabled": false, "tools_enabled": false, "multi_agent": false, "memory_enabled": false }
+    },
+    {
+      "id": "B_rag",
+      "label": "LLM + RAG",
+      "description": "固定向量检索（绕过路由）+ LLM",
+      "flags": { "retrieval_enabled": true, "router_enabled": false, "tools_enabled": false, "multi_agent": false, "memory_enabled": false }
+    },
+    {
+      "id": "C_rag_router",
+      "label": "RAG + Router",
+      "description": "路由开启：按问题选择向量/图谱/SQL 检索通道",
+      "flags": { "retrieval_enabled": true, "router_enabled": true, "tools_enabled": false, "multi_agent": false, "memory_enabled": false }
+    },
+    {
+      "id": "D_tools",
+      "label": "Router + Tool Calling",
+      "description": "在路由之上放开工具调用（text2sql / 图谱查询 / 计算器）",
+      "flags": { "retrieval_enabled": true, "router_enabled": true, "tools_enabled": true, "multi_agent": false, "memory_enabled": false }
+    },
+    {
+      "id": "E_multi_agent",
+      "label": "Multi-Agent",
+      "description": "supervisor 多智能体：路由后由 Manager 协调 Proposer（子 agent 执行）与 Reviewer 审阅/修订（Phase 19 接线）",
+      "flags": { "retrieval_enabled": true, "router_enabled": true, "tools_enabled": true, "multi_agent": true, "memory_enabled": false }
+    },
+    {
+      "id": "F_memory",
+      "label": "Multi-Agent + Memory",
+      "description": "叠加会话记忆与记忆整合",
+      "flags": { "retrieval_enabled": true, "router_enabled": true, "tools_enabled": true, "multi_agent": true, "memory_enabled": true }
+    },
+    {
+      "id": "G_full",
+      "label": "Full Agentix",
+      "description": "全能力默认管线（= 生产默认配置，含 rerank/citation/grounding）",
+      "flags": { "retrieval_enabled": true, "router_enabled": true, "tools_enabled": true, "multi_agent": true, "memory_enabled": true, "full_pipeline": true }
+    }
+  ]
+}

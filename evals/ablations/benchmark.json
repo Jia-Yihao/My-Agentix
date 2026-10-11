@@ -1,0 +1,13 @@
+{
+  "rows": [],
+  "missing": [
+    "A_llm_only",
+    "B_rag",
+    "C_rag_router",
+    "D_tools",
+    "E_multi_agent",
+    "F_memory",
+    "G_full"
+  ],
+  "root": "D:\\Code\\practice_project\\My-Agentix\\evals\\ablations\\results"
+}

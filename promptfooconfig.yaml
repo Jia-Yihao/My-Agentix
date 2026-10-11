@@ -1,0 +1,32 @@
+# promptfoo 回归主入口配置（P1-5）。
+#
+# 纯 CLI 模式：结果只落本地（promptfoooutput/），不上传其云平台。
+# provider：自定义 Python provider 持久 worker 直调 ChatService（绕 HTTP，
+# 与 run_eval --record 同一调用缝，见 evals/promptfoo_provider.py）。
+# 断言：自定义 python 断言文件 get_assert → 直接 import run_eval 打分函数
+# （口径单源，见 evals/promptfoo_asserts.py；守卫测试 tests/test_p104_promptfoo_contract.py 钉死）。
+# 用例：evals/golden_to_promptfoo.py 从 legal_golden.jsonl 机械转换（默认试点 25 条）。
+#
+# 前置（PowerShell，需真实 LLM 端点——CI 全离线不跑本评测）：
+#   .\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --limit 25
+#   npx promptfoo@latest eval --ci --no-cache
+#
+# CI 纪律（M-6 修正）：CI 常驻 job 只做"配置可解析 + 转换守卫测试"
+# （pytest tests/test_p104_promptfoo_contract.py），不跑在线 eval——
+# CI 无 LLM，在线 eval 无意义；全量评测在本地/活环境执行。
+
+description: "My-Agentix 法律问答回归（golden 子集；确定性打分口径 = run_eval）"
+
+providers:
+  - id: agentix-chat-service
+    path: file://evals/promptfoo_provider.py
+
+# 测试集：转换脚本产物（入库前先跑 golden_to_promptfoo.py）
+tests: file://evals/promptfoo_tests.jsonl
+
+# 输出落本地 promptfoooutput/（纯 CLI，不上云）
+outputPath: promptfoooutput/results.json
+
+# 命令行覆写缓存：同一问题不同轮次不串结果
+evaluateOptions:
+  cache: false

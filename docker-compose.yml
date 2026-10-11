@@ -1,0 +1,570 @@
+services:
+  # 后端服务
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: server
+      args:
+        # LightRAG 构建时初始化（可选）
+        # 注意：不要通过 build args 传递密钥，避免在构建日志中泄露。
+        - INIT_LIGHTRAG_ON_BUILD=${INIT_LIGHTRAG_ON_BUILD:-true}
+        - LLM_BASE_URL=${LLM_BASE_URL}
+        - LLM_MODEL=${LLM_MODEL}
+        - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+        - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
+        - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION}
+        - LIGHTRAG_INIT_LIMIT=${LIGHTRAG_INIT_LIMIT:-1000}
+    ports:
+      - "8000:8000"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    environment:
+      # 基础配置
+      - DEBUG=${DEBUG:-True}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_CACHE_EXPIRE=${REDIS_CACHE_EXPIRE:-43200}
+      - REDIS_CACHE_THRESHOLD=${REDIS_CACHE_THRESHOLD:-0.92}
+      - REDIS_CACHE_MAX_SIZE=${REDIS_CACHE_MAX_SIZE:-1000}
+
+      # 数据库配置
+      # R3.8：统一 PostgreSQL（编排侧 public schema + 知识库侧 retrieval schema）
+      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://postgres:postgrespass@postgres:5432/agentix}
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=legal_db
+      - MYSQL_USER=legal_user
+      - MYSQL_PASSWORD=legalpass
+
+      # Neo4j配置
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-legalpass}
+      - NEO4J_DEFAULT_GRAPH_QUERY=${NEO4J_DEFAULT_GRAPH_QUERY}
+
+      # Milvus配置
+      - MILVUS_HOST=milvus
+      - MILVUS_PORT=19530
+      - MILVUS_COLLECTION=${MILVUS_COLLECTION:-legal}
+      - MILVUS_INDEX_TYPE=${MILVUS_INDEX_TYPE:-IVF_FLAT}
+      - MILVUS_METRIC_TYPE=${MILVUS_METRIC_TYPE:-IP}
+
+      # LLM配置
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
+
+      # LightRAG配置（需要OPENAI_*变量）
+      - OPENAI_API_KEY=${LLM_API_KEY}
+      - OPENAI_API_BASE=${LLM_BASE_URL}
+      - OPENAI_MODEL=${LLM_MODEL}
+      - LIGHTRAG_WORKING_DIR=${LIGHTRAG_WORKING_DIR:-./data/lightrag}
+      - LIGHTRAG_RETRIEVAL_MODE=${LIGHTRAG_RETRIEVAL_MODE:-hybrid}
+      - LIGHTRAG_TOP_K=${LIGHTRAG_TOP_K:-10}
+      - LIGHTRAG_MAX_TOKEN_SIZE=${LIGHTRAG_MAX_TOKEN_SIZE:-4096}
+      - LIGHTRAG_ENABLE_NEO4J=${LIGHTRAG_ENABLE_NEO4J:-True}
+      - LIGHTRAG_ENABLE_MILVUS=${LIGHTRAG_ENABLE_MILVUS:-False}
+      - INIT_LIGHTRAG_ON_BUILD=${INIT_LIGHTRAG_ON_BUILD:-true}
+      - LIGHTRAG_INIT_LIMIT=0
+  
+      # Embedding配置
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION}
+
+      # Rerank配置
+      - RERANK_ENABLED=${RERANK_ENABLED}
+      - RERANK_PROVIDER=${RERANK_PROVIDER}
+      - RERANK_BASE_URL=${RERANK_BASE_URL}
+      - RERANK_ENDPOINT=${RERANK_ENDPOINT}
+      - RERANK_API_KEY=${RERANK_API_KEY}
+      - RERANK_MODEL=${RERANK_MODEL}
+      - RERANK_TIMEOUT=${RERANK_TIMEOUT:-30}
+      - RERANK_MAX_CANDIDATES=${RERANK_MAX_CANDIDATES}
+      - RERANK_TOP_N=${RERANK_TOP_N}
+      - RERANK_SCORE_FUSION_ALPHA=${RERANK_SCORE_FUSION_ALPHA}
+      # retrieval/infra/rag/rerank.py 使用的 Cross-Encoder 专用配置。
+      - RERANKER_BASE_URL=${RERANKER_BASE_URL:-http://reranker:7997}
+      - RERANKER_ENABLED=${RERANKER_ENABLED:-false}
+      - RERANKER_MODEL=${RERANKER_MODEL:-text-embedding-bge-reranker-v2-m3}
+
+      # Vision模型配置
+      - VISION_API_KEY=${VISION_API_KEY}
+      - VISION_BASE_URL=${VISION_BASE_URL}
+      - VISION_MODEL=${VISION_MODEL}
+
+      # Image Generation配置
+      - IMAGE_GENERATION_API_KEY=${IMAGE_GENERATION_API_KEY}
+      - IMAGE_GENERATION_BASE_URL=${IMAGE_GENERATION_BASE_URL}
+      - IMAGE_GENERATION_MODEL=${IMAGE_GENERATION_MODEL}
+      - IMAGE_GENERATION_SIZE=${IMAGE_GENERATION_SIZE}
+
+      # 知识库配置
+      - KB_TOP_K=5
+      - KB_SIMILARITY_THRESHOLD=${KB_SIMILARITY_THRESHOLD:-0.2}
+      - KB_POSTGRES_SIMILARITY_THRESHOLD=${KB_POSTGRES_SIMILARITY_THRESHOLD:-0.5}
+      - KB_POSTGRES_RERANK_THRESHOLD=${KB_POSTGRES_RERANK_THRESHOLD:-0.8}
+      - KB_RERANK_SCORE_THRESHOLD=${KB_RERANK_SCORE_THRESHOLD:-0.8}
+      - KB_CHUNK_SIZE=512
+      - KB_CHUNK_OVERLAP=80
+      - KB_ENABLE_EXTERNAL_SEARCH=false
+      - INIT_KB_MILVUS=${INIT_KB_MILVUS:-true}
+      - KB_DATA_FILE=${KB_DATA_FILE:-/app/data/kb/legal_corpus.txt}
+      - KB_MILVUS_SENTINEL=${KB_MILVUS_SENTINEL:-/app/data/.kb_milvus_ingested}
+
+      # 会话配置
+      - CONVERSATION_HISTORY_TTL=${CONVERSATION_HISTORY_TTL:-259200}
+      - CONVERSATION_HISTORY_MAX_MESSAGES=${CONVERSATION_HISTORY_MAX_MESSAGES:-200}
+
+      # 外部服务配置
+      - INGEST_SERVICE_URL=${INGEST_SERVICE_URL:-http://kb_ingest:8000}
+      - FILE_UPLOAD_MAX_MB=${FILE_UPLOAD_MAX_MB:-2}
+
+      # Agent配置
+      - MAX_ITERATIONS=${MAX_ITERATIONS:-10}
+      - AGENT_TIMEOUT=${AGENT_TIMEOUT:-300}
+
+      # CORS配置
+      # 无 :- 缺省时，`.env` 未设 CORS_ORIGINS 会把空串注入容器，覆盖 pydantic 默认
+      # ⇒ allow_origins 变空 ⇒ 跨域被全拒。补缺省与 .env.example:258 一致。
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+
+      # Tiktoken缓存目录
+      - TIKTOKEN_CACHE_DIR=/app/data/tiktoken_cache
+    volumes:
+      - ./agentix:/app/agentix
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./.env:/app/.env
+    depends_on:
+      - postgres
+      - neo4j
+      - redis
+      - milvus
+    networks:
+      - agentix-network
+    restart: unless-stopped
+    command: >
+      sh -c "if [ '$${DEBUG}' = 'True' ]; then
+        uvicorn agentix.main:application --host 0.0.0.0 --port 8000 --reload;
+      else
+        uvicorn agentix.main:application --host 0.0.0.0 --port 8000 --workers 2;
+      fi"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # R3.8：统一 PostgreSQL 实例（编排侧元数据 public schema + 知识库元数据 retrieval schema）
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agentix}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespass}
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-agentix}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agentix-network
+
+  # R3.8：retrieval/index worker（Celery），可独立伸缩副本/资源，无需重启主服务
+  retrieval-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: server
+    env_file:
+      - .env
+    environment:
+      - DEBUG=False
+      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://postgres:postgrespass@postgres:5432/agentix}
+      # R3.2 Redis 分片：broker/backend=db1，缓存=db0
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      - REDIS_CACHE_URL=${REDIS_CACHE_URL:-redis://redis:6379/0}
+      # 统一 Milvus（R3.4 口径：milvus 后端必须归一化）
+      - MILVUS_HOST=milvus
+      - MILVUS_PORT=19530
+      - MILVUS_COLLECTION=${MILVUS_COLLECTION:-legal}
+      - MILVUS_INDEX_TYPE=${MILVUS_INDEX_TYPE:-IVF_FLAT}
+      - MILVUS_METRIC_TYPE=${MILVUS_METRIC_TYPE:-IP}
+      - VECTOR_STORE_BACKEND=${VECTOR_STORE_BACKEND:-milvus}
+      - VECTOR_NORMALIZE=${VECTOR_NORMALIZE:-true}
+      # 统一 MinIO（R3.3）
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-http://minio:9000}
+      - S3_BUCKET=${S3_BUCKET:-documents}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
+    volumes:
+      - ./agentix:/app/agentix
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    depends_on:
+      - postgres
+      - redis
+      - milvus
+      - minio
+    command: celery -A agentix.retrieval.infra.tasks.celery_app.celery_app worker --loglevel=info --concurrency=2
+    networks:
+      - agentix-network
+    restart: unless-stopped
+    # P1 部署收口：Celery worker 存活探测（ping 自己队列上的 worker 进程）
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A agentix.retrieval.infra.tasks.celery_app.celery_app inspect ping -d celery@$${HOSTNAME} || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: ${RETRIEVAL_WORKER_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "${RETRIEVAL_WORKER_CPUS:-2.0}"
+          memory: ${RETRIEVAL_WORKER_MEMORY:-4g}
+
+  neo4j:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: neo4j_seeded
+    ports:
+      - "17474:7474"
+      - "17687:7687"
+    environment:
+      NEO4J_AUTH: none
+      NEO4J_dbms_security_auth__enabled: "false"
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+      NEO4J_dbms_security_procedures_allowlist: "apoc.*"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - agentix-network
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "13306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=legal_db
+      - MYSQL_USER=legal_user
+      - MYSQL_PASSWORD=legalpass
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./data/init_mysql.sql:/docker-entrypoint-initdb.d/00_init.sql
+      - ./data/insert_sample_data.sql:/docker-entrypoint-initdb.d/10_seed.sql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agentix-network
+
+  redis:
+    # P0-1：langgraph-checkpoint-redis 的 asetup() 依赖 RediSearch（FT.CREATE），
+    # 官方纯净镜像 redis:7-alpine 不含该模块，必须使用 Redis Stack。
+    # 换镜像不影响 redis_data 卷（RDB 格式兼容），换前建议备份一次。
+    image: redis/redis-stack-server:7.4.0-v2
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - agentix-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Milvus向量数据库
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    # P1 部署收口：etcd 端点健康探测（Milvus 元数据存储）
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health", "--endpoints=http://127.0.0.1:2379"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - agentix-network
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - minio_data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - agentix-network
+
+  milvus:
+    image: milvusdb/milvus:v2.4.17  # R3.4: 版本统一（消除 2.4.17 vs 2.3.3 差异，partition_key 支持）
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - milvus_data:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - etcd
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agentix-network
+
+  # 可选的 Cross-Encoder 精排服务（Infinity）；首次启动会从 Hugging Face 下载模型。
+  reranker:
+    image: michaelf34/infinity:latest-cpu
+    profiles:
+      - reranker
+    restart: unless-stopped
+    command:
+      - v2
+      - --engine
+      - torch
+      - --model-id
+      - ${RERANKER_MODEL_SOURCE:-BAAI/bge-reranker-v2-m3}
+      - --served-model-name
+      - text-embedding-bge-reranker-v2-m3
+      - --port
+      - "7997"
+      - --batch-size
+      - "4"
+    ports:
+      - "127.0.0.1:${RERANKER_PORT:-7997}:7997"
+    environment:
+      HF_HOME: /app/.cache/huggingface
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
+      HF_HUB_DISABLE_XET: "1"
+    volumes:
+      - ${RERANKER_CACHE_DIR:-./.cache/reranker}:/app/.cache
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7997/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+    networks:
+      - agentix-network
+
+  kb_ingest:
+    build:
+      context: ./kb_ingest
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - milvus
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    env_file:
+      - .env
+    environment:
+      # R3.7：向量后端 = Milvus legal 集合（pgvector/kb_postgres 已移除）
+      MILVUS_HOST: ${KB_MILVUS_HOST:-milvus}
+      MILVUS_PORT: ${KB_MILVUS_PORT:-19530}
+      MILVUS_COLLECTION: ${KB_MILVUS_COLLECTION:-legal}
+      # LLM配置
+      LLM_PROVIDER: ${KB_LLM_PROVIDER:-openai}
+      LLM_MODEL: ${KB_LLM_MODEL}
+      LLM_API_KEY: ${KB_LLM_API_KEY}
+      LLM_BASE_URL: ${KB_LLM_BASE_URL}
+      LLM_TEMPERATURE: ${KB_LLM_TEMPERATURE:-0.3}
+      USE_LLM: ${KB_USE_LLM:-false}
+      # Embedding配置
+      EMBEDDING_PROVIDER: ${KB_EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${KB_EMBEDDING_MODEL}
+      EMBEDDING_API_KEY: ${KB_EMBEDDING_API_KEY}
+      EMBEDDING_BASE_URL: ${KB_EMBEDDING_BASE_URL}
+      EMBEDDING_DIMENSION: ${KB_EMBEDDING_DIMENSION:-1024}
+      # Rerank配置
+      RERANK_ENABLED: ${KB_RERANK_ENABLED:-true}
+      RERANK_PROVIDER: ${KB_RERANK_PROVIDER:-custom}
+      RERANK_BASE_URL: ${KB_RERANK_BASE_URL}
+      RERANK_ENDPOINT: ${KB_RERANK_ENDPOINT}
+      RERANK_API_KEY: ${KB_RERANK_API_KEY}
+      RERANK_MODEL: ${KB_RERANK_MODEL}
+      RERANK_TIMEOUT: ${KB_RERANK_TIMEOUT:-30}
+      RERANK_MAX_CANDIDATES: ${KB_RERANK_MAX_CANDIDATES:-20}
+      RERANK_TOP_N: ${KB_RERANK_TOP_N:-6}
+      RERANK_SCORE_FUSION_ALPHA: ${KB_RERANK_SCORE_FUSION_ALPHA:-0.5}
+      # 批处理配置
+      BATCH_SIZE: ${KB_BATCH_SIZE:-16}
+      RETRY_TIMES: ${KB_RETRY_TIMES:-3}
+      RETRY_DELAY: ${KB_RETRY_DELAY:-5}
+      # Excel 初始数据导入
+      INIT_KB_EXCEL: ${INIT_KB_EXCEL:-true}
+      KB_EXCEL_PATH: ${KB_EXCEL_PATH:-/app/data/法律法条源头.xlsx}  # 法律结构化表（可选，缺省跳过导入）
+      KB_EXCEL_SENTINEL: ${KB_EXCEL_SENTINEL:-/app/data/.kb_excel_ingested}
+    ports:
+      - "${KB_INGEST_PORT:-8100}:8000"
+    volumes:
+      - ./kb_ingest/data:/app/data
+    command: uvicorn kb_service.main:app --host 0.0.0.0 --port 8000
+    # P1 部署收口：kb_ingest /health 探测
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - agentix-network
+
+  # ============ 监控栈（企业化 P0-2）============
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: agentix-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - agentix-network
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: agentix-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./docker/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - agentix-network
+
+  grafana:
+    image: grafana/grafana-oss:11.1.0
+    container_name: agentix-grafana
+    restart: unless-stopped
+    environment:
+      # 首登后务必改密；生产接入统一身份时改用 OAuth/LDAP
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - agentix-network
+
+  # P2-3：web 前端（第 13 个 service）——profile "full" 隔离：
+  # 默认 `docker compose up` 不启动（开发模式不变：本机 npm run dev + 本机后端）；
+  # `docker compose --profile full up -d` 才构建并启动（nginx 同源反代 /api → backend:8000，
+  # 浏览器访问 http://localhost:8080）。
+  web:
+    build:
+      context: ./web
+      args:
+        # 构建期注入 API 基址（VITE_API_BASE_URL，见 web/src/api/config.ts）；
+        # 默认 /api = 同源反代路径（nginx 转发 backend:8000），零跨域。
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api}
+    container_name: agentix-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - backend
+    networks:
+      - agentix-network
+    profiles:
+      - full
+
+
+networks:
+  agentix-network:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redis_data:
+  etcd_data:
+  minio_data:
+  milvus_data:
+  neo4j_data:
+  neo4j_logs:
+  mysql_data:
+  prometheus_data:
+  grafana_data:

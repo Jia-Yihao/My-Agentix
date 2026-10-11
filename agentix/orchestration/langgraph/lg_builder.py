@@ -1,0 +1,449 @@
+"""
+LangGraph agent builder - backward-compatible re-export layer.
+
+This module preserves all existing import paths while the actual implementations
+have been moved to dedicated modules:
+  - router.py: analyze_and_route_query, route_query, _heuristic_router, etc.
+  - guardrails.py: get_additional_info, AdditionalGuardrailsOutput
+  - image_handler.py: create_image_query, _generate_image
+  - file_handler.py: create_file_query
+  - general_handler.py: respond_to_general_query, create_kb_query
+  - constants.py: SCOPE_DESCRIPTION, GUARDRAILS_REJECT_MESSAGE, etc.
+  - llm_factory.py: get_llm_client
+
+Only create_research_plan and check_hallucinations remain here due to
+complex dependencies on kg_sub_graph internals.
+"""
+
+from functools import lru_cache
+from typing import cast, Any, Dict, List, Optional
+
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.runnables import RunnableConfig
+from loguru import logger
+
+from agentix.config import ablation, settings
+from agentix.orchestration.langgraph.lg_states import AgentState, GradeHallucinations
+from agentix.application.agents.lg_prompts import (
+    CHECK_HALLUCINATIONS,
+)
+from agentix.application.agents.kg_sub_graph.kg_neo4j_conn import get_neo4j_graph
+from agentix.application.agents.kg_sub_graph.agentic_rag_agents.retrievers.cypher_examples.legal_retriever import (
+    LegalCypherRetriever,
+)
+from agentix.application.agents.kg_sub_graph.agentic_rag_agents.workflows.multi_agent.multi_tool import (
+    create_multi_tool_workflow,
+)
+from agentix.application.agents.llm_factory import get_llm_client
+from agentix.application.agents.router import _ensure_router
+from agentix.application.agents.constants import SCOPE_DESCRIPTION
+from agentix.application.agents.task_handler import execute_task
+from agentix.tools.registry_init import get_active_tools
+
+# Re-export all public symbols from new modules for backward compatibility
+from agentix.application.agents.router import (  # noqa: F401
+    analyze_and_route_query,
+    route_query,
+    _heuristic_router,
+    _extract_configurable,
+    _coerce_to_bool,
+)
+from agentix.application.agents.guardrails import (  # noqa: F401
+    get_additional_info,
+    AdditionalGuardrailsOutput,
+)
+from agentix.application.agents.image_handler import (  # noqa: F401
+    create_image_query,
+)
+from agentix.application.agents.file_handler import (  # noqa: F401
+    create_file_query,
+)
+from agentix.application.agents.general_handler import (  # noqa: F401
+    respond_to_general_query,
+    create_kb_query,
+)
+
+
+def _extract_legal_sources(cyphers: Any) -> List[Dict[str, Any]]:
+    """Extract legal source references (law name + article number) from Cypher results."""
+    sources: List[Dict[str, Any]] = []
+    seen: set = set()
+    for cypher in cyphers or []:
+        records = getattr(cypher, "records", None)
+        if records is None and isinstance(cypher, dict):
+            records = cypher.get("records")
+        if isinstance(records, dict) and "result" in records:
+            records = records.get("result") or []
+        if not isinstance(records, list):
+            continue
+        for rec in records:
+            if not isinstance(rec, dict):
+                continue
+            law = rec.get("法规") or rec.get("law") or ""
+            article = rec.get("条号") or rec.get("article") or ""
+            if not law or not article:
+                continue
+            source_label = f"《{law}》{article}"
+            if source_label in seen:
+                continue
+            seen.add(source_label)
+            snippet = rec.get("内容") or rec.get("content_snippet") or ""
+            sources.append({
+                "type": "graphrag",
+                "law": law,
+                "article": article,
+                "content_snippet": snippet if isinstance(snippet, str) else str(snippet),
+                "source": source_label,
+            })
+    return sources
+
+
+@lru_cache(maxsize=4)
+def _get_compiled_multi_tool_workflow(
+    tool_schemas_key: tuple,
+    scope_description: Optional[str],
+    llm_cypher_validation: bool,
+):
+    """按配置指纹缓存编译后的 KG 子图（P1-2b）。
+
+    key 只由「影响图结构的参数」构成；llm/graph/retriever/dict 等
+    运行时对象在闭包内获取（单例或常量），不参与 key：
+    - llm: 编译期构造一次。复用不影响埋点归属——_TrackedChatOpenAI
+      上报时 trace_id 从 ContextVar 动态读取（llm_factory.py），并非
+      构造时固化
+    - graph: get_neo4j_graph() 进程内单例（P1-2a）。建连失败异常向上
+      传播（lru_cache 不缓存异常），由 chat.py 既有 except 链兜底，
+      下次请求自动重试
+    - retriever: LegalCypherRetriever 无状态（纯函数 get_examples），
+      随图固化安全
+    """
+    from agentix.application.agents.kg_sub_graph.agentic_rag_agents.components.predefined_cypher.legal_cypher_dict import (
+        predefined_cypher_dict,
+    )
+
+    return create_multi_tool_workflow(
+        # P0-2(b) 未接线（后续项）：此处同一 llm 实例同时服务 KG 子图内的多角色
+        # （planner / tool_selection / guardrails / finalize 共用），
+        # 需 per-node 注入才能差异化，已列为后续项。
+        llm=get_llm_client(temperature=0.7, tags=["research_plan"]),
+        graph=get_neo4j_graph(),
+        tool_schemas=list(tool_schemas_key),
+        predefined_cypher_dict=predefined_cypher_dict,
+        cypher_example_retriever=LegalCypherRetriever(),
+        scope_description=scope_description,
+        llm_cypher_validation=llm_cypher_validation,
+    )
+
+
+async def create_research_plan(
+    state: AgentState, *, config: RunnableConfig
+) -> Dict[str, List[str] | str]:
+    """Graph RAG query node - decomposes queries and runs multi-tool workflow."""
+    logger.info("------execute local knowledge base query------")
+
+    # 消融开关（AGENTIX_ABLATION_TOOLS_ENABLED=false）：
+    # 不进入 KG 多工具子图（planner → 工具选择 → text2cypher → finalize），
+    # 退回直接 LLM 作答。语义 = 「关掉工具调用循环」；这与变体 C_rag_router
+    # （router=true / tools=false）想要表达的「有路由与检索通道、但没有工具调用」
+    # 一致。复用 general 角色，避免另起一条 LLM 链路导致口径分裂。
+    if not ablation.is_enabled("tools_enabled"):
+        logger.info(
+            "ablation[tools_enabled=False]: skip KG multi-tool subgraph, "
+            "fall back to direct LLM answer"
+        )
+        return await respond_to_general_query(state, config=config)
+
+    if not settings.OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured for research plan generation.")
+
+    # P1-3: 工具 schema 由注册表提供（settings.DISABLED_TOOLS 可裁剪），
+    # 新增工具只需改 registry_init.py 一处；tuple 化后兼作 P1-2b 编译缓存 key。
+    tool_schemas: tuple = tuple(get_active_tools())
+
+    # P1-2b: 子图按配置指纹缓存编译，消除每请求 Neo4j 建连 + StateGraph
+    # 重建开销；llm/graph 运行时对象在工厂闭包内获取，不参与缓存 key。
+    multi_tool_workflow = _get_compiled_multi_tool_workflow(
+        tool_schemas_key=tool_schemas,
+        scope_description=SCOPE_DESCRIPTION,
+        llm_cypher_validation=True,
+    )
+
+    last_message = state.messages[-1].content if state.messages else ""
+    input_state = {
+        "question": last_message,
+        "data": [],
+        "history": [],
+        "route_type": _ensure_router(getattr(state, "router", None)).type,
+    }
+
+    # P1-4：转发 config 进 KG 子图，使其内部节点的 LLM 事件可冒泡（经白名单过滤，
+    # 仅回答类节点外泄；KG 子图的 guardrails/planner/tool_selection 会被过滤掉）。
+    response = await multi_tool_workflow.ainvoke(input_state, config=config)
+
+    cyphers = response.get("cyphers", []) or []
+    sources = _extract_legal_sources(cyphers)
+
+    ai_message = AIMessage(content=response.get("answer", ""))
+    if sources:
+        ai_message.additional_kwargs["sources"] = sources
+
+    return {"messages": [ai_message], "sources": sources}
+
+
+# DEAD-CODE(P2-5)｜处置=保留·有意不接线：本函数**有意不接线**（2026-09 审计确认，非"待删除"）。
+# build_graph 的 add_node 块只注册 9 个节点，不含它；全仓除本定义与顶部模块
+# 说明外 0 处引用，连带函数体内 get_llm_client(..., role="hallucination")
+# 亦落在不可达代码中。
+# **为什么不删**：这是**文档化的未接线能力**——`docs/design/orchestration-rationale.md`
+# 的节点清点表把「A6 幻觉校验」列为"现有但未接入任何图"并附了 grep 证据；
+# 它是被刻意保留的后续接线点，不是无人认领的残骸。删掉等于抹掉一处已登记的设计意图。
+# **为什么不接线**：接线会给每次图执行新增一次 hallucination 校验 LLM 调用，
+# 属运行期行为变更 + 成本变更，需独立评估（当前环境无 LLM 服务，无法评估）。
+# 取舍：保持"标注 + 运行期断言未接线"（绊线见 tests/test_p24_deadcode_marking.py）。
+async def check_hallucinations(
+    state: AgentState, *, config: RunnableConfig
+) -> dict[str, Any]:
+    """Check if the response is supported by retrieved documents."""
+    if not settings.OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured for hallucination checks.")
+
+    # P0-2(b)：显式绑定 hallucination 角色 → 确定性 profile（temperature=0.0,
+    # timeout=15s, max_retries=1）。调用点传 temperature=0.7 → 落到 profile 温度 0.0。
+    model = get_llm_client(temperature=0.7, tags=["hallucinations"], role="hallucination")
+
+    system_prompt = CHECK_HALLUCINATIONS.format(
+        documents=state.documents,
+        generation=state.messages[-1],
+    )
+
+    messages = [{"role": "system", "content": system_prompt}] + state.messages
+
+    logger.info("---CHECK HALLUCINATIONS---")
+
+    response = cast(
+        GradeHallucinations,
+        await model.with_structured_output(GradeHallucinations).ainvoke(messages),
+    )
+
+    return {"hallucination": response}
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible graph compilation
+# ---------------------------------------------------------------------------
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, StateGraph
+from agentix.orchestration.langgraph.lg_states import InputState
+
+
+def create_message_window_node(max_messages: int, token_budget: int = 0):
+    """批次 7：主图历史窗口化节点工厂。
+
+    背景：``AgentState.messages`` 走 ``add_messages`` reducer，会话经
+    checkpointer（thread_id=session_id）跨请求持久化，旧消息**无界累积**，
+    长会话会持续推高每轮的上下文体量与延迟。本节点在每轮入口处把
+    ``messages`` 裁剪到最近 ``max_messages`` 条（含本轮新输入的 human 消息），
+    裁剪通过 ``RemoveMessage``（add_messages 官方删除语义）完成，checkpointer
+    会持久化裁剪后的状态。
+
+    安全性：
+    - ``max_messages <= 0`` 时为**纯 no-op**（窗口化关闭，行为与旧版一致）；
+    - 未超限时同样 no-op；
+    - 无 id 的消息跳过删除（add_messages 会为其补 id，正常不出现）；
+    - 裁剪只影响「送入模型的历史窗口」，Redis/DB 里的完整会话记录不受影响。
+
+    上下文工程 C（``token_budget = LG_TOKEN_HISTORY_BUDGET``，默认 0 = 关）：
+    条数窗口之上再加一道 **token 级预算**——从最新消息**向前一次性累加**
+    ``count_tokens``，累到预算即停（``while`` 反向遍历，每条只算一次，
+    避免逐条重算的 O(n²)）；**至少保留最新一条消息**（本轮输入不可裁）。
+    ``token_budget <= 0`` ⇒ 该分支完全不执行，与旧实现逐位等价。
+    """
+    from langchain_core.messages import RemoveMessage
+
+    def _text(message) -> str:
+        content = getattr(message, "content", "")
+        return content if isinstance(content, str) else str(content)
+
+    async def window_messages(state: AgentState) -> Dict[str, Any]:
+        if max_messages <= 0 and token_budget <= 0:
+            return {"messages": []}
+        msgs = state.messages or []
+        if not msgs:
+            return {"messages": []}
+        # ① 条数窗口（旧逻辑）：确定候选窗口起点
+        start = 0
+        if max_messages > 0 and len(msgs) > max_messages:
+            start = len(msgs) - max_messages
+        # ② token 预算窗口（C 阶段新增）：从尾部向前累加，超预算即停。
+        #    最新一条无论如何保留（至少 i = len(msgs)-1）。
+        if token_budget > 0:
+            from agentix.agent.context.token_count import count_tokens
+
+            used = count_tokens(_text(msgs[-1]))
+            i = len(msgs) - 2
+            while i >= start:
+                cost = count_tokens(_text(msgs[i]))
+                if used + cost > token_budget:
+                    break
+                used += cost
+                i -= 1
+            start = max(start, i + 1)
+        if start <= 0:
+            return {"messages": []}
+        victims = [RemoveMessage(id=m.id) for m in msgs[:start] if m.id]
+        if not victims:
+            return {"messages": []}
+        return {"messages": victims}
+
+    return window_messages
+
+
+def _wrap_execute_task_in_loop(node_fn):
+    """F1e·A-P1-4（统一执行链 Stage F）：execute_task 的进环 HITL 注入壳。
+
+    langgraph 依赖**只在本模块**（p66 LangGraph 白名单）：运行态满足
+    ① py3.12+（3.10 async ``interrupt`` 必死锁，见
+    ``tests/test_p32_tool_guards.py`` 特征化，故 3.10 诚实降级=不注入、
+    沿用 review_required 快速失败）、② ``HITL_IN_LOOP_ENABLED``、
+    ③ ``HUMAN_REVIEW_ENABLED``、④ 调用方声明进环意图
+    （``configurable.hitl_in_loop``，仅非 stream ask 注入——stream 恒 L2
+    不进环）四条时，把 ``langgraph.types.interrupt`` 经 config 递给
+    ``execute_task`` → ``task_execution``：遇 review_required 挂起
+    （checkpointer 快照 thread_id），恢复值 ``approve`` ⇒ 落批准后重试
+    一次，其余 fail-closed。flag-off/不满足时透传原 config——与基线逐位等价。
+    """
+    import sys as _sys
+
+    async def _in_loop_execute_task(
+        state: AgentState, *, config: RunnableConfig
+    ) -> Dict[str, Any]:
+        cfg_map = config if isinstance(config, dict) else dict(config or {})
+        if (
+            _sys.version_info >= (3, 12)
+            and settings.HITL_IN_LOOP_ENABLED
+            and settings.HUMAN_REVIEW_ENABLED
+            and isinstance(cfg_map.get("configurable"), dict)
+            and cfg_map["configurable"].get("hitl_in_loop")
+        ):
+            from langgraph.types import interrupt
+
+            cfg = dict(cfg_map)
+            configurable = dict(cfg_map["configurable"])
+            configurable["hitl_in_loop_interrupt"] = interrupt
+            cfg["configurable"] = configurable
+            return await node_fn(state, config=cfg)
+        return await node_fn(state, config=config)
+
+    return _in_loop_execute_task
+
+
+async def resume_in_loop(thread_id: str, resume_value: Any) -> Any:
+    """F1e·A-P1-4：恢复图内挂起的进环 HITL 线程（/ops 恢复面唯一调用方）。
+
+    langgraph ``Command`` 依赖留本模块（p66 白名单）；``graph`` 迟绑定——
+    与 ops_router ``/threads/resume`` 同款语义，启动期 Redis checkpointer
+    覆盖后自动跟随最新图。``resume_value`` 原样交给 ``interrupt`` 返回处：
+    ``approve`` 落批准后重试，其余值 fail-closed 快速失败。线程无挂起
+    （未知 thread / 未开进环）时由图侧抛错，调用方转 409。
+    """
+    from langgraph.types import Command
+
+    return await graph.ainvoke(
+        Command(resume=resume_value),
+        config={"configurable": {"thread_id": thread_id}},
+    )
+
+
+def build_graph(checkpointer=None):
+    """构建并编译主图；checkpointer 由启动期注入（Redis 实例或 None/MemorySaver）。
+
+    P0-1：原模块级编译改为工厂函数，FastAPI 启动期会用 Redis checkpointer
+    重编译并覆盖下方模块级 `graph`；checkpointer 为 None 时图不持久化。
+    """
+    builder = StateGraph(AgentState, input=InputState)
+    # 注意：check_hallucinations 故意不在此注册（本块仅注册下列 9 个节点：
+    # message_window / analyze_and_route_query / respond_to_general_query /
+    # get_additional_info / create_research_plan / create_image_query /
+    # create_file_query / create_kb_query / execute_task），
+    # 其定义见本模块上方 check_hallucinations(...)，标注为 DEAD-CODE(P2-5)｜保留·有意不接线。
+    # 批次 7：入口插入历史窗口化节点（settings.MAX_HISTORY_MESSAGES<=0 时
+    # 为 no-op，行为与旧版一致），裁剪 checkpointer 持久化的无界历史。
+    # 上下文工程 C：LG_TOKEN_HISTORY_BUDGET>0 时在条数窗口内再加 token 预算
+    # （默认 0 ⇒ 该分支不执行，与基线逐位等价）。
+    builder.add_node(
+        "message_window",
+        create_message_window_node(
+            settings.MAX_HISTORY_MESSAGES,
+            getattr(settings, "LG_TOKEN_HISTORY_BUDGET", 0),
+        ),
+    )
+    builder.add_node(analyze_and_route_query)
+    builder.add_node(respond_to_general_query)
+    builder.add_node(get_additional_info)
+    builder.add_node("create_research_plan", create_research_plan)
+    builder.add_node(create_image_query)
+    builder.add_node(create_file_query)
+    builder.add_node(create_kb_query)
+    # P1（任务执行）：execute_task 无条件注册（route_query 的 Literal/ROUTE_HANDLERS
+    # 需与节点集对齐，phase19 绊线断言两者相等）；可达性由 TASK_EXEC_ENABLED 在
+    # 路由侧门控——flag-off 时任何路由决策都不会进入本节点，行为与基线等价。
+    # F1e·A-P1-4：注册时包一层进环注入壳（节点名不变 = 绊线断言不受影响；
+    # flag-off/3.10/未声明进环意图时纯透传）。
+    builder.add_node("execute_task", _wrap_execute_task_in_loop(execute_task))
+
+    builder.add_edge(START, "message_window")
+    builder.add_edge("message_window", "analyze_and_route_query")
+    builder.add_conditional_edges("analyze_and_route_query", route_query)
+    return builder.compile(checkpointer=checkpointer)
+
+
+# 向后兼容：模块级默认图（MemorySaver）。
+# 独立 CLI 入口（application/agents/main.py）与单元测试依赖此符号；
+# FastAPI 启动期若 Redis checkpointer 就绪，会覆盖 lg_builder.graph 为
+# Redis 持久化版本——外部访问请用 `lg_builder.graph` 属性（动态取值），
+# 不要 `from lg_builder import graph`（值绑定不会跟随启动期覆盖）。
+checkpointer = MemorySaver()
+graph = build_graph(checkpointer=checkpointer)
+
+# ---------------------------------------------------------------------------
+# Phase 19：multi_agent 接线（supervisor 拓扑切换）
+# ---------------------------------------------------------------------------
+#: supervisor 拓扑编译结果。惰性：仅 flag 开启（或启动期显式重建）时编译；
+#: main.py 启动期在 Redis checkpointer 就绪后会同时重建 graph 与本图，
+#: 保证两拓扑共享同一 checkpointer（thread_id=session_id 语义一致）。
+supervisor_graph: Any = None
+
+
+def build_supervisor_graph(checkpointer=None):
+    """构建 supervisor 多智能体拓扑（Phase 19）。
+
+    实现在 ``agentix.orchestration.langgraph.lg_supervisor``（原 application
+    路径已随 M6 删除）；此处惰性导入，
+    避免 lg_builder ↔ lg_supervisor 的模块级循环（lg_supervisor 顶层
+    import 本模块的 handler / 窗口节点工厂）。
+    """
+    from agentix.orchestration.langgraph.lg_supervisor import (
+        build_supervisor_graph as _build_supervisor_graph,
+    )
+
+    return _build_supervisor_graph(checkpointer=checkpointer)
+
+
+def get_active_graph():
+    """Phase 19 图选择：``AGENTIX_ABLATION_MULTI_AGENT=true`` ⇒ supervisor 拓扑。
+
+    默认（未注入 / False）⇒ 扁平图 ``graph``——现网零变化（flag-off 等价）。
+    经 ``chat_service._graph_getter`` 惰性调用：不缓存开关值，与
+    ``ablation.is_enabled`` 每请求读取语义一致（消融子进程注入即生效）。
+    """
+    global supervisor_graph
+    if ablation.is_enabled("multi_agent"):
+        if supervisor_graph is None:
+            supervisor_graph = build_supervisor_graph(checkpointer=checkpointer)
+        return supervisor_graph
+    return graph
+
+
+async def safety_guardrails(state: AgentState, *, config: RunnableConfig) -> Dict[str, List[BaseMessage]]:
+    """Backward-compatible wrapper for guardrails logic."""
+    return await get_additional_info(state, config=config)
