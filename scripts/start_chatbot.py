@@ -65,7 +65,7 @@ def open_browser() -> None:
 def main():
     """主函数"""
     print("="*60)
-    print("🤖 My Agentix 法律法规智能咨询助手")
+    print("🤖 My Agentix 测试数据集智能咨询助手")
     print("="*60)
     print("\n正在启动服务...\n")
 

@@ -89,7 +89,7 @@ class TaskDecompose(BaseModel):
     steps: List[TaskStepDecl]
 
 
-_DECOMPOSE_SYSTEM_PROMPT = """你是法律领域任务编排的拆解器。把用户的任务目标拆成**可执行工具步骤**的有序计划。
+_DECOMPOSE_SYSTEM_PROMPT = """你是测试数据领域任务编排的拆解器。把用户的任务目标拆成**可执行工具步骤**的有序计划。
 
 可用工具清单（只允许使用清单内工具名）：
 {menu}

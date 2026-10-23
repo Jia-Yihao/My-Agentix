@@ -1,4 +1,4 @@
-"""知识检索网关——法律编排层访问检索能力域的唯一入口。
+"""知识检索网关——测试数据编排层访问检索能力域的唯一入口。
 
 R5.2 下线 ``infrastructure.knowledge`` 的 DEPRECATED 兼容 shim 后，原
 kg_sub_graph / file_handler / general_handler 等编排侧调用统一改接本网关。

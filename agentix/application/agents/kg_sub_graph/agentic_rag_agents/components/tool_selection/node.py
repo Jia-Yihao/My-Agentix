@@ -177,7 +177,7 @@ def create_tool_selection_node(
 
         # Heuristic fast path for结构化查询
         if any(keyword in question_text for keyword in DESCRIPTIVE_KEYWORDS):
-            logger.info("检测到法律描述类需求，优先使用 GraphRAG。")
+            logger.info("检测到测试数据描述类需求，优先使用 GraphRAG。")
             return _make_command(
                 "customer_tools",
                 {

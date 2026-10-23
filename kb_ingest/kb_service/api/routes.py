@@ -10,6 +10,8 @@ from openai import APIConnectionError, AuthenticationError, OpenAIError, RateLim
 
 from kb_service.api.deps import get_config, require_api_key
 from kb_service.core.config import Config, clone_config
+from kb_service.core.db_url_guard import ConnectionUrlError, enforce_connection_url
+from kb_service.core.sql_filters import FilterError, enforce_where_policy
 from kb_service.schemas.ingest import ExcelIngestRequest, MySQLIngestRequest
 from kb_service.schemas.search import SearchRequest, HybridSearchRequest
 from kb_service.services.processor import DataProcessor
@@ -91,7 +93,7 @@ def ingest_excel(payload: ExcelIngestRequest, background: BackgroundTasks, confi
     ⚠️ **安全边界（2026-09 审计标注；鉴权已补，路径白名单仍未做）**
 
     本端点接受调用方给出的任意主机路径（``payload.excel_path``）并读取它。
-    这是**刻意设计**——运维需要直接喂 ``/app/data/法律法条源头.xlsx``
+    这是**刻意设计**——运维需要直接喂 ``/app/data/测试数据数据条目源头.xlsx``
     这类已挂载的数据文件，走上传会多一份拷贝。
 
     风险前提与当前状态（**已随本次改动更新，此前写的是"没有任何鉴权"**）：
@@ -214,6 +216,29 @@ def ingest_mysql(
     background: BackgroundTasks,
     config: Config = Depends(get_config),
 ):
+    # G12：闸门在**入队前**同步判定。放进后台任务的话，客户端拿到的是 202 +
+    # 一条服务端异常日志，调用方根本不知道自己传的 URL 被拒了。
+    # detail 只写拒绝原因，不回显 payload.connection_url（里面可能有密码）。
+    try:
+        enforce_connection_url(payload.connection_url, config)
+    except ConnectionUrlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"connection_url rejected by KB_MYSQL_URL_GUARD: {exc}",
+        ) from exc
+
+    # ⑫：WHERE 口径同样在入队前判掉（理由与上面一致：202 + 后台日志等于没告诉调用方
+    # 他被拒了）。detail 只说规则名与原因，不回显 `where`/`filters` 的值。
+    try:
+        enforce_where_policy(
+            config.mysql_where_parametrized, payload.where, payload.filters
+        )
+    except FilterError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"where/filters rejected by KB_MYSQL_WHERE_PARAMETRIZED: {exc}",
+        ) from exc
+
     payload_data = payload.model_dump()
 
     def run_ingest() -> None:

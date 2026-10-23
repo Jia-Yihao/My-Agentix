@@ -111,7 +111,7 @@ async def _postgres_search(
     postgres_search_url = cfg.postgres_search_url
     request_timeout = cfg.request_timeout
 
-    kb_logger.info("🔍 [优先] 查询结构化法律知识库（kb_ingest/Milvus legal）...")
+    kb_logger.info("🔍 [优先] 查询结构化测试数据集知识库（kb_ingest/Milvus legal）...")
     payload: Dict[str, Any] = {
         "query": question,
         "top_k": effective_top_k,

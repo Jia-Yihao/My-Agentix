@@ -99,7 +99,7 @@ def validate_completion(
        （错误未消解就不算完成）；
     2. 答案为空或短于 ``min_answer_chars`` → ``INCOMPLETE``；
     3. 引用类路由（``CITATION_ROUTES``）但 ``sources`` 为空 → ``DEGRADED``
-       （答案存在但**无依据**——法律领域这是严重质量问题）；
+       （答案存在但**无依据**——测试数据领域这是严重质量问题）；
     4. 有工具失败（``tool_failures > 0``）但答案存在 → ``DEGRADED``；
     5. 其余 → ``COMPLETE``。
 

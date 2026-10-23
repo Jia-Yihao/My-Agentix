@@ -1,0 +1,70 @@
+name: Bug 报告
+description: 报告缺陷（必须附可复现步骤与回归测试线索）
+title: "[bug] "
+labels: [bug]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先确认这不是配置问题：启动时会跑 `agentix.config.selfcheck`，
+        日志里的 `.env` 字段缺失告警请一并贴上（**贴之前把密钥值删掉**）。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 现象 + 期望行为。涉及接口请给请求与响应。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: |
+        从干净状态出发的最小步骤。能写成 pytest 的最好直接贴 pytest。
+      placeholder: |
+        1. `make run-server`
+        2. curl ...
+        3. 看到 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: traceback
+    attributes:
+      label: 报错与日志
+      description: 完整 traceback / 日志片段。请贴文本，不要贴截图。
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: `python -c "import agentix; print(agentix.__version__)"` 的输出
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: 部署形态
+      options:
+        - 本地源码（uvicorn）
+        - docker-compose
+        - 其他
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 已搜索现有 Issue，确认不是重复
+          required: true
+        - label: 贴出的日志与配置不含任何密钥、真实用户数据
+          required: true

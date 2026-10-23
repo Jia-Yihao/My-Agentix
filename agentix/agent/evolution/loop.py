@@ -271,7 +271,7 @@ class OfflineEvolutionLoop:
     def validate_proposal(
         self, proposal: EvolutionProposal, *, touched_paths: Sequence[str] = ()
     ) -> Tuple[bool, str]:
-        """提案合法性：载体白名单 + 验证器保护 + 各载体 payload 白名单。"""
+        """提案有效性：载体白名单 + 验证器保护 + 各载体 payload 白名单。"""
         if not isinstance(proposal.carrier, EvolutionCarrier):
             return False, "unknown_carrier"
         if self.touches_protected_verifier(touched_paths):

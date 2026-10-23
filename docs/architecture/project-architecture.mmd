@@ -1,0 +1,186 @@
+%% My Agentix 项目整体架构（Mermaid 可编辑源）
+%% 与 docs/assets/project-architecture.png / .svg 对应
+%% 实线 = 默认主链路；虚线 = 默认关闭/可选/未接线
+
+flowchart TB
+  classDef client fill:#EAF2FF,stroke:#4A78C2,color:#1F2937
+  classDef edge fill:#E8F1FB,stroke:#4A78C2,color:#1F2937
+  classDef iface fill:#F3F6FF,stroke:#6B7FD7,color:#1F2937
+  classDef app fill:#EAF7F1,stroke:#3F9B72,color:#1F2937
+  classDef orch fill:#F3EDFF,stroke:#7B5AC8,color:#1F2937
+  classDef core fill:#EAF4FB,stroke:#3E7FA8,color:#1F2937
+  classDef cap fill:#FFF4E8,stroke:#C98A3C,color:#1F2937
+  classDef data fill:#F3EFE6,stroke:#A98B57,color:#1F2937
+  classDef opt fill:#FFF8EC,stroke:#D28A2E,stroke-dasharray:5 4,color:#1F2937
+  classDef cross fill:#F4F5F7,stroke:#7A8797,color:#1F2937
+
+  subgraph CLIENT["客户端"]
+    C1["Web 对话 · Vue3"]
+    C2["Web 知识库 · Vue3"]
+    C3["外部 API / 脚本"]
+    C4["MCP 客户端 / 独立 CLI"]
+  end
+
+  subgraph EDGE["接入层"]
+    E1["Nginx :8080<br/>托管 dist + 代理 /api"]
+    E2["FastAPI :8000<br/>uvicorn + lifespan"]
+    E3["中间件（外→内）<br/>GlobalRateLimit → TraceId → RequestLogging/Prometheus → APIKey → CORS"]
+    E4["运维与文档端点<br/>/health · /liveness · /readiness · /metrics · /docs · /openapi.json"]
+  end
+
+  subgraph IFACE["接口层"]
+    I1["编排域 /api/v1<br/>/chat · /chat/stream · /sessions · /upload · /feedback · /runs · /ops · /hitl"]
+    I2["检索域 /api/v1/retrieval<br/>/chat · /chat/stream · /kb · /documents · /index-jobs · /folders · /tenants · /users · /approvals · /explanations · /feedback · /settings · /vector-db · /auth"]
+  end
+
+  subgraph APP["应用服务层"]
+    A1["ChatService<br/>会话 / 运行 / 流式编排"]
+    A2["Session / Memory<br/>会话历史 · 长期记忆 · 记忆卡 · 上下文"]
+    A3["Run / Feedback / Ops<br/>运行登记 · 反馈 · 人工审批 · 运维"]
+    A4["Retrieval ChatService<br/>ReAct 编排 · JWT/RBAC · 引用"]
+    A5["KB / 文档 / 索引<br/>上传 · 解析 · 索引任务"]
+    A6["kb_ingest 服务 :8100<br/>Excel / MySQL 入库"]
+  end
+
+  subgraph ORCH["编排层"]
+    O1["LangGraph L2 主图（默认）<br/>message_window · analyze_and_route_query · route_query（条件边）"]
+    O2["直接出口<br/>general / additional / image / file"]
+    O3["KB 子图<br/>guardrails → kb_router → local_search / external_search → finalize"]
+    O4["KG 子图<br/>guardrails → planner → tool_selection → 并行工具 → summarize → final_answer_guard → final_answer"]
+    O5["execute_task<br/>TASK_EXEC_ENABLED"]
+    O6["Retrieval ReAct Runner<br/>无 LangGraph · 工具循环"]
+    O7["Supervisor 多智能体<br/>Manager + Peer"]
+    O8["AgentLoop L3<br/>AGENT_LOOP_ENABLED"]
+  end
+
+  subgraph CORE["运行时 / Agent Core"]
+    R1["AgentRuntime + ControlPlane<br/>状态 · 预算 · 生命周期 · Run 登记 / 取消 / 超时"]
+    R2["Context / Memory<br/>message_window · instructions · 长期记忆 · 压缩"]
+    R3["Policies / HITL<br/>planner · verifier · guardrails · 人工审批"]
+    R4["ToolRegistry / Executor<br/>权限 · 风险 · 审批 · 超时 · 重试 · 结果裁剪"]
+    R5["Skills / Hooks / Events<br/>技能 · 钩子 · 事件总线"]
+    R6["Hybrid Retrieval<br/>dense + sparse/BM25 · RRF 融合 · rerank"]
+    R7["Citation Verify<br/>引用核验 · 输出过滤"]
+    R8["Checkpointer（持久化）<br/>Redis → MemorySaver 降级 · 非图节点"]
+  end
+
+  subgraph CAP["能力与适配层"]
+    P1["LLM / Embedding Provider<br/>OpenAI 兼容 · ChatTongyi · embedding"]
+    P2["Neo4j + Text2SQL<br/>Cypher · Wren · MySQL"]
+    P3["内置工具 / 适配器<br/>search · memory · todo · notify · artifact · PDF"]
+    P4["LightRAG / MCP<br/>可选服务 / stdio server"]
+    P5["Embedding / Vector Store<br/>Milvus / FAISS / Qdrant"]
+    P6["PDF 解析 / 对象存储<br/>PyMuPDF · MinIO · uploads"]
+    P7["Celery Worker<br/>解析 · 切块 · 向量化"]
+  end
+
+  subgraph DATA["数据层"]
+    D1[("PostgreSQL / SQLite<br/>会话 · 用户 · 知识库元数据 · 运行记录")]
+    D2[("MySQL<br/>kb_ingest 上游业务数据")]
+    D3[("Redis<br/>Checkpointer · 缓存 · 限流 · 事件")]
+    D4[("Neo4j<br/>测试数据知识图谱")]
+    D5[("Milvus / FAISS / Qdrant<br/>向量索引")]
+    D6[("MinIO / uploads<br/>文件 · 原文 · 附件")]
+    D7["Prometheus · Alertmanager · Grafana<br/>指标 · 告警 · 看板"]
+  end
+
+  subgraph CROSS["横切能力（作用于所有层）"]
+    X1["Security<br/>APIKey / JWT / RBAC · Prompt Injection · Output Filter"]
+    X2["Reliability<br/>Circuit Breaker · Retry Budget · Bulkhead / RateLimit"]
+    X3["Performance<br/>Admission · Load Shedding · Budget / Latency"]
+    X4["Observability<br/>Loguru / Prometheus · OTel span · Trajectory"]
+    X5["Config / Settings<br/>Pydantic Settings · Ablation / Selfcheck · Feature Flags（默认关）"]
+    X6["Quality / Delivery<br/>pytest / evals / CI · Docker Compose · Makefile"]
+  end
+
+  %% 客户端 → 接入
+  C1 --> E1
+  C2 --> E1
+  C3 --> E2
+  C4 --> E2
+
+  %% 接入 → 接口
+  E1 --> E2
+  E2 --> E3
+  E2 --> E4
+  E3 --> I1
+  E3 --> I2
+
+  %% 接口 → 应用
+  I1 --> A1
+  I1 --> A2
+  I1 --> A3
+  I2 --> A4
+  I2 --> A5
+  A6 --> A5
+
+  %% 应用 → 编排
+  A1 --> O1
+  A1 -.-> O8
+  A1 -.-> O7
+  O1 --> O2
+  O1 --> O3
+  O1 --> O4
+  O1 -.-> O5
+  A4 --> O6
+
+  %% 编排 → 运行时
+  O1 --> R1
+  O1 --> R2
+  O1 --> R3
+  O1 --> R4
+  O3 --> R6
+  O4 --> R4
+  O6 --> R6
+  O6 --> R7
+  O6 --> R4
+
+  %% 运行时 → 能力
+  R1 --> P1
+  R2 --> P3
+  R3 --> P1
+  R4 --> P3
+  R4 --> P4
+  R5 -.-> P3
+  R6 --> P5
+  R7 --> P1
+  R8 --> D3
+
+  %% 能力 → 数据
+  P1 --> D1
+  P2 --> D4
+  P2 --> D2
+  P3 --> D1
+  P4 --> D4
+  P5 --> D5
+  P6 --> D6
+  P7 --> D5
+  P7 --> D6
+  P7 --> D1
+
+  %% 观测
+  A1 --> D1
+  A3 --> D1
+  A5 --> D1
+  E2 --> D7
+  R1 --> X4
+  R6 --> X4
+
+  %% 横切关联（虚线，避免误导为主链路）
+  I1 -.-> X1
+  I2 -.-> X1
+  O1 -.-> X2
+  O6 -.-> X3
+  A1 -.-> X5
+  E2 -.-> X6
+
+  class C1,C2,C3,C4 client
+  class E1,E2,E3,E4 edge
+  class I1,I2 iface
+  class A1,A2,A3,A4,A5,A6 app
+  class O1,O2,O3,O4,O6 orch
+  class O5,O7,O8,R5 opt
+  class R1,R2,R3,R4,R6,R7,R8 core
+  class P1,P2,P3,P4,P5,P6,P7 cap
+  class D1,D2,D3,D4,D5,D6,D7 data
+  class X1,X2,X3,X4,X5,X6 cross

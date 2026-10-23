@@ -1,0 +1,282 @@
+name: CI
+
+# 与 docs/PROJECT_SPEC.md §21.2 的作业清单一一对应；本地等价命令见 Makefile
+# （make lint / make test）。改这里的 lint 范围必须同步改 Makefile，
+# 否则两边量的是不同的东西（守卫：tests/test_p46_toolchain_parity.py）。
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.10"
+
+jobs:
+  version-consistency:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      # pyproject / agentix.__version__ / web/package.json / .env.example 必须四处一致。
+      - name: Check version sources agree
+        run: python scripts/bump_version.py --check
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install toolchain
+        run: pip install -r requirements-dev.txt
+      # 范围与 Makefile 的 lint 目标逐字一致（含 tests；tests 没有 per-file 豁免）。
+      - name: Ruff
+        run: ruff check agentix scripts evals kb_ingest tests --output-format=github
+      # 仓库尚未全量格式化，这一步只报告不阻断；Makefile 用行首 `-` 表达同一语义。
+      - name: Formatting check (non-blocking)
+        continue-on-error: true
+        run: black --check --diff agentix scripts evals kb_ingest
+      # 只覆盖 domain 层（pyproject 里 follow_imports="silent" + 该层 untyped 禁令）。
+      - name: Type check (domain layer)
+        run: mypy agentix/domain --config-file=pyproject.toml
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10"]
+    env:
+      # 单测不联网；这把假 key 只用于让"缺 key 即报错"的配置校验走过去。
+      OPENAI_API_KEY: test-key-not-used-in-ci
+      DATABASE_URL: sqlite:///./ci_test.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -r requirements-dev.txt && pip install -e . --no-deps
+      - name: Pytest
+        run: pytest -m "not integration" -q --tb=short
+      - name: Coverage report
+        continue-on-error: true
+        run: pytest -m "not integration" -q --cov=agentix --cov-report=term-missing
+
+  architecture-guards:
+    name: Architecture guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt && pip install -e . --no-deps
+      - name: Layering and observability-scope guards
+        run: pytest tests/test_p17_domain_layer.py tests/test_p22_obs_scope.py -q
+
+  eval-smoke:
+    name: Eval harness smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt && pip install -e . --no-deps
+      - name: Harness contract
+        run: pytest tests/test_p21_eval_harness.py -q
+
+  eval-offline:
+    name: Offline eval quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt && pip install -e . --no-deps
+      # 「没把关」绝不能被读成「把关通过」：缺输入 / 缺基线都走响亮跳过。
+      - name: Check gate inputs
+        id: eval
+        run: |
+          set -eu
+          skip=false
+          if [ ! -f evals/baseline_predictions.jsonl ]; then
+            echo "::warning title=eval-offline::evals/baseline_predictions.jsonl 未入库 ⇒ 离线评估跳过（绿灯不代表指标达标）"
+            {
+              echo '### ⚠️ eval-offline 未生效（NOT-ENFORCED）'
+              echo ''
+              echo '- 缺输入：`evals/baseline_predictions.jsonl`'
+              echo '- 录制方式：本地起全栈后 `python evals/run_eval.py --record`，再提交该文件'
+              echo '- 本次 job 变绿**不代表**质量指标达标'
+            } >> "$GITHUB_STEP_SUMMARY"
+            skip=true
+          elif [ ! -f evals/baselines/quality.json ]; then
+            echo "::warning title=eval-offline::基线 evals/baselines/quality.json 不存在 ⇒ 首跑建档，本轮不比对"
+            {
+              echo '### ⚠️ 质量门禁未生效（NOT-ENFORCED）'
+              echo ''
+              echo '- 缺基线文件：`evals/baselines/quality.json`'
+              echo '- 本次只记录当前值，从下一次运行起才真正比对'
+            } >> "$GITHUB_STEP_SUMMARY"
+            skip=true
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+      - name: Run offline eval
+        if: steps.eval.outputs.skip != 'true'
+        run: python evals/run_eval.py --offline --results-dir "$RUNNER_TEMP/eval-results"
+      - name: Quality gate on applicable metrics
+        if: steps.eval.outputs.skip != 'true'
+        run: |
+          set -eu
+          python3 - "$RUNNER_TEMP/eval-results" <<'PY'
+          import glob
+          import json
+          import os
+          import subprocess
+          import sys
+
+          results_dir = sys.argv[1]
+          paths = sorted(glob.glob(os.path.join(results_dir, "*.summary.json")))
+          if not paths:
+              print("::error title=quality-gate::no summary.json produced by run_eval")
+              sys.exit(2)
+          with open(paths[-1], encoding="utf-8") as handle:
+              summary = json.load(handle)["summary"]
+
+          # 口径只取 *_applicable（真实分母）。全量口径的均值里混着"本条没有该
+          # 要求"的免费满分（citation 地板 ≈0.549、reject 地板 ≈0.8725），
+          # 于是大幅退化照样绿——见 tests/test_ci_gate_contract.py。
+          METRICS = (
+              "route_accuracy",
+              "citation_hit_rate_applicable",
+              "citation_correctness_applicable",
+              "must_contain_applicable",
+              "reject_accuracy_applicable",
+          )
+
+          # 指标名脱钩于 run_eval 的产出时，必须给一条人话错误，
+          # 而不是让下游以 KeyError 堆栈伪装的"代码故障"。
+          missing = [name for name in METRICS if name not in summary]
+          if missing:
+              print(f"::error title=quality-gate::summary missing metric keys: {missing}")
+              sys.exit(2)
+
+          for name in METRICS:
+              current = summary[name]
+              if current is None:
+                  print(f"::error title=quality-gate::{name} is null (no evaluable samples)")
+                  sys.exit(2)
+              rc = subprocess.call(
+                  [
+                      sys.executable,
+                      "evals/quality_gate.py",
+                      "--baseline-file",
+                      "evals/baselines/quality.json",
+                      "--metric",
+                      name,
+                      "--current",
+                      str(current),
+                  ]
+              )
+              if rc != 0:
+                  sys.exit(rc)
+          PY
+
+  retrieval-gate:
+    name: Retrieval gate
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:///./ci_retrieval.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt && pip install -e . --no-deps
+      - name: Retrieval and tenancy contracts
+        run: >-
+          pytest tests/test_retrieval_port.py tests/test_tenant_crud.py
+          tests/test_tenant_id_extension.py tests/test_jwt_auth.py
+          tests/test_authz_tenant.py tests/test_rbac.py
+          tests/test_audit_log.py tests/test_phase2_verification.py -q
+      # 单测通过不代表装配得起来：这条只验 import（跨层引用与命名没被搬坏）。
+      - name: Import integrity
+        run: |
+          set -eu
+          python -c "import agentix.domain.ports.retrieval"
+          python -c "import agentix.retrieval.usecases.retrieval_port_adapter"
+          python -c "import agentix.retrieval.usecases.kb_service"
+          python -c "import agentix.retrieval.api.authz"
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  ci-gate:
+    name: CI gate
+    needs:
+      - version-consistency
+      - lint
+      - test
+      - architecture-guards
+      - eval-smoke
+      - eval-offline
+      - retrieval-gate
+      - frontend
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate results
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["RESULTS"])
+          blocking = [r for r in results if r in ("failure", "cancelled")]
+          if blocking:
+              print(f"::error title=ci-gate::blocking jobs are not green: {blocking}")
+              sys.exit(1)
+          print(f"ci-gate PASS: {len(results)} jobs green")
+          PY

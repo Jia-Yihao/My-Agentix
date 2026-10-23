@@ -1,5 +1,5 @@
 /**
- * R2-2 前端消费：法条效力状态 → 展示视图（徽标文案 + 语气色）。
+ * R2-2 前端消费：数据条目效力状态 → 展示视图（徽标文案 + 语气色）。
  *
  * 后端契约（retrieval/domain/policies/legal_effectiveness.py）：
  *   in_force | expired | repealed | pending（缺失/未知 → 前端不渲染徽标）

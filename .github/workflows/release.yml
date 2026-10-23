@@ -1,0 +1,84 @@
+name: Release
+
+# 打 tag（v*.*.*）即发布：先做与 CI 同口径的 preflight（版本四处一致 +
+# 标签与包版本一致 + 全量单测），再构建 sdist/wheel，并从 CHANGELOG 抽出
+# 该版本段落作为发布说明。
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.10"
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: test-key-not-used-in-ci
+      DATABASE_URL: sqlite:///./ci_release.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt && pip install -e . --no-deps
+      - name: Version sources agree
+        run: python scripts/bump_version.py --check
+      # 标签与包版本必须同源：不一致意味着 tag 打错或版本没抬，发出去的包会自述
+      # 一个从未存在的版本号。
+      - name: Tag matches package version
+        run: |
+          set -eu
+          TAG="${GITHUB_REF_NAME#v}"
+          CURRENT="$(python -c 'import agentix; print(agentix.__version__)')"
+          if [ "$TAG" != "$CURRENT" ]; then
+            echo "::error title=release::tag v${TAG} != agentix.__version__ ${CURRENT}"
+            exit 1
+          fi
+      - name: Test suite
+        run: pytest -m "not integration" -q --tb=short
+
+  build:
+    name: Build distributions
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install build
+      - name: Build sdist and wheel
+        run: python -m build
+      - name: Collect release notes
+        id: notes
+        run: |
+          set -eu
+          python3 - "${GITHUB_REF_NAME#v}" <<'PY'
+          import re
+          import sys
+
+          version = sys.argv[1]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          start = text.find(f"## [{version}]")
+          if start < 0:
+              print(f"::warning title=release::CHANGELOG.md 没有 [{version}] 段落，发布说明留空")
+              sys.exit(0)
+          rest = text[start + len(f"## [{version}]"):]
+          end = rest.find("\n## [")
+          section = rest if end < 0 else rest[:end]
+          with open("release-notes.md", "w", encoding="utf-8") as handle:
+              handle.write(f"# v{version}\n{section.strip()}\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.ref_name }}
+          path: |
+            dist/
+            release-notes.md

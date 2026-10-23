@@ -1,14 +1,14 @@
 """全局限流中间件（企业化 P0-3）。
 
 背景（企业级评估 §4.1）：`reliability/rate_limiter.py` 的令牌桶此前只挂在
-知识域聊天路由（`retrieval/api/routers/chat.py`），法律编排域全部路由
+知识域聊天路由（`retrieval/api/routers/chat.py`），测试数据编排域全部路由
 （interfaces/http）未覆盖——单客户端可打爆主链路。本中间件把限流收敛为
 **全局 ASGI 中间件**，统一覆盖所有入口。
 
 设计要点：
 - **复用既有 RateLimiter**（reliability/rate_limiter.py 令牌桶），不重造轮子；
 - **按客户端 IP 维度限流**（多副本部署时应切 RedisRateLimiter，接口已预留）；
-- 健康探针与监控面路径豁免（与 APIKeyMiddleware.EXEMPT_PATHS 同口径 + /metrics）；
+- 健康探针与监控面路径豁免——清单 import 自 `public_paths.py`，与鉴权中间件共用同一对象；
 - 触发限流时返回 429 + Retry-After，并打 `rate_limit_triggered_total{scope="global"}`；
 - Redis 故障时放行（与 RedisRateLimiter 既有语义一致），可用性优先。
 """
@@ -18,24 +18,13 @@ from __future__ import annotations
 import logging
 from typing import Dict, Optional
 
+from agentix.interfaces.http.public_paths import PUBLIC_PATHS, PUBLIC_PREFIXES
 from agentix.reliability.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
-# 豁免路径：与 APIKeyMiddleware.EXEMPT_PATHS 同口径，另加 /metrics（监控面）。
-# 前缀豁免（/docs、/redoc）单独判断。
-_EXEMPT_PATHS = {
-    "/docs",
-    "/redoc",
-    "/health",
-    "/liveness",
-    "/readiness",
-    "/favicon.ico",
-    "/api",
-    "/openapi.json",
-    "/metrics",
-}
-_EXEMPT_PREFIXES = ("/docs", "/redoc")
+# 豁免路径与鉴权中间件共用同一份清单（`public_paths.py`）。此前这里另抄了一份、
+# 靠注释宣称"同口径"——两处各写一份判据，迟早只改一处。
 
 # 单实例最多跟踪的限流键数量（防恶意伪造 IP 撑爆内存）；
 # 超限后整体清空（令牌桶状态可丢弃，短暂突发窗口可接受）。
@@ -105,7 +94,7 @@ class GlobalRateLimitMiddleware:
 
     @staticmethod
     def _is_exempt(path: str) -> bool:
-        return path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES)
+        return path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or not self._enabled:

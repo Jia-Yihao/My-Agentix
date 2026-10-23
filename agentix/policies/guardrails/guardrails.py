@@ -150,7 +150,7 @@ _ADVICE_RULES = (
     ),
     (
         ("invalid", "argument", "valueerror", "typeerror", "missing", "schema", "400"),
-        "入参不合规：对照该工具的参数 schema 逐项核对类型与必填项后重试",
+        "入参不规范：对照该工具的参数 schema 逐项核对类型与必填项后重试",
     ),
     (
         ("rate limit", "429", "503", "502", "504", "upstream", "overloaded", "connection"),

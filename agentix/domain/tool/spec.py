@@ -7,19 +7,23 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, Tuple
 
+from agentix.domain.tool.sandbox import SANDBOX_DEFAULT, SANDBOX_LADDER
+
 __all__ = [
     "ToolSpec",
     "RISK_LEVELS",
     "FORBIDDEN_RISK_LEVEL",
     "CONTROL_REQUIRED_FROM",
+    "SANDBOX_DEFAULT",
+    "SANDBOX_LADDER",
     "_strip_control_chars",
 ]
 
 # 工具风险分级（技术变更与架构演进指南 v2.0 §2.1.3 / §2.1.5⑤）：
-#   L0 只读——无额外控制（法条检索、图谱查询、text2sql 只读）
-#   L1 可预览——生成后预览+可放弃（文书起草、检查单生成）
+#   L0 只读——无额外控制（数据条目检索、图谱查询、text2sql 只读）
+#   L1 可预览——生成后预览+可放弃（文档起草、检查单生成）
 #   L2 需人工确认——必须走 HITL 审批（对外发送通知、提交材料）
-#   L3 禁止——代码层禁止注册（自动立案、自动签署、冒充律师出具意见）
+#   L3 禁止——代码层禁止注册（自动立案、自动签署、冒充专业人员出具意见）
 RISK_LEVELS = ("L0", "L1", "L2", "L3")
 
 #: L3 是「禁止项」：不是"需要更严格的审批"，而是**根本不允许存在**。
@@ -73,6 +77,10 @@ class ToolSpec:
     timeout_ms: int = 30_000  # 单次执行超时（毫秒）
     retryable: bool = False  # 失败是否可重试（只读工具才建议 True）
     max_retries: int = 2  # 最大重试次数（仅 retryable=True 时生效）
+    # §24.3 T2 ⑭（ADR-0007）：执行位置声明。默认 ``in_process`` = 与现状逐位相同；
+    # `subprocess` / `container` 可以先声明（阶梯是词汇表），但当前会在执行点被
+    # **拒绝执行**而不是退回进程内——那两档是 ⑮/⑰ 的落点。
+    sandbox: str = SANDBOX_DEFAULT
 
     def __post_init__(self) -> None:
         # 名称含控制字符（\n \r \x00 等）直接拒绝——MCP 远端工具投毒式命名
@@ -90,7 +98,7 @@ class ToolSpec:
         if self.risk_level == FORBIDDEN_RISK_LEVEL:
             raise ValueError(
                 f"Tool '{self.name}' declares forbidden risk_level '{FORBIDDEN_RISK_LEVEL}'. "
-                "L3 是禁止项（自动立案/自动签署/冒充律师出具意见类能力），"
+                "L3 是禁止项（自动立案/自动签署/冒充专业人员出具意见类能力），"
                 "不允许在代码层注册——应重新设计为 L2 走人工审批，或不做。"
             )
         if self._rank >= CONTROL_REQUIRED_FROM and not self.control.strip():
@@ -104,6 +112,16 @@ class ToolSpec:
             raise ValueError(f"Tool '{self.name}' has invalid timeout_ms {self.timeout_ms} (must be > 0)")
         if self.max_retries < 0:
             raise ValueError(f"Tool '{self.name}' has invalid max_retries {self.max_retries} (must be >= 0)")
+        # 执行位置：只校验「是不是阶梯里的词」，**不**校验「当前能不能跑」（ADR-0007）。
+        # 两件事分开，⑮ 落地那天才不用回来改一批本来就写对了的声明；而拼写错
+        # （`Subprocess` / `inprocess`）必须在注册期就响，不能等到执行点才发现。
+        if self.sandbox not in SANDBOX_LADDER:
+            raise ValueError(
+                f"Tool '{self.name}' declares invalid sandbox {self.sandbox!r} "
+                f"(must be one of {SANDBOX_LADDER}); declaring a not-yet-implemented "
+                "rung is allowed (it is refused fail-closed at execution), declaring a "
+                "word outside the ladder is a typo"
+            )
         if self.side_effect and self.retryable:
             raise ValueError(
                 f"Tool '{self.name}' declares side_effect=True with retryable=True: "

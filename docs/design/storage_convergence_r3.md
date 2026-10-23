@@ -11,7 +11,7 @@
 |---|---|---|---|
 | 应用 | backend | 自建（target: server） | FastAPI 主服务（编排域） |
 | 应用 | retrieval-worker | 同 backend | Celery worker，`deploy.replicas`/CPU/内存可独立伸缩 |
-| 应用 | kb_ingest | 自建（kb_ingest/Dockerfile） | 结构化法律库导入/检索服务 |
+| 应用 | kb_ingest | 自建（kb_ingest/Dockerfile） | 结构化测试数据库导入/检索服务 |
 | 存储① PG | postgres | postgres:16-alpine | **统一 PG**：编排侧 `public` schema + 知识库侧 `retrieval` schema，`pg_isready` 探针 |
 | 存储② MySQL | mysql | mysql:8.0 | Text2SQL 数据源（spec §5.3.1-6 保留），`mysqladmin ping` 探针 |
 | 存储③ Redis | redis | redis/redis-stack-server:7.4-alpine | db0 缓存 / db1 Celery / db2 checkpoint（R3.2 分片），`redis-cli ping` 探针 |
@@ -43,7 +43,7 @@
 
 - **Text2SQL（MySQL）**：MySQL 服务与 `data/init_mysql.sql` / `insert_sample_data.sql` 初始化保留，连接配置（MYSQL_*）未变；`scripts/data/verify_ingestion_pipeline.py` 就绪探测已更新为 MySQL:3306 + Milvus:19530。
 - **知识图谱（Neo4j）**：`neo4j_seeded` 构建目标与 APOC 配置未动。
-- **向量检索统一 Milvus**：`retrieval_kb`（R3.4/R3.6）+ `legal`（R3.7）两集合同实例；`VECTOR_STORE_BACKEND=milvus` 与 `VECTOR_NORMALIZE=false` 的组合被**启动校验**拦截（`retrieval/settings.py::validate_app_settings`，经 `agentix/main.py::_run_settings_validation` 在 lifespan 启动期执行）：**生产环境直接拒绝启动**，开发环境记 `ERROR` 日志但放行（不阻断，避免把校验变成新的故障源）。
+- **向量检索统一 Milvus**：`retrieval_kb`（R3.4/R3.6）+ `legal`（R3.7）两集示例文档实例；`VECTOR_STORE_BACKEND=milvus` 与 `VECTOR_NORMALIZE=false` 的组合被**启动校验**拦截（`retrieval/settings.py::validate_app_settings`，经 `agentix/main.py::_run_settings_validation` 在 lifespan 启动期执行）：**生产环境直接拒绝启动**，开发环境记 `ERROR` 日志但放行（不阻断，避免把校验变成新的故障源）。
 - **元数据统一 PG**：R3.5 `scripts/migration/migrate_metadata.py` 幂等迁移（dry-run → 迁移 → 重跑零差异已验证）；`SQLModel.metadata.schema = retrieval_schema()` 仅在 PG 下生效（`is_postgres()` 分派，R3.1）。
 - **跨域 JOIN**：编排域与检索域共享同一 engine（R3.1 测试 `test_retrieval_engine_is_shared_engine`），跨域关联经应用层完成（spec 允许口径）。
 

@@ -1,4 +1,4 @@
-# 法条 / 批量导入指南
+# 数据条目 / 批量导入指南
 
 本项目的知识库（KB）以**知识条目文档**为基本存储单元，入库与检索统一走
 **kb_ingest 独立服务**（`http://localhost:8100`，compose 映射
@@ -33,6 +33,23 @@ curl -s http://localhost:8100/docs >/dev/null && echo "OK"
 如使用非默认端口（`KB_INGEST_PORT`）或域名，请替换上述基址。
 开启鉴权（`KB_REQUIRE_API_KEY`）时需带请求头 `X-API-Key: <KB_API_KEY>`。
 
+MySQL 导入（`POST /api/v1/knowledge/ingest/mysql`）的 `connection_url` 默认不校验；
+设 `KB_MYSQL_URL_GUARD=true` 后要求 scheme 为 `mysql[+driver]` 且主机在
+`KB_MYSQL_ALLOWED_HOSTS` 内（逗号/分号/空白分隔，`*.dom` 表子域但不含 apex，可带 `:port`），
+并拒绝 `?local_infile=1` 一类改写客户端行为的 query 选项（它让对端服务器可以要求
+本客户端上传本地文件；显式 `local_infile=0` 不受影响）。
+被拒时返回 400，detail 只说明被拒原因、不会回放你传的连接串。口径见
+[运行时护栏 §15.5](../architecture/runtime-guardrails.md)。
+
+同一端点的 `where` 是一段**原始 SQL 片段**，默认走拦 `;` 与注释的黑名单；
+设 `KB_MYSQL_WHERE_PARAMETRIZED=true` 后它改收结构化 `filters`——每个条件
+`{"column": "year", "op": "eq", "value": 2024}`，列名只接受字母/数字/下划线（≤64），
+运算符取 `eq/ne/gt/ge/lt/le/like/in/not_in/is_null/is_not_null`，值全部参数化绑定，
+条件之间只允许 `AND`（`or` 与括号、子查询都不在语法面内，需要布尔或关系请分多次导入）。
+**这一位是硬切**：开启后仍传 `where` 的请求一律 400，所以顺序是「调用方先迁完再开」；
+关着时传 `filters` 同样 400（不静默忽略）。口径见
+[运行时护栏 §15.9](../architecture/runtime-guardrails.md)。
+
 ---
 
 ## 方式 1：Excel / MySQL 批量导入（kb_ingest）
@@ -64,6 +81,21 @@ curl -X POST "http://localhost:8100/api/v1/knowledge/ingest/mysql" \
 
 （字段见 `MySQLIngestRequest`。）
 
+带过滤条件时，`where` 与 `filters` 哪一种可用来传取决于
+`KB_MYSQL_WHERE_PARAMETRIZED`（见文首）：
+
+```bash
+# flag 关（默认）：原始片段
+curl -X POST "http://localhost:8100/api/v1/knowledge/ingest/mysql" \
+  -H "Content-Type: application/json" \
+  -d '{"table": "provisions", "where": "year = 2024", "limit": 500}'
+
+# flag 开：结构化条件，值走参数化绑定
+curl -X POST "http://localhost:8100/api/v1/knowledge/ingest/mysql" \
+  -H "Content-Type: application/json" \
+  -d '{"table": "provisions", "filters": [{"column": "year", "op": "eq", "value": 2024}], "limit": 500}'
+```
+
 以上端点均返回 **202 Accepted**，入库在后台任务中完成，进度看日志：
 
 ```bash
@@ -93,12 +125,12 @@ python scripts/init_lightrag.py --source legal \
 # 向量检索
 curl -X POST "http://localhost:8100/api/v1/knowledge/search" \
   -H "Content-Type: application/json" \
-  -d '{"query": "违约责任", "top_k": 6}'
+  -d '{"query": "异常责任", "top_k": 6}'
 
 # 混合检索（向量召回 + 重排）
 curl -X POST "http://localhost:8100/api/v1/knowledge/search/hybrid" \
   -H "Content-Type: application/json" \
-  -d '{"query": "违约责任", "vector_top_k": 20, "rerank_top_k": 6}'
+  -d '{"query": "异常责任", "vector_top_k": 20, "rerank_top_k": 6}'
 ```
 
 ---

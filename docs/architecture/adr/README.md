@@ -33,6 +33,7 @@
 | [0004](0004-dual-orm-coexistence.md) | 双 ORM（SQLAlchemy + SQLModel）长期共存 | 已采纳 | 2026-09-21 |
 | [0005](0005-dual-retrieval-channels.md) | 双检索通道边界与选择矩阵 | 已采纳 | 2026-09-21 |
 | [0006](0006-infrastructure-criticality.md) | 关键基础设施边界与降级策略（PG/向量图谱=关键，Redis/外搜/遥测=可选显式降级） | 已采纳 | 2026-09-20 |
+| [0007](0007-execution-sandbox-port.md) | 工具执行位置做成可声明的端口（ExecutionSandbox；⑭ 已落，⑮ subprocess / ⑯ 能力探测未落——端口≠隔离） | 已采纳（部分） | 2026-10-23 |
 
 ## 如何新增 ADR
 

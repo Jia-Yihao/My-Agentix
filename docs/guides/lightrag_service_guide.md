@@ -74,7 +74,7 @@ docker-compose exec server ls -lh /app/data/lightrag/
 curl -X POST "http://localhost:8000/api/v1/lightrag/query" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "合同违约的法律后果是什么？",
+    "query": "示例文档异常的测试数据后果是什么？",
     "mode": "hybrid",
     "top_k": 10,
     "stream": false
@@ -95,7 +95,7 @@ docker-compose exec server python scripts/test/test_lightrag_service.py
 **请求体**:
 ```json
 {
-  "query": "合同违约的法律后果是什么？",
+  "query": "示例文档异常的测试数据后果是什么？",
   "mode": "hybrid",
   "top_k": 10,
   "stream": false
@@ -105,8 +105,8 @@ docker-compose exec server python scripts/test/test_lightrag_service.py
 **响应**:
 ```json
 {
-  "query": "合同违约的法律后果是什么？",
-  "response": "根据民法典相关规定，合同违约的法律后果如下...",
+  "query": "示例文档异常的测试数据后果是什么？",
+  "response": "根据示例数据集 A相关规定，示例文档异常的测试数据后果如下...",
   "mode": "hybrid",
   "metadata": {
     "top_k": 10,
@@ -122,7 +122,7 @@ docker-compose exec server python scripts/test/test_lightrag_service.py
 **请求体**:
 ```json
 {
-  "query": "劳动合同法关于试用期怎么规定？",
+  "query": "用工文档法关于试用期怎么规定？",
   "mode": "hybrid",
   "top_k": 10
 }
@@ -131,7 +131,7 @@ docker-compose exec server python scripts/test/test_lightrag_service.py
 **响应**: Server-Sent Events (SSE) 流
 
 ```
-data: 劳动合同法
+data: 用工文档法
 data: 关于
 data: 试用期规定
 ...
@@ -144,7 +144,7 @@ import requests
 
 response = requests.post(
     "http://localhost:8000/api/v1/lightrag/query-stream",
-    json={"query": "劳动合同法关于试用期怎么规定？", "mode": "hybrid"},
+    json={"query": "用工文档法关于试用期怎么规定？", "mode": "hybrid"},
     stream=True
 )
 
@@ -161,8 +161,8 @@ for line in response.iter_lines():
 ```json
 {
   "documents": [
-    "民法典第577条规定，当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任。",
-    "劳动合同法第19条规定，劳动合同期限三个月以上不满一年的，试用期不得超过一个月..."
+    "示例数据集 A 第577条规定，参与方一方不履行示例文档义务或者履行示例文档义务不符合约定的，应当承担继续履行、采取补救措施或者补偿损失等异常责任。",
+    "用工文档法第19条规定，用工文档期限三个月以上不满一年的，试用期不得超过一个月..."
   ]
 }
 ```
@@ -200,12 +200,12 @@ for line in response.iter_lines():
 
 ### 5. 测试所有模式
 
-**Endpoint**: `POST /api/v1/lightrag/test-modes?query=合同违约的法律后果是什么？`
+**Endpoint**: `POST /api/v1/lightrag/test-modes?query=示例文档异常的测试数据后果是什么？`
 
 **响应**:
 ```json
 {
-  "query": "合同违约的法律后果是什么？",
+  "query": "示例文档异常的测试数据后果是什么？",
   "results": {
     "naive": {
       "success": true,
@@ -251,7 +251,7 @@ async def main():
 
     # 1. 简单查询
     response = await service.query(
-        query="合同违约的法律后果是什么？",
+        query="示例文档异常的测试数据后果是什么？",
         mode="hybrid",
         top_k=10,
         stream=False
@@ -260,7 +260,7 @@ async def main():
 
     # 2. 结构化查询
     request = LightRAGQueryRequest(
-        query="劳动合同法关于试用期怎么规定？",
+        query="用工文档法关于试用期怎么规定？",
         mode="hybrid",
         top_k=5,
         stream=False
@@ -271,7 +271,7 @@ async def main():
 
     # 3. 流式查询
     stream = await service.query(
-        query="宪法规定了哪些公民基本权利？",
+        query="宪数据集定了哪些公民基本权利？",
         mode="hybrid",
         stream=True
     )
@@ -280,8 +280,8 @@ async def main():
 
     # 4. 插入新文档
     result = await service.insert_documents([
-        "民法典第577条规定，当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任。",
-        "刑法第232条规定，故意杀人的，处死刑、无期徒刑或者十年以上有期徒刑..."
+        "示例数据集 A 第577条规定，参与方一方不履行示例文档义务或者履行示例文档义务不符合约定的，应当承担继续履行、采取补救措施或者补偿损失等异常责任。",
+        "示例数据集 B 第232条规定，故意杀人的，处死刑、无期徒刑或者十年以上有期徒刑..."
     ])
     print(f"插入成功: {result.success}/{result.total}")
 
@@ -302,7 +302,7 @@ asyncio.run(main())
 curl -X POST "http://localhost:8000/api/v1/lightrag/query" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "合同违约的法律后果是什么？",
+    "query": "示例文档异常的测试数据后果是什么？",
     "mode": "hybrid",
     "top_k": 10,
     "stream": false
@@ -312,7 +312,7 @@ curl -X POST "http://localhost:8000/api/v1/lightrag/query" \
 curl -X POST "http://localhost:8000/api/v1/lightrag/query-stream" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "劳动合同法关于试用期怎么规定？",
+    "query": "用工文档法关于试用期怎么规定？",
     "mode": "hybrid"
   }'
 
@@ -321,8 +321,8 @@ curl -X POST "http://localhost:8000/api/v1/lightrag/insert" \
   -H "Content-Type: application/json" \
   -d '{
     "documents": [
-      "民法典第577条规定，当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任。",
-      "刑法第232条规定，故意杀人的，处死刑、无期徒刑或者十年以上有期徒刑..."
+      "示例数据集 A 第577条规定，参与方一方不履行示例文档义务或者履行示例文档义务不符合约定的，应当承担继续履行、采取补救措施或者补偿损失等异常责任。",
+      "示例数据集 B 第232条规定，故意杀人的，处死刑、无期徒刑或者十年以上有期徒刑..."
     ]
   }'
 
@@ -330,7 +330,7 @@ curl -X POST "http://localhost:8000/api/v1/lightrag/insert" \
 curl "http://localhost:8000/api/v1/lightrag/stats"
 
 # 5. 测试所有模式
-curl -X POST "http://localhost:8000/api/v1/lightrag/test-modes?query=合同违约的法律后果是什么？"
+curl -X POST "http://localhost:8000/api/v1/lightrag/test-modes?query=示例文档异常的测试数据后果是什么？"
 ```
 
 ### JavaScript / TypeScript
@@ -382,8 +382,8 @@ async function queryLightRAGStream(query: string) {
 }
 
 // 使用
-queryLightRAG('合同违约的法律后果是什么？');
-queryLightRAGStream('劳动合同法关于试用期怎么规定？');
+queryLightRAG('示例文档异常的测试数据后果是什么？');
+queryLightRAGStream('用工文档法关于试用期怎么规定？');
 ```
 
 ---
@@ -423,7 +423,7 @@ EMBEDDING_DIMENSION=1536
 # 是否在构建时初始化 LightRAG
 INIT_LIGHTRAG_ON_BUILD=true
 
-# 限制初始化的法条数量（留空=全部）
+# 限制初始化的数据条目数量（留空=全部）
 LIGHTRAG_INIT_LIMIT=
 ```
 
@@ -526,8 +526,8 @@ result = await service.insert_documents(documents, batch_size=50)
 | **更新方式** | 增量插入 | Cypher 更新 |
 
 **两者是互补的**：
-- **LightRAG**: 适合 "合同违约的法律后果是什么？" 这类问答
-- **Neo4j**: 适合 "找出所有引用民法典第577条的司法解释" 这类关系查询
+- **LightRAG**: 适合 "示例文档异常的测试数据后果是什么？" 这类问答
+- **Neo4j**: 适合 "找出所有引用示例数据集 A 第577条的示例说明" 这类关系查询
 
 ---
 

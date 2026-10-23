@@ -43,4 +43,4 @@
 
 - 分层 import 规则：`docs/architecture/layers.md`
 - 接口冻结：`docs/architecture/interfaces.md`
-- 迁移进度：`docs/migration/module-inventory.md`
+- 当前目录结构与模块职责：`docs/architecture/overview.md`

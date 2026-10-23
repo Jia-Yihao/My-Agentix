@@ -44,7 +44,7 @@ def hydrate_citations_from_stored(session: Session, stored) -> list[dict]:
                     "page_no": item.get("page_no"),
                     "snippet": item["snippet"],
                     "source": item.get("source"),
-                    # 效力徽标/替代提示随历史透传（老数据无此键 → None，前端容错）
+                    # 有效性徽标/替代提示随历史透传（老数据无此键 → None，前端容错）
                     "effective_status": item.get("effective_status"),
                     "replaced_by": item.get("replaced_by"),
                     **{key: item.get(key) for key in FILE_META_KEYS},

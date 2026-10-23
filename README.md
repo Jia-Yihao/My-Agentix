@@ -47,7 +47,7 @@
 - [13. 技术栈](#13-技术栈)
 - [14. 文档](#14-文档)
 - [15. 性能与成本（待实测）](#15-性能与成本待实测)
-  - [15.1 本地法律语料检索对照](#151-本地法律语料检索对照2026-10-11)
+  - [15.1 本地测试数据语料检索对照](#151-本地测试数据语料检索对照2026-10-11)
 - [16. 已知限制](#16-已知限制)
 - [参与贡献](#参与贡献)
 - [许可证](#许可证)
@@ -92,9 +92,11 @@ My Agentix 是一套**生产导向的 Agent 平台**——以 Agent 内核为核
 ## 3. 架构
 
 <div align="center">
-  <img src="./docs/assets/architecture.png" alt="My Agentix 平台整体架构图" width="100%">
-  <p><i>三层 Multi-Agent 编排（主路由层 → 多工具子图层 → 原子工具层），Agent Core 2.0 / Agent Runtime / Control Plane / MCP / 可观测构成运行时内核与横切能力</i></p>
+  <img src="./docs/assets/project-architecture.png" alt="My Agentix 项目整体架构图" width="100%">
+  <p><i>两套问答域（测试数据编排 / 检索）+ 知识入库流；默认主链路为 Vue3 → Nginx → FastAPI → ChatService → LangGraph L2 → Tool / Retrieval → 数据层，橙色虚线为默认关闭/可选能力。完整说明见 <a href="./docs/architecture/overview.md">项目全景与整体结构</a></i></p>
 </div>
+
+> **先读这一篇**：[`docs/architecture/overview.md`](docs/architecture/overview.md) 给出三条端到端链路、完整目录地图、默认开关矩阵与关键代码索引；本文档其余章节是围绕它的展开。
 
 ### 三层 Multi-Agent 请求链路
 
@@ -168,7 +170,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 | **演化回路** | `evolution/` | 在线录制提案轨迹供离线回放与回归；`KNOWLEDGE`/`PROGRAM` 两载体（payload 白名单 fail-closed）+ 提案三状态 append-only 落盘（`EVOLUTION_PROPOSAL_LOG`）+ 睡眠学习（`EVOLUTION_SLEEP_ENABLED`，只产提案不晋升） |
 | **端口契约** | `agentix/domain/agent/ports.py` | Context / Planner / ToolSelector / Verifier / Memory / Event / Rollback Protocol（M0 拆入；graph / repository / retrieval Protocol 留 `domain/ports/`） |
 
-五层职责与依赖硬规则见 **[Agent Core 五层架构](docs/architecture/agent-core-layers.md)**；离线走查见 **[Research Agent Demo](docs/guides/research-agent-demo.md)**；迁移清单与勾选状态见 `docs/migration/module-inventory.md`。
+五层职责与依赖硬规则见 **[Agent Core 五层架构](docs/architecture/agent-core-layers.md)**；离线走查见 **[Research Agent Demo](docs/guides/research-agent-demo.md)**；当前目录结构与模块职责见 **[项目全景与整体结构](docs/architecture/overview.md)**。
 
 **依赖边界（CI 强制）**：`domain/` 零第三方；LangGraph 导入受 p66 白名单棘轮（equality 断言，仅登记在册 10 文件，新增即红）；`capabilities/` 不反向依赖业务循环；Runtime 真源在 `agentix/runtime/`（Strangler shim `application/runtime/` 已随 A4 删除）。
 
@@ -239,9 +241,9 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 
 ![统一工作台 - Agent 助手模式](docs/assets/ui/assistant-workspace.png)
 
-> 上述界面截图来自本地隔离测试账号与测试数据库（2026-10-11 实机采集），不包含真实用户数据。
+> 上述界面截图来自本地隔离测试账号与测试数据库（2026-10-22 实机重拍），不包含真实用户数据；截图文案与当前实现一致（见 `HomeWelcomeHero.vue`、`HomeView.vue`）。
 
-**RAG 质量与时延优化路线**：先用人工核验的检索金标建立 Recall@5 / MRR 与引用正确率基线，再逐项对照 BM25 / Dense / RRF / Rerank（`python evals/hybrid_eval.py --kb-id <KB>`）；当前检索评估依赖真实索引和知识库数据，模板数据不能证明法条正确性。混合检索的 Dense 与 BM25 候选现已并发获取；BM25 使用倒排 posting 只扫描命中查询词的 chunk，并把阿拉伯数字与中文数字法条号规范到同一词项。索引快照仍按活动 `artifact_id` 隔离，语料只取该版本 manifest 内 `ready` 文档的 chunk。LM Studio 的 embedding 接口不能代替 Cross-encoder `/rerank` 接口；未成功精排会明确记为降级，不冒报成功。优化效果须在真实知识库上测量并同时检查召回质量。后续阶段与验收指标见 **[RAG 优化路线](docs/design/rag-optimization.md#8-后续质量提升计划)**。
+**RAG 质量与时延优化路线**：先用人工核验的检索金标建立 Recall@5 / MRR 与引用正确率基线，再逐项对照 BM25 / Dense / RRF / Rerank（`python evals/hybrid_eval.py --kb-id <KB>`）；当前检索评估依赖真实索引和知识库数据，模板数据不能证明数据条目正确性。混合检索的 Dense 与 BM25 候选现已并发获取；BM25 使用倒排 posting 只扫描命中查询词的 chunk，并把阿拉伯数字与中文数字数据条目号规范到同一词项。索引快照仍按活动 `artifact_id` 隔离，语料只取该版本 manifest 内 `ready` 文档的 chunk。LM Studio 的 embedding 接口不能代替 Cross-encoder `/rerank` 接口；未成功精排会明确记为降级，不冒报成功。优化效果须在真实知识库上测量并同时检查召回质量。后续阶段与验收指标见 **[RAG 优化路线](docs/design/rag-optimization.md#8-后续质量提升计划)**。
 
 **上传通道与能力边界**（三条通道职责不同）：
 
@@ -271,6 +273,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 - **配置漂移告警**（Phase 22）：会话中途检测配置哈希变化 → 结构化 `system_notice`（仅键名不含值），实现见 `application/services/config_watch.py`
 - **流式防挂起**（批次 B1）：SSE 逐次取事件包 `STREAM_IDLE_TIMEOUT`（默认 60s）看门狗——上游静默挂起即 error + done 兜底收口并归还并发槽位，连接绝不悬挂
 - **预算意识**（Phase 28）：步数预算观测，轨迹 append `budget_notice`（剩余 ≤2 可见、不动静态前缀）+ 状态栏 `max_iter` 常量键（`BUDGET_NOTICE_ENABLED` 默认关）
+- **执行边界加固**（Phase S · §24.3 T0）：治理链回答「该不该做」，这一层回答「跑出去之后能不能切断」——非协程工具 handler 下放线程后 `timeout_ms` 才真能截断（`TOOL_SYNC_OFFLOAD_ENABLED`，默认关）、MCP 子进程只拿白名单环境不再继承全部密钥（`MCP_SUBPROCESS_ENV_SCRUB`）、表达式资源护栏（长度/指数/位宽/浮点有限性，语法白名单挡不住 `9**9**9`）、text2sql 两条闸门共用同一份只读词表（先等长抹除字面量再按词边界匹配）、日志凭据脱敏、`engine.echo` 与生产身份从 `DEBUG` 解耦（`DB_ECHO`/`APP_ENV`/`UVICORN_RELOAD`）、compose backend 加 `no-new-privileges` + CPU/内存/pids 配额；后续补上 T1 ⑫ 提前落地的 `kb_ingest` 连接串闸门（`KB_MYSQL_URL_GUARD`，默认关）与 T1 ⑧ 的 handler 类型契约告警（`TOOL_HANDLER_CONTRACT_ENABLED`，默认关：注册期点名非协程 handler，把「这条工具的超时为什么不生效」从排障现场前移到启动日志）、以及 T1 ⑬ 的数据库 engine 惰性化（`agentix/infrastructure/core/database.py` 不再在模块导入期建池，`import agentix.capabilities.mcp` 连带把整个数据面拉起来的副作用已切断；`engine` / `SessionLocal` 旧写法仍可用，只是取用才建）、以及 T0 ⑤ 的容器运行身份旋钮（`AGENTIX_CONTAINER_USER`，默认 `0:0` 仍是 root——降权要先准备宿主目录属主，否则失败形态是 restart 崩溃循环而不是拒绝启动，步骤见 [staging Runbook](docs/runbooks/staging-environment.md)）、以及 T1 ⑪ 的设置接口授权闸门（`SETTINGS_AUTHZ_ENABLED`，默认关：打开后 `GET /settings/{kb_id}` 要求该 kb 属于调用者租户、`PUT` 再要求 admin。**为什么掩码不够**——`llm_base_url` 这类字段本身可写，改指外部端点不需要密钥却足以让该租户的提问整批外送；「掩码」堵的是读、「授权」才堵得住写。开启有两个前置：迁移已回填 `knowledgebase.tenant_id`（NULL 走 fail-closed 一律 403）、且该租户内确有 admin（全仓暂无自助升 admin 的接口））、以及 T1 ⑫ 的第二半——导入过滤参数化（`KB_MYSQL_WHERE_PARAMETRIZED`，默认关：开则原始 `where` 片段一律拒，过滤只能走 `{column, op, value}` 结构化条件，列名过标识符白名单、运算符取封闭枚举、值全部走 bindparams。**为什么不是"再补几个黑名单词"**——黑名单拦得住 `;` 堆叠，拦不住 `1=1 OR 1=1` 这类合法但越界的片段，对拼出来的 SQL 而言调用方给的就是语法；也因此这一位是硬切而不是加字段，调用方要先迁完）、以及 T2 ⑭ 的执行位置端口（`EXECUTION_SANDBOX_ENABLED`，默认关：`ToolSpec.sandbox` 把「这条工具在哪儿跑」从写死在 `_invoke` 里变成声明，能跑的 `in_process` / `thread` 两档中后者让**单条工具**不必为它打开全局 `TOOL_SYNC_OFFLOAD_ENABLED` 就能下放线程；声明未实现的 `subprocess` / `container` 在执行点被拒而不是静默退回进程内。**注意它不是隔离**：两档同进程、同 GIL、同环境变量，端口的价值是让 ⑮ 的墙有地方接）。口径见 [运行时护栏 §15](docs/architecture/runtime-guardrails.md)、选型与被拒方案见 [PROJECT_SPEC §23.8](docs/PROJECT_SPEC.md)、逐项实测见 [PROJECT_SPEC §24](docs/PROJECT_SPEC.md)
 
 **`kb_ingest` 服务间鉴权**：该服务是**写入语义**（入库直接改 Milvus 集合），且 compose 以 `ports: 8100:8000` 发布、`uvicorn --host 0.0.0.0` 启动。现已于 **router 级**挂载 `X-API-Key` 校验（router 级而非逐端点，避免新端点静默裸奔）：
 
@@ -303,7 +306,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 
 | 能力 | 说明 |
 |------|------|
-| 黄金评估集 | `evals/legal_golden.jsonl`——102 条 golden，覆盖全部 7 类路由 + 拒答 / 引用 / 效力感知；按 `difficulty`/`source` 分层汇总（Phase 31 只增列不增删行） |
+| 黄金评估集 | `evals/legal_golden.jsonl`——102 条 golden，覆盖全部 7 类路由 + 拒答 / 引用 / 有效性感知；按 `difficulty`/`source` 分层汇总（Phase 31 只增列不增删行） |
 | 确定性指标 | 路由准确率 / 引用命中率 / 拒答正确率 / 引用正确性（空真口径显式可见） |
 | 质量门禁 | `quality_gate.py`——三态 **PASS / FAIL / NOT-ENFORCED**，不低于基线 -2% |
 | 消融基准表 | `evals/ablations/`——A-G 七变体（LLM only → Full Agentix）对比，聚合出 BENCHMARK.md |
@@ -440,7 +443,13 @@ docker compose --profile full up -d       # 基础设施 + backend + web（第 1
 
 **测试真源**（唯一声明处，其他文档只应指向本节）：
 
-**前端套件当前验证值**：2026-10-11 界面实测与按钮调试后运行 `npm run test -- --reporter=dot`，**26 个测试文件、217 个测试全部通过**（测试规模较 README 既有基线增加 2 个 Composer 上传控件用例与侧栏折叠/账户菜单/发送键语义三组组件用例）。一口径 +55 = 统一执行链 Stage F2c-a（A-P2-2 余项）——Multi-Agent 统一退出契约 + 六失败模式打点（`ManagerOutcome.exit_status/exit_reason/truncated` 复用 `domain/runtime/lifecycle` 的 `ExitStatus/ExitReason` 词表单源，`derive_exit_contract` 按 reason 推导：converged→completed、预算与轮次耗尽→failed/max_iterations+truncated、peer 取消→interrupted、未接线/无进展/矛盾→failed/error，并强制 `truncated == (exit_reason == max_iterations)` 契约等式；`lg_supervisor` meta 透传三键，Manager 异常路径诚实 `failed/error`；`multiagent_failure_mode_total{mode}` 失败模式恰打一次、NONE 不计；`_aggregate_multi_agent` 评测面零接触）；`tests/test_p88_multiagent_exit_contract.py` 55 条，3736→3791，2026-10-03；较上一口径 +38 = 统一执行链 Stage F2b-e（R-P2-5）——evals 混合检索归因报告（`evals/hybrid_eval.py` 独立脚本：`Recall@5/MRR × {BM25, Dense, RRF, +Rerank}` 四列归因表，同问题集/同 `--search-k`/同匹配函数，唯一变量是通道；默认 `legal_golden.jsonl` 23 问 `kb-query` 小集（`--limit`/`--route` 可调，10–50 问带）；匹配复用 `run_eval` 解析器——法规名归一互相包含 + `第X条` 三形（`第148条` ≡ `第一百四十八条`）；分母仅金标非空题，单题通道失败剔出分母、整列失败 = 表内 `n/a` + `unavailable` 诚实 fail-open；报告键固定 `{columns, questions, table, unavailable}` 只增不进门禁——`evaluate()` summary / `CSV_FIELDS` / CI `METRICS` 五键门 / `quality_gate` 零接触；缺 `--kb-id`/索引未就绪 exit 2 不出假表）；`tests/test_p87_hybrid_eval_report.py` 38 条，3698→3736，2026-10-03；较上一口径 +27 = 统一执行链 Stage F2b-b（R-P2-1）——改写/HyDE（两独立键 `RETRIEVAL_QUERY_REWRITE_ENABLED`/`RETRIEVAL_HYDE_ENABLED` 默认关 = 基线逐位等价：多轮改写意图补全 + HyDE 假设性文档扩展，`usecases/query_rewrite.py` 纯函数归一（改写取首行去引号截 512、HyDE 截 1200、空/等价输出回退原 query，LLM 失败/超时 8s 一律 fail-open）；接线单缝 `retrieve_scoped_docs_cached`——生效才改 effective_norm（dense/hybrid 检索文本）与缓存池后缀 `|r1`/`|y1`（沿 hybrid `|h1` 先例），rerank 仍按原查询打分；`history` 参数供意图补全（预检路径传 `history_text`，工具/端口适配缺省单轮））；`tests/test_p84_rag_p2_query_rewrite.py` 27 条，3617→3644，2026-10-03；较上一口径 +25 = 统一执行链 Stage F2b-a（R-P2-2）——证据门禁（`EVIDENCE_GATE_MODE` observe 默认=与基线逐位等价 / warn 答案尾附一条「证据核验提示」/ refuse 答案替换为拒答文案且 citations 清空；触发信号 = grounding 低分（`<GROUNDING_LOW_SCORE_WARN`，0 关）∪ R1-2 法条未核验 ∪ 引用无法溯源被剥离，判定纯函数 `agentix/domain/policies/evidence_gate.py`，未知模式 fail-safe 回 observe、门禁自身故障 fail-open 回基线交付；审计 `tool_ctx.last_evidence_gate` + Prometheus `evidence_gate_total{action}`；键沿 GROUNDING_* 检索域三处同步（rset 声明 + .env.example + selfcheck 白名单））；`tests/test_p83_rag_p2_evidence_gate.py` 25 条，3592→3617，2026-10-03；较上一口径 +43 = 统一执行链 Stage F2a（M-P2-2/4）——PreCompact 重注（`CONTEXT_PRECOMPACT_REINJECT_ENABLED` 默认关：超预算压缩前把关键规则+五要素硬约束重注上下文尾部，约束优先按出现序去重 + 规则声明序补满、1500 字符有界，`[precompact:<source>]` 行级审计标记 + snapshot meta 来源计数，块不在轨迹行内 ⇒ 丢弃循环必幸存）+ 画像作用域（`MEMORY_PROFILE_SCOPE_ENABLED` 默认关：画像字段分级 stable/session/meta 单源、未知字段 fail-closed；稳定层跨会话沿用走 `GET/POST /ops/memory/profile-scope` 授权、读取异常 fail-closed；`POST /ops/memory/clear-user` 分段计数清除画像+语义卡+摘要全链路，errors 非空显式 500）；`tests/test_p82_memory_p2.py` 43 条，3549→3592，2026-10-03；较上一口径 +34 = 统一执行链 Stage F1e（A-P1-4）——HITL 进环（`HITL_IN_LOOP_ENABLED` 默认关：图内 `execute_task` 遇 `review_required` 挂起进图（langgraph interrupt + checkpointer，approve 落批准重试一次、reject/未知 fail-closed 终止后续波次回 failed）；闸开+无 approver+无决策面 ⇒ REJECT `no_approver_wired_fail_closed`（沿 sidecar 语义，不留无人批的 PENDING）；裁决序 deny→hook→ask强制→allow；py3.12+ 才注入、py3.10 降级 review_required；恢复面 `POST /ops/hitl/in-loop`）；`tests/test_p81_hitl_in_loop.py` 35 条，3515→3549，2026-10-03；较上一口径 +33 = 统一执行链 Stage F1d（A-P1-3）——并发工具轮（`AGENT_TOOL_ROUND_CONCURRENCY` 默认 1 = 串行逐位等价：L2 检索聊天 `_execute_tool_calls` 与 L3 `AgentLoop` 批路径一把旋钮，派发前逐调用授权门 fail-closed、危险工具有效风险 MEDIUM+ 强制串行、批宽按剩余步数裁剪、观测声明序落位、每批至多一次 replan；「家政工具不计进度」留口 F2）；`tests/test_p80_multiagent_p1_concurrent_round.py` 33 条，3482→3515，2026-10-03；较上一口径 +36 = 统一执行链 Stage F1c（A-P1-2）——LLM 规划器（`AGENT_LLM_PLANNER_ENABLED` 默认关：`LLMPlanner` 结构化输出、执行表白名单整步过滤、失败/空计划 fail-open 回单步；`AGENT_MAX_REPLANS>0` 时注入 `RetryReplanner` 内层）+ TodoWrite（`todo_write` 整体替换、至多一条 in_progress、`TodoStore` JSON 落盘可恢复、回执即读通道；L2+control 五处同步）；另修 `test_notice_never_contains_config_values` 随机哈希撞字串假阳性；`tests/test_p79_multiagent_p1_llm_plan.py` 36 条，3446→3482，2026-10-03；较上一口径 +35 = 统一执行链 Stage F1b2——M-P1-3 MEMORY 索引制（记忆注入转「段落头 + obs:// 指针索引」，正文外置 ArtifactStore，预算 1500 封顶截尾）+ M-P1-4 AGENTS 级联（全局 ~/.agentix → 项目根 → 消息触达子目录三层 + read_agents_file 按需取回）+ M-P1-5 obs:// 隔离接线（ContextEngine 隔离引用真正可取回，read_artifact 认 obs:// 前缀），3 新旋钮默认关；`tests/test_p78_index_cascade_isolate.py` 35 条，3411→3446，2026-10-03；较上一口径 +51 = 统一执行链 Stage F1b——Memory P1 接线（M-P1-1 向量召回 fail-open、M-P1-2 后台评审 LLM 路由 + turn-end 生产者三接线点、M-P1-5 真分词计数 7 处估点，2 新旋钮默认关；`tests/test_p77_memory_p1_wiring.py` 51 条，3360→3411，2026-10-03）；较上一口径 +27 = 统一执行链 Stage F1a——RAG P1 真 Hybrid（R-P1-1..5 全落地：后端元组修复使距离阈值实际生效、rank_fusion 纯函数、进程内 BM25 稀疏通道、retrieve_hybrid_docs 四阶段与 SSE retrieval 进度帧、Channel B 融合 flag 门控，12 新旋钮默认关；`tests/test_p76_rag_p1_hybrid.py` 27 条，3333→3360，2026-10-03）；较上一口径 +28 = 统一执行链 Stage M·M6——删三簇 shim（`infrastructure/tools`、`mcp`、`capabilities/tools`）+ M0–M5 全部旧路径清尾（56 文件 + 空目录删除、`_TARGET` 归零、20 个旧 dotted 前缀静态 import 面归零、p66 `SHIM_DIRS` 空集终态、p69 `COMPLETED_STAGES` 含 M6、p70–p74 守卫断言翻转、生产源零旧斜杠串）（2026-10-03，新增 `tests/test_p75_m6_shim_removal.py` 30 条 + p69/p70/p72/p73 守卫改写净 −2，3305→3333）；再上一口径 +27 = 统一执行链 Stage M·M5——检索域收编（`chat_agent_runner` 剥离 langgraph 换 capability 内部工具循环、首轮无工具单 delta 修二次调模型 bug、Port 装配单门收敛 `knowledge_gateway.get_retrieval_port`、`legal_effectiveness`/`grounding_verify` 迁 `agentix/domain/policies/` 旧路径 alias shim、p66 LangGraph 白名单 11→10、`PROTECTED_VERIFIER_PATHS` 补真实路径）（2026-10-03，新增 `tests/test_p74_m5_retrieval_unification.py` 25 条 + p69 manifest 参数化 +2，3278→3305）；再上一口径 +21 = 统一执行链 Stage M·M4——控制平面迁 `agentix/runtime/control_plane.py`（Run registry/取消/准入归位 Runtime 簇；`TokenBudget` 收进 TYPE_CHECKING 保簇自包含，旧路径 alias shim，`runtime/__init__` 刻意不汇总导出）（2026-10-02，新增 `tests/test_p73_m4_runtime_control_plane.py` 21 条，3257→3278）；再上一口径 +54 = 统一执行链 Stage M·M3——策略件迁顶层 policies/（planner 归并 replanner、verifier、hitl+hitl_bridge、guardrails 自 capabilities 迁入；executor 保留旧路径 guardrails import 避 p66 #3），旧路径 7 模块 sys.modules 别名 shim + 4 惰性包门面，p66 SHIM_DIRS +5、p70 guardrails 断言翻转（2026-10-02，新增 `tests/test_p72_m3_policies_migration.py` 53 条 + p70 净 +1，3203→3257）；再上一口径 +55 = 统一执行链 Stage M·M2——agent 编排件迁顶层 `orchestration/`（orchestrator/executor/langgraph + strategies/multi_agent，lg_prompts 业务 prompt 留 application），旧路径 8 模块 `sys.modules` 别名 shim + multiagent 惰性门面，`agentix.agent.__init__` 改惰性防加载序回拉（2026-10-02，新增 `tests/test_p71_m2_orchestration_migration.py` 55 条，3148→3203）；再上一口径 +66 = Stage M·M1——capabilities/tools 迁顶层 tools/（gateway/adapters 子包 + 顶层注册面；注册三件套因 `registry` 单例与子包名冲突落顶层），旧路径 16 文件 `_TARGET` shim + PEP 562 惰性门面，guardrails 留驻待 M3（2026-10-02，新增 `tests/test_p70_m1_tools_migration.py` 66 条，3082→3148）；再上一口径 +54 = 统一执行链 Stage M·M0——契约拆分（`agentix/domain/agent`、`agentix/domain/runtime`、`agentix/domain/tool` 三个纯契约子包）+ M1–M6 逐文件迁移清单冻结（2026-10-02，新增 `tests/test_p69_stage_m_manifest.py` 51 条 + phase1/p17/p22 随迁守卫 3 条，3028→3082）；再上一口径 +33 = 统一执行链 Stage B·B2b——33-P0 RAG 收敛后三项（R-P0-3 rerank 三态收敛 / R-P0-4 Cypher 只读闸 + Neo4j schema TTL / R-P0-5 打点不吞错，2026-10-02，`tests/test_p68_rag_p0_convergence.py` 14→46 条 + `tests/test_p02_wiring.py` 打点契约 22→23 条，2995→3028）；再上一口径 +14 = 统一执行链 Stage B·B2a——33-P0 RAG 收敛前两项（LightRAG 单实现去重门面 / 租户 fail-closed，2026-10-02，新增 `tests/test_p68_rag_p0_convergence.py` 14 条，2981→2995）；再上一口径 +30 = 统一执行链 Stage B·B1——32-P0 记忆收敛（双卡合并 card_schema 单源 / 脱敏补齐中英姓名地址写读双向 / 冲突键全 tags + 30 天时间窗标记 / 3 scope 收口，2026-10-02，新增 `tests/test_p67_memory_p0_convergence.py` 30 条，2951→2981）；再上一口径 +9 = 统一执行链 Stage A 批次（A6 死代码批 51 文件 + 分层守卫定稿 p66——可达性扫描零引用直删、文档反引号与现时态陈述同步、12 守卫测试化收敛，2026-10-02，新增 `tests/test_p66_arch_guards.py` 9 条，2942→2951）；再上一口径 +13 = 统一执行链 Stage A 批次（A5 SSE 全量统一 R5a–R5d——run-scoped emitter / 词汇归一保留 `type` 删 `event` / 前端共 parser / 流式轨迹桥 + 持久化评估门，2026-10-02，新增 `tests/test_p65_unified_sse.py` 13 条，2929→2942，前端 vitest 121→126）；再上一口径 +11 = 统一执行链 Stage A 批次（A4 HITL 生产审批决策面 / application/runtime 直删 / 死转移处置，2026-10-02，新增 `tests/test_p64_hitl_ops_and_dead_transitions.py` 11 条，2918→2929）；再上一口径 +22 = 统一执行链 Stage A 批次（A3 图内规划收敛影子对拍/切流 + TEXT2SQL 死 flag 处置，2026-10-01，新增 `tests/test_p63_planner_convergence.py` 22 条，2896→2918）；再上一口径 +18 = 统一执行链 Stage A 批次（A2a–A2c 三闸有效化 / 五项旁路收编 / 记忆三工具守卫用例，2026-10-01，新增 `tests/test_p62_unified_gateway.py` 18 条，2878→2896）；再上一口径 +31 = 统一执行链 Stage A 批次（A1a–A1e 运行登记/退出契约/Run API 迁移/元数据减负/守卫用例，2026-10-01，新增 `tests/test_p61_unified_run_chain.py` 31 条，2847→2878）；再上一口径 +384 = 优化批次 P1–P6（任务执行 / Skills / 渐进上下文 / 异常闭环 / Proactive / 长时记忆，2026-10-01，新增 `test_p49`–`test_p60` 十二个测试模块共 384 条，逐批 2463→2496→2542→2594→2668→2761→2847）；再上一口径 +5 = 穿插批次 B/C（B1 流式 idle 看门狗 4 条 + B2 SSE 词汇双写 1 条；C2 为 lint 清理不增后端计数；前端 vitest 113 → 121）；再上一口径 +20 = Phase 29 记忆结构化 `test_agent_phase29_memory_cards.py` profile_card/派生幂等/冲突标记 20 条；再上一口径 +41 = Phase 30 进化闭环 41 条；再上一口径 2397 = Phase 31 评估二期 40 条；再上一口径 2357 = Phase 28 自主护栏 28 条；再上一口径 2329 = 审计批次 A 归属校验 `test_p48_ownership.py` 21 条 + 限流 A3 扩 4 条 + 上传读鉴权契约 1 条）。
+> **本次文档 / 架构改动定向回归**：2026-10-22 实测 `.venv/Scripts/python.exe -m pytest tests/test_p41_doc_consistency.py tests/test_p66_arch_guards.py tests/test_p69_stage_m_manifest.py tests/test_p70_m1_tools_migration.py tests/test_p71_m2_orchestration_migration.py tests/test_p72_m3_policies_migration.py tests/test_p73_m4_runtime_control_plane.py tests/test_p74_m5_retrieval_unification.py tests/test_p75_m6_shim_removal.py -q` → **348 passed**（Python 3.12.13）。这是定向守卫的测量值，不是全量套件基线；全量历史口径见下方说明。
+
+> **本轮全量离线套件实测**：2026-10-23 `.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **4729 passed / 14 skipped / 0 failed**（401.34s，Python 3.12.13，单机离线，未开并行）。这是 ⑫（WHERE 参数化）落地后的**第一次**全量实测，它抓到了定向回归漏掉的一处旧调用形状：`tests/test_p91_final_boundaries.py::TestMySQLIngestSQLGuard` 两条用例仍以 `MySQLIngestor._build_query(None, request)` 裸调，而 ⑫ 后该方法要读 `self.config.mysql_where_parametrized` ⇒ `AttributeError`（首跑 2 failed）。修法只动用例——改成 `MySQLIngestor.__new__` + 真 `Config` 的真实调用形状，flag 保持默认关、断言仍是加固前的 SQL 字符串，产品代码零改动；p91 单文件 50 条全绿，修复后复测得 4694。其后同日的 G7 卫生项批次新增 `tests/test_p116_public_paths_single_source.py` 35 条（公开路径清单收成 `agentix/interfaces/http/public_paths.py` 单一事实源、`/api` 移出公开面），本数即该批次后的复测值。相对上一口径 4463（⑫ 之前）：本批次明确新增 `tests/test_p113_where_parametrization.py` 75 条 + `tests/test_p114_execution_sandbox.py` 66 条 + `tests/test_p115_staging_matrix_generated.py` 44 条 + `tests/test_p116_public_paths_single_source.py` 35 条 = 220 条；其余 +46 来自本轮之外尚未逐项回溯的改动，所以下方口径链仍**不接续**本数——要接的是下一次全量实测。
+
+> **教训（写进口径链，不只写进这一次的说明）**：⑫ 落地时只跑了定向守卫（p113 及其邻域），而它改的是 `_build_query` 的调用契约，破坏面在**没人想到要跑**的旧文件里。定向回归证明"新行为对"，全量套件才证明"旧行为没被撞坏"——两者不可互替。
+
+**前端套件当前验证值**：2026-10-23 运行 `npm run test -- --reporter=dot`，**26 个测试文件、223 个测试全部通过**（5.77s）。较上一口径 217 增加 6 条 = ⑪ 的可辨识度用例（`web/src/modules/knowledge/components/KbRagSettings.test.ts` 15 条里的 403/404 具体文案与 GET 失败禁用保存）。上一口径（2026-10-11 界面实测与按钮调试）：26 个测试文件、217 个测试全部通过（较更早基线增加 2 个 Composer 上传控件用例与侧栏折叠/账户菜单/发送键语义三组组件用例）。一口径 +55 = 统一执行链 Stage F2c-a（A-P2-2 余项）——Multi-Agent 统一退出契约 + 六失败模式打点（`ManagerOutcome.exit_status/exit_reason/truncated` 复用 `domain/runtime/lifecycle` 的 `ExitStatus/ExitReason` 词表单源，`derive_exit_contract` 按 reason 推导：converged→completed、预算与轮次耗尽→failed/max_iterations+truncated、peer 取消→interrupted、未接线/无进展/矛盾→failed/error，并强制 `truncated == (exit_reason == max_iterations)` 契约等式；`lg_supervisor` meta 透传三键，Manager 异常路径诚实 `failed/error`；`multiagent_failure_mode_total{mode}` 失败模式恰打一次、NONE 不计；`_aggregate_multi_agent` 评测面零接触）；`tests/test_p88_multiagent_exit_contract.py` 55 条，3736→3791，2026-10-03；较上一口径 +38 = 统一执行链 Stage F2b-e（R-P2-5）——evals 混合检索归因报告（`evals/hybrid_eval.py` 独立脚本：`Recall@5/MRR × {BM25, Dense, RRF, +Rerank}` 四列归因表，同问题集/同 `--search-k`/同匹配函数，唯一变量是通道；默认 `legal_golden.jsonl` 23 问 `kb-query` 小集（`--limit`/`--route` 可调，10–50 问带）；匹配复用 `run_eval` 解析器——数据集名归一互相包含 + `第X条` 三形（`第148条` ≡ `第一百四十八条`）；分母仅金标非空题，单题通道失败剔出分母、整列失败 = 表内 `n/a` + `unavailable` 诚实 fail-open；报告键固定 `{columns, questions, table, unavailable}` 只增不进门禁——`evaluate()` summary / `CSV_FIELDS` / CI `METRICS` 五键门 / `quality_gate` 零接触；缺 `--kb-id`/索引未就绪 exit 2 不出假表）；`tests/test_p87_hybrid_eval_report.py` 38 条，3698→3736，2026-10-03；较上一口径 +27 = 统一执行链 Stage F2b-b（R-P2-1）——改写/HyDE（两独立键 `RETRIEVAL_QUERY_REWRITE_ENABLED`/`RETRIEVAL_HYDE_ENABLED` 默认关 = 基线逐位等价：多轮改写意图补全 + HyDE 假设性文档扩展，`usecases/query_rewrite.py` 纯函数归一（改写取首行去引号截 512、HyDE 截 1200、空/等价输出回退原 query，LLM 失败/超时 8s 一律 fail-open）；接线单缝 `retrieve_scoped_docs_cached`——生效才改 effective_norm（dense/hybrid 检索文本）与缓存池后缀 `|r1`/`|y1`（沿 hybrid `|h1` 先例），rerank 仍按原查询打分；`history` 参数供意图补全（预检路径传 `history_text`，工具/端口适配缺省单轮））；`tests/test_p84_rag_p2_query_rewrite.py` 27 条，3617→3644，2026-10-03；较上一口径 +25 = 统一执行链 Stage F2b-a（R-P2-2）——证据门禁（`EVIDENCE_GATE_MODE` observe 默认=与基线逐位等价 / warn 答案尾附一条「证据核验提示」/ refuse 答案替换为拒答文案且 citations 清空；触发信号 = grounding 低分（`<GROUNDING_LOW_SCORE_WARN`，0 关）∪ R1-2 数据条目未核验 ∪ 引用无法溯源被剥离，判定纯函数 `agentix/domain/policies/evidence_gate.py`，未知模式 fail-safe 回 observe、门禁自身故障 fail-open 回基线交付；审计 `tool_ctx.last_evidence_gate` + Prometheus `evidence_gate_total{action}`；键沿 GROUNDING_* 检索域三处同步（rset 声明 + .env.example + selfcheck 白名单））；`tests/test_p83_rag_p2_evidence_gate.py` 25 条，3592→3617，2026-10-03；较上一口径 +43 = 统一执行链 Stage F2a（M-P2-2/4）——PreCompact 重注（`CONTEXT_PRECOMPACT_REINJECT_ENABLED` 默认关：超预算压缩前把关键规则+五要素硬约束重注上下文尾部，约束优先按出现序去重 + 规则声明序补满、1500 字符有界，`[precompact:<source>]` 行级审计标记 + snapshot meta 来源计数，块不在轨迹行内 ⇒ 丢弃循环必幸存）+ 画像作用域（`MEMORY_PROFILE_SCOPE_ENABLED` 默认关：画像字段分级 stable/session/meta 单源、未知字段 fail-closed；稳定层跨会话沿用走 `GET/POST /ops/memory/profile-scope` 授权、读取异常 fail-closed；`POST /ops/memory/clear-user` 分段计数清除画像+语义卡+摘要全链路，errors 非空显式 500）；`tests/test_p82_memory_p2.py` 43 条，3549→3592，2026-10-03；较上一口径 +34 = 统一执行链 Stage F1e（A-P1-4）——HITL 进环（`HITL_IN_LOOP_ENABLED` 默认关：图内 `execute_task` 遇 `review_required` 挂起进图（langgraph interrupt + checkpointer，approve 落批准重试一次、reject/未知 fail-closed 终止后续波次回 failed）；闸开+无 approver+无决策面 ⇒ REJECT `no_approver_wired_fail_closed`（沿 sidecar 语义，不留无人批的 PENDING）；裁决序 deny→hook→ask强制→allow；py3.12+ 才注入、py3.10 降级 review_required；恢复面 `POST /ops/hitl/in-loop`）；`tests/test_p81_hitl_in_loop.py` 35 条，3515→3549，2026-10-03；较上一口径 +33 = 统一执行链 Stage F1d（A-P1-3）——并发工具轮（`AGENT_TOOL_ROUND_CONCURRENCY` 默认 1 = 串行逐位等价：L2 检索聊天 `_execute_tool_calls` 与 L3 `AgentLoop` 批路径一把旋钮，派发前逐调用授权门 fail-closed、危险工具有效风险 MEDIUM+ 强制串行、批宽按剩余步数裁剪、观测声明序落位、每批至多一次 replan；「家政工具不计进度」留口 F2）；`tests/test_p80_multiagent_p1_concurrent_round.py` 33 条，3482→3515，2026-10-03；较上一口径 +36 = 统一执行链 Stage F1c（A-P1-2）——LLM 规划器（`AGENT_LLM_PLANNER_ENABLED` 默认关：`LLMPlanner` 结构化输出、执行表白名单整步过滤、失败/空计划 fail-open 回单步；`AGENT_MAX_REPLANS>0` 时注入 `RetryReplanner` 内层）+ TodoWrite（`todo_write` 整体替换、至多一条 in_progress、`TodoStore` JSON 落盘可恢复、回执即读通道；L2+control 五处同步）；另修 `test_notice_never_contains_config_values` 随机哈希撞字串假阳性；`tests/test_p79_multiagent_p1_llm_plan.py` 36 条，3446→3482，2026-10-03；较上一口径 +35 = 统一执行链 Stage F1b2——M-P1-3 MEMORY 索引制（记忆注入转「段落头 + obs:// 指针索引」，正文外置 ArtifactStore，预算 1500 封顶截尾）+ M-P1-4 AGENTS 级联（全局 ~/.agentix → 项目根 → 消息触达子目录三层 + read_agents_file 按需取回）+ M-P1-5 obs:// 隔离接线（ContextEngine 隔离引用真正可取回，read_artifact 认 obs:// 前缀），3 新旋钮默认关；`tests/test_p78_index_cascade_isolate.py` 35 条，3411→3446，2026-10-03；较上一口径 +51 = 统一执行链 Stage F1b——Memory P1 接线（M-P1-1 向量召回 fail-open、M-P1-2 后台评审 LLM 路由 + turn-end 生产者三接线点、M-P1-5 真分词计数 7 处估点，2 新旋钮默认关；`tests/test_p77_memory_p1_wiring.py` 51 条，3360→3411，2026-10-03）；较上一口径 +27 = 统一执行链 Stage F1a——RAG P1 真 Hybrid（R-P1-1..5 全落地：后端元组修复使距离阈值实际生效、rank_fusion 纯函数、进程内 BM25 稀疏通道、retrieve_hybrid_docs 四阶段与 SSE retrieval 进度帧、Channel B 融合 flag 门控，12 新旋钮默认关；`tests/test_p76_rag_p1_hybrid.py` 27 条，3333→3360，2026-10-03）；较上一口径 +28 = 统一执行链 Stage M·M6——删三簇 shim（`infrastructure/tools`、`mcp`、`capabilities/tools`）+ M0–M5 全部旧路径清尾（56 文件 + 空目录删除、`_TARGET` 归零、20 个旧 dotted 前缀静态 import 面归零、p66 `SHIM_DIRS` 空集终态、p69 `COMPLETED_STAGES` 含 M6、p70–p74 守卫断言翻转、生产源零旧斜杠串）（2026-10-03，新增 `tests/test_p75_m6_shim_removal.py` 30 条 + p69/p70/p72/p73 守卫改写净 −2，3305→3333）；再上一口径 +27 = 统一执行链 Stage M·M5——检索域收编（`chat_agent_runner` 剥离 langgraph 换 capability 内部工具循环、首轮无工具单 delta 修二次调模型 bug、Port 装配单门收敛 `knowledge_gateway.get_retrieval_port`、`legal_effectiveness`/`grounding_verify` 迁 `agentix/domain/policies/` 旧路径 alias shim、p66 LangGraph 白名单 11→10、`PROTECTED_VERIFIER_PATHS` 补真实路径）（2026-10-03，新增 `tests/test_p74_m5_retrieval_unification.py` 25 条 + p69 manifest 参数化 +2，3278→3305）；再上一口径 +21 = 统一执行链 Stage M·M4——控制平面迁 `agentix/runtime/control_plane.py`（Run registry/取消/准入归位 Runtime 簇；`TokenBudget` 收进 TYPE_CHECKING 保簇自包含，旧路径 alias shim，`runtime/__init__` 刻意不汇总导出）（2026-10-02，新增 `tests/test_p73_m4_runtime_control_plane.py` 21 条，3257→3278）；再上一口径 +54 = 统一执行链 Stage M·M3——策略件迁顶层 policies/（planner 归并 replanner、verifier、hitl+hitl_bridge、guardrails 自 capabilities 迁入；executor 保留旧路径 guardrails import 避 p66 #3），旧路径 7 模块 sys.modules 别名 shim + 4 惰性包门面，p66 SHIM_DIRS +5、p70 guardrails 断言翻转（2026-10-02，新增 `tests/test_p72_m3_policies_migration.py` 53 条 + p70 净 +1，3203→3257）；再上一口径 +55 = 统一执行链 Stage M·M2——agent 编排件迁顶层 `orchestration/`（orchestrator/executor/langgraph + strategies/multi_agent，lg_prompts 业务 prompt 留 application），旧路径 8 模块 `sys.modules` 别名 shim + multiagent 惰性门面，`agentix.agent.__init__` 改惰性防加载序回拉（2026-10-02，新增 `tests/test_p71_m2_orchestration_migration.py` 55 条，3148→3203）；再上一口径 +66 = Stage M·M1——capabilities/tools 迁顶层 tools/（gateway/adapters 子包 + 顶层注册面；注册三件套因 `registry` 单例与子包名冲突落顶层），旧路径 16 文件 `_TARGET` shim + PEP 562 惰性门面，guardrails 留驻待 M3（2026-10-02，新增 `tests/test_p70_m1_tools_migration.py` 66 条，3082→3148）；再上一口径 +54 = 统一执行链 Stage M·M0——契约拆分（`agentix/domain/agent`、`agentix/domain/runtime`、`agentix/domain/tool` 三个纯契约子包）+ M1–M6 逐文件迁移清单暂停（2026-10-02，新增 `tests/test_p69_stage_m_manifest.py` 51 条 + phase1/p17/p22 随迁守卫 3 条，3028→3082）；再上一口径 +33 = 统一执行链 Stage B·B2b——33-P0 RAG 收敛后三项（R-P0-3 rerank 三态收敛 / R-P0-4 Cypher 只读闸 + Neo4j schema TTL / R-P0-5 打点不吞错，2026-10-02，`tests/test_p68_rag_p0_convergence.py` 14→46 条 + `tests/test_p02_wiring.py` 打点契约 22→23 条，2995→3028）；再上一口径 +14 = 统一执行链 Stage B·B2a——33-P0 RAG 收敛前两项（LightRAG 单实现去重门面 / 租户 fail-closed，2026-10-02，新增 `tests/test_p68_rag_p0_convergence.py` 14 条，2981→2995）；再上一口径 +30 = 统一执行链 Stage B·B1——32-P0 记忆收敛（双卡合并 card_schema 单源 / 脱敏补齐中英姓名地址写读双向 / 冲突键全 tags + 30 天时间窗标记 / 3 scope 收口，2026-10-02，新增 `tests/test_p67_memory_p0_convergence.py` 30 条，2951→2981）；再上一口径 +9 = 统一执行链 Stage A 批次（A6 死代码批 51 文件 + 分层守卫定稿 p66——可达性扫描零引用直删、文档反引号与现时态陈述同步、12 守卫测试化收敛，2026-10-02，新增 `tests/test_p66_arch_guards.py` 9 条，2942→2951）；再上一口径 +13 = 统一执行链 Stage A 批次（A5 SSE 全量统一 R5a–R5d——run-scoped emitter / 词汇归一保留 `type` 删 `event` / 前端共 parser / 流式轨迹桥 + 持久化评估门，2026-10-02，新增 `tests/test_p65_unified_sse.py` 13 条，2929→2942，前端 vitest 121→126）；再上一口径 +11 = 统一执行链 Stage A 批次（A4 HITL 生产审批决策面 / application/runtime 直删 / 死转移处置，2026-10-02，新增 `tests/test_p64_hitl_ops_and_dead_transitions.py` 11 条，2918→2929）；再上一口径 +22 = 统一执行链 Stage A 批次（A3 图内规划收敛影子对拍/切流 + TEXT2SQL 死 flag 处置，2026-10-01，新增 `tests/test_p63_planner_convergence.py` 22 条，2896→2918）；再上一口径 +18 = 统一执行链 Stage A 批次（A2a–A2c 三闸有效化 / 五项旁路收编 / 记忆三工具守卫用例，2026-10-01，新增 `tests/test_p62_unified_gateway.py` 18 条，2878→2896）；再上一口径 +31 = 统一执行链 Stage A 批次（A1a–A1e 运行登记/退出契约/Run API 迁移/元数据减负/守卫用例，2026-10-01，新增 `tests/test_p61_unified_run_chain.py` 31 条，2847→2878）；再上一口径 +384 = 优化批次 P1–P6（任务执行 / Skills / 渐进上下文 / 异常闭环 / Proactive / 长时记忆，2026-10-01，新增 `test_p49`–`test_p60` 十二个测试模块共 384 条，逐批 2463→2496→2542→2594→2668→2761→2847）；再上一口径 +5 = 穿插批次 B/C（B1 流式 idle 看门狗 4 条 + B2 SSE 词汇双写 1 条；C2 为 lint 清理不增后端计数；前端 vitest 113 → 121）；再上一口径 +20 = Phase 29 记忆结构化 `test_agent_phase29_memory_cards.py` profile_card/派生幂等/冲突标记 20 条；再上一口径 +41 = Phase 30 进化闭环 41 条；再上一口径 2397 = Phase 31 评估二期 40 条；再上一口径 2357 = Phase 28 自主护栏 28 条；再上一口径 2329 = 审计批次 A 归属校验 `test_p48_ownership.py` 21 条 + 限流 A3 扩 4 条 + 上传读鉴权契约 1 条）。
 
 14 条 skip 均为显式声明：4 条集成/端到端用例（2 条需 `LEGELBOT_RUN_INTEGRATION_TESTS=1`，2 条 LightRAG 端到端需 `LEGELBOT_RUN_LIGHTRAG_E2E=1`）+ 10 条 Redis Stream 契约用例（本机无 Redis 服务时按设计诚实跳过，`RedisStreamEventBus` 懒连接、连接错误向上传播不伪造）。真图 HITL 进环 E2E（`test_p81` `TestRealGraphE2E`）在本地 Python 3.12.13 执行；CI Python 3.10 按设计跳过，**不存在无原因静默跳过**。
 
@@ -469,7 +478,7 @@ py -3.12 -m venv .venv
 |---------|---------|
 | 单元 / API 集成 | 路由、Reranker、上传安全、认证、LLM 工厂 |
 | **架构守卫** | 分层依赖规则（AST 扫描 + 白名单集合相等断言）+ 文档路径 / 配置键 / 数字一致性 |
-| 运行时护栏 | 上下文隔离、控制平面、token 预算、目标仲裁、工具限量、人工审批、任务分解 |
+| 运行时护栏 | 上下文隔离、控制平面、token 预算、目标裁定流程、工具限量、人工审批、任务分解 |
 | Agent Core 2.0 | 主循环 / 规划纠偏 / HITL / 事件 / 多智能体失败模式 / 演化 / 分层验证 |
 | 可观测性 | 轨迹回放 / 首错定位 / Pass^k / 轨迹前缀回归 |
 | Agent Runtime / MCP | Run API 语义（超时 / 取消 / 预算）、MCP 协议与桥接 |
@@ -495,7 +504,7 @@ agentix/                        后端主包（FastAPI 应用 + 平台内核）
 │   ├── runtime/                Run/Step/Budget 契约 + 统一退出契约（lifecycle.py）
 │   ├── tool/                   ToolSpec / Risk / Permission 纯契约（M0 拆入）
 │   ├── ports/                  graph / repository / retrieval Protocol + Payload TypedDict
-│   └── policies/               错误分类 / 重试策略 / 冲突仲裁判定函数
+│   └── policies/               错误分类 / 重试策略 / 冲突裁决判定函数
 ├── orchestration/              编排件（M2）：orchestrator 主循环 · executor 执行器
 │   ├── langgraph/              lg_builder 主图 / lg_states / lg_supervisor 拓扑
 │   └── strategies/             multi_agent（Peer + Manager · 退出契约 · 子代理隔离）
@@ -533,7 +542,7 @@ kb_ingest/                      知识库入库独立服务（API / clients / co
 web/                            Vue3 + TypeScript 前端（Vite / Vitest）
 evals/                          黄金评估集 / 质量门禁 / 消融实验 / 轨迹回归
 docs/                           架构 / 指南 / Runbook / ADR（`architecture/adr/`）/ 项目说明书
-                                （`PROJECT_SPEC.md` + 图文版 docx）
+                                （`PROJECT_SPEC.md` + 图文版 docx）/ 整体结构总览（`architecture/overview.md`）
 scripts/                        数据构建 / 迁移 / 运维脚本
 data/                           领域数据（图谱种子 / 语料，由用户填充）
 docker/                         观测栈（prometheus / alertmanager / grafana）与 compose 覆盖（Dockerfile 在仓库根）
@@ -562,7 +571,8 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 
 | 文档 | 内容 |
 |---|---|
-| [项目说明书](docs/PROJECT_SPEC.md) | **新人向总指南**：23 章实现级全量说明书（技术栈与分层、两套编排、SSE 双链路词汇已归一、入库与门禁）；Word 图文版见 `docs/My-Agentix项目说明书.docx`（9 张架构图） |
+| [项目说明书](docs/PROJECT_SPEC.md) | **新人向总指南**：23 章实现级说明书（按目标选阅读路线、术语表、两套编排、SSE 双链路、入库与门禁）；按**符号**定位、不写行号。Word 图文版 `docs/My-Agentix项目说明书.docx`（含整体架构图）为 2026-10-22 快照，**以 md 为准** |
+| [项目全景与整体结构](docs/architecture/overview.md) | **结构主入口**：两套问答域 + 入库流、三条端到端链路、完整目录地图、LangGraph 9 节点、默认开关矩阵、关键代码索引与完整架构图 |
 | [架构总览](docs/architecture/README.md) | 一句话架构、五条设计原则、运行时架构图 |
 | [架构详解](docs/architecture/ARCHITECTURE_DETAIL.md) | 设计特色、完整架构图、三层流程逐节点说明 |
 | [分层与依赖规则](docs/architecture/layers.md) | 各层职责、**4 条强制依赖规则**及其守卫 |
@@ -584,8 +594,8 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | [发布与回滚 Runbook](docs/runbooks/release-and-rollback.md) | 部署步骤、五层健康验收链、四级回滚 |
 | [SLO 目录](docs/runbooks/slo.md) | 服务等级目标、错误预算、告警分级 |
 | [失败恢复 Runbook](docs/runbooks/failure-recovery.md) | 四层失败恢复机制与现场演示命令 |
-| [迁移进度](docs/migration/module-inventory.md) | Agent Core / Runtime 物理迁移清单与勾选状态（Phase 0–31 + 批次 A/B/C 勾选真源） |
-| [优化迭代 Phase 28–31](docs/migration/Phase28-31_优化规划.md) | 四主题（自主护栏 / 记忆结构化 / 进化闭环 / 评估二期）+ 审计批次 A/B/C 执行状态（§8）与验证命令 |
+| [变更记录](CHANGELOG.md) | 按版本记录功能、修复、迁移与验证口径；历史迁移文档已移除，当前结构以 [项目全景与整体结构](docs/architecture/overview.md) 为准 |
+| [版本管理](docs/VERSIONING.md) | 版本号语义、发布分支与兼容策略 |
 | [评测说明](evals/README.md) | golden 集、确定性打分、质量门禁、消融实验 |
 | [OWASP LLM Top 10 自评](docs/security/owasp-llm-self-assessment.md) | LLM01–LLM10 逐条：风险 → 现有缓解（含代码位置）→ 残余风险 |
 
@@ -626,9 +636,9 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 token 明细从 `UsageRecord` 聚合。数字与模型快照/温度绑定，换模型须重测。
 已知限制：本机显存与云服务器测量结果不可互比，回填时须标注测量环境。
 
-### 15.1 本地法律语料检索对照（2026-10-11）
+### 15.1 本地测试数据语料检索对照（2026-10-11）
 
-在隔离评测库中对 `data/kb/legal_corpus.txt` 的 4,865 条法条运行真实检索；
+在隔离评测库中对 `data/kb/legal_corpus.txt` 的 4,865 条数据条目运行真实检索；
 语料 SHA-256 为
 `1ca58564b1f3a58c212c0fc23e9e5da317576ce524fc58cd4f6d0ec6f3aea2e5`。
 使用 `evals/legal_golden.jsonl` 中 23 条适用的 `kb-query` 金标问题，
@@ -651,7 +661,7 @@ token 明细从 `UsageRecord` 聚合。数字与模型快照/温度绑定，换�
 0.50 为 `0.7826/0.6413`，0.75 为 `0.7826/0.6884`。RRF K 扫描
 （10/20/40/60/100）没有观察到优于默认 K=60 的稳定收益。
 相比 Dense，当前最佳组合的 MRR 提高约 21.8%，但 Recall@5 仍是
-18/23 题，**没有增加命中题数**；目前观察到的是相关法条排序前移，
+18/23 题，**没有增加命中题数**；目前观察到的是相关数据条目排序前移，
 不是召回覆盖提升。样本量小且结果用于调参，不能视作独立泛化验证。
 
 延迟方面，仅记录整批脚本墙钟时间（23 题，包含多通道调用及评测开销）：
@@ -703,6 +713,21 @@ python evals/hybrid_eval.py --kb-id legal-recall-eval-20261011 --route kb-query 
   见 [OWASP 自评](docs/security/owasp-llm-self-assessment.md) 残余风险栏。
 - **judge 类指标默认关**：LLM-as-a-Judge 与 ragas 报告（如启用）均不进门禁，
   判官未校准前无资格参与评分（README §4.4 / evals/README 口径）。
+- **没有执行隔离墙，只有一个刚建好的插座**：工具仍在主进程内执行，隔离只到「闸门 + 容器配额」这一格。
+  T2 ⑭ 已把「这条工具在哪儿跑」变成 `ToolSpec.sandbox` 声明（`EXECUTION_SANDBOX_ENABLED`，默认关），
+  但**能跑的两档 `in_process` / `thread` 同进程、同 GIL、同 `os.environ`、同文件权限，都不构成边界**；
+  `subprocess` / `container` 只在阶梯词汇表里占位，声明它们会被**拒绝执行**（不静默退回进程内）。
+  `unshare`/namespace/seccomp 一律未接线，容器默认仍以 root 运行（`AGENTIX_CONTAINER_USER=0:0`），
+  `timeout_ms` 的真截断、MCP 环境裁剪、执行位置选择三项默认关。
+  实测边界与待做项见 [PROJECT_SPEC §24](docs/PROJECT_SPEC.md)（G1–G13 逐项带修复状态）
+  、[ADR-0007](docs/architecture/adr/0007-execution-sandbox-port.md) 与 [运行时护栏 §15](docs/architecture/runtime-guardrails.md)。
+  **在未打开这些闸门之前，本实例不应直接暴露给不可信流量。**
+- **`kb_ingest` 的三道边界默认都关**：入站鉴权 `KB_REQUIRE_API_KEY`、连接串闸门
+  `KB_MYSQL_URL_GUARD`、过滤参数化闸门 `KB_MYSQL_WHERE_PARAMETRIZED` 出厂均为 `false`
+  （改默认值会让既有 `docker compose up` 起不来；后一位还是**硬切**——开当天仍在传原始
+  `where` 的导入作业全部 400，所以要先迁调用方）。关着时 `/ingest/mysql` 的 `where`
+  仍是黑名单式拼接：拦得住 `;` 堆叠与注释，拦不住 `1=1 OR 1=1` 这类合法但越界的片段。
+  该服务只应在受信网络内可达。
 - **`graph` 为占位包**（§12 项目结构）：图相关能力按需填充。
 
 ---

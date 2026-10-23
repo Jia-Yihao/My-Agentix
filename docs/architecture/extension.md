@@ -81,8 +81,8 @@ def _build_declarations():
                 description=(
                     "联网检索实时信息。\n"
                     "何时用：问题涉及时效性信息（最新政策、近期案例），且本地知识库无记载时。\n"
-                    "何时不能用：法律条文/案由/司法解释查询——应走 cypher_query 或 "
-                    "microsoft_graphrag_query（联网结果非法定文本，不能作为法条依据）；"
+                    "何时不能用：数据条目/数据分类/示例说明查询——应走 cypher_query 或 "
+                    "microsoft_graphrag_query（联网结果非法定文本，不能作为数据条目依据）；"
                     "统计类问题——走 text2sql_query。\n"
                     "注意：结果需标注来源，不得作为唯一依据。"
                 ),

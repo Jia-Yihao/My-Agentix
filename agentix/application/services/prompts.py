@@ -12,7 +12,7 @@ CONVERSATION_SUMMARY_PROMPT = (
 # 只收单个 JSON 对象（无围栏、无解释）；carrier 与键白名单和 OfflineEvolutionLoop
 # 的 validate_proposal 一一对应——LLM 输出同样要过白名单，fail-closed。
 EVOLUTION_SLEEP_PROPOSAL_PROMPT = (
-    "你是法律 AI 系统的离线进化助手（睡眠学习阶段，只提建议、不执行任何修改）。\n"
+    "你是测试数据 AI 系统的离线进化助手（睡眠学习阶段，只提建议、不执行任何修改）。\n"
     "依据下面的聚合运行信号，输出**一条**进化提案：只含一个 JSON 对象，"
     "不要代码围栏、不要解释文字。\n"
     '形状：{{"carrier": "knowledge", "summary": "一句话变更摘要", "payload": {{...}}}}\n'

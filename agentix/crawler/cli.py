@@ -2,7 +2,7 @@
 Crawler CLI entrypoint.
 
 Docs reference:
-  python -m agentix.crawler.cli wikipedia --query "民法典" --import-kb --limit 10
+  python -m agentix.crawler.cli wikipedia --query "示例数据集 A" --import-kb --limit 10
 """
 
 

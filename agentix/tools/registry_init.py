@@ -74,10 +74,10 @@ def _build_declarations() -> List[Tuple[ToolSpec, Type[BaseModel]]]:
                 name="cypher_query",
                 risk_level="L0",  # 只读 Cypher（指南 §2.1.3 分级表）
                 description=(
-                    "用 Cypher 查询法律法规知识图谱（法规、法条、章节、案由、司法解释、制定机关、引用关系）。\n"
-                    "何时用：需要按法规名称、条号、案由、制定机关、章节层级、引用/上位法关系做"
-                    "结构化精确查询时（如：民法典第577条内容、合同违约对应哪些法条）。\n"
-                    "何时不能用：需要法条正文的语义/模糊检索或深度推理时——改用 microsoft_graphrag_query；"
+                    "用 Cypher 查询测试数据知识图谱（数据集、数据条目、章节、数据分类、示例说明、数据来源、引用关系）。\n"
+                    "何时用：需要按数据集名称、条号、数据分类、数据来源、章节层级、引用/上级数据集关系做"
+                    "结构化精确查询时（如：示例数据集 A第577条内容、示例文档异常对应哪些数据条目）。\n"
+                    "何时不能用：需要数据条目正文的语义/模糊检索或深度推理时——改用 microsoft_graphrag_query；"
                     "需要问数/统计/报表类聚合时——改用 text2sql_query。\n"
                     "注意：仅生成并执行只读 Cypher（MATCH/RETURN），禁止写操作。"
                 ),
@@ -90,8 +90,8 @@ def _build_declarations() -> List[Tuple[ToolSpec, Type[BaseModel]]]:
                 name="predefined_cypher",
                 risk_level="L0",  # 只读预定义查询
                 description=(
-                    "预定义 Cypher 查询集：案由查法条、法规+条号查内容、法条互引、案由查司法解释、"
-                    "机关查规定、上位法、章节结构 7 类高频查询的快速通道。\n"
+                    "预定义 Cypher 查询集：数据分类查数据条目、数据集+条号查内容、数据条目互引、数据分类查示例说明、"
+                    "机构查规定、上级数据集、章节结构 7 类高频查询的快速通道。\n"
                     "何时用：问题能明确对应到上述 7 类模板之一时（比 cypher_query 更快更稳）。\n"
                     "何时不能用：问题超出 7 类模板覆盖范围（如跨类别的组合查询、生僻属性筛选）——"
                     "改用 cypher_query；语义/推理类问题——改用 microsoft_graphrag_query。"
@@ -105,10 +105,10 @@ def _build_declarations() -> List[Tuple[ToolSpec, Type[BaseModel]]]:
                 name="microsoft_graphrag_query",
                 risk_level="L0",  # 只读图谱推理
                 description=(
-                    "GraphRAG 法律知识推理：对图谱做多跳推理、关联分析与归纳总结。\n"
-                    "何时用：需要综合多部法条做关联分析（法条沿革、效力层级推演、责任竞合分析）、"
-                    "开放式法律咨询、案例要点梳理时。\n"
-                    "何时不能用：只需要查某一条法条的确切原文时——改用 cypher_query 或 predefined_cypher"
+                    "GraphRAG 测试数据知识推理：对图谱做多跳推理、关联分析与归纳总结。\n"
+                    "何时用：需要综合多部数据条目做关联分析（数据条目沿革、数据层级推演、责任竞合分析）、"
+                    "开放式数据问答、案例要点梳理时。\n"
+                    "何时不能用：只需要查某一条数据条目的确切原文时——改用 cypher_query 或 predefined_cypher"
                     "（GraphRAG 生成的是推理摘要，不是条文原文，答条文原文属于误用）；"
                     "问数/统计类——改用 text2sql_query。"
                 ),
@@ -124,7 +124,7 @@ def _build_declarations() -> List[Tuple[ToolSpec, Type[BaseModel]]]:
                 description=(
                     "结构化数据库（MySQL/PostgreSQL）查询：问数、统计、报表、聚合、多表关联。\n"
                     "何时用：问题以数量、占比、同比/环比、分组统计为目标，需要访问关系型数据时。\n"
-                    "何时不能用：法条/案由/司法解释等图谱内容查询——改用 cypher_query 或"
+                    "何时不能用：数据条目/数据分类/示例说明等图谱内容查询——改用 cypher_query 或"
                     " microsoft_graphrag_query（图谱在 Neo4j，不在关系库，用本工具必然查空）。\n"
                     "注意：仅只读 SELECT，禁止 INSERT/UPDATE/DELETE。"
                 ),

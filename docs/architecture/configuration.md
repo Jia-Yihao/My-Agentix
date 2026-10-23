@@ -38,7 +38,7 @@ key = settings.OPENAI_API_KEY            # ✅
 |------|---------|------|
 | **应用元信息** | `APP_NAME` `APP_VERSION` `DEBUG` | 版本号与 `pyproject.toml` 同步（`scripts/bump_version.py --check`） |
 | **API** | `API_V1_PREFIX` `HOST` `PORT` | 服务监听 |
-| **安全** | `SECRET_KEY` `API_KEY` `REQUIRE_API_KEY` `CORS_ORIGINS` | 见 [§4 敏感配置](#4-敏感配置与生产检查) |
+| **安全** | `SECRET_KEY` `API_KEY` `REQUIRE_API_KEY` `CORS_ORIGINS` `SETTINGS_AUTHZ_ENABLED` | 见 [§4 敏感配置](#4-敏感配置与生产检查)；`SETTINGS_AUTHZ_ENABLED` 见 §24.3 T1 ⑪ |
 | **LLM** | `LLM_PROVIDER` `LLM_MODEL` `LLM_API_KEY` `LLM_BASE_URL` `LLM_TIER_ROUTING_ENABLED` `LLM_ROLE_TIER_MAP` | 模型服务；`OPENAI_*` 为其兼容别名 |
 | **成本** | `LLM_INPUT_PRICE_PER_1K` `LLM_OUTPUT_PRICE_PER_1K` | 默认 0.0（本地模型免费，不假装有价） |
 | **Embedding** | `EMBEDDING_PROVIDER` `EMBEDDING_MODEL` `EMBEDDING_DIMENSION` | 检索向量化 |
@@ -47,7 +47,7 @@ key = settings.OPENAI_API_KEY            # ✅
 | **持久化** | `REDIS_URL` `CHECKPOINTER_TYPE` `DATABASE_URL` | 会话状态 |
 | **Agent 行为** | `AGENT_TIMEOUT` `STREAM_IDLE_TIMEOUT` `AGENT_MAX_CONCURRENCY` `MAX_ITERATIONS` `MAX_HISTORY_MESSAGES` `AGENT_LOOP_ENABLED` `AGENT_MAX_REPLANS` `AGENT_CONTEXT_BUDGET_TOKENS` `TOOL_OUTPUT_BUDGET_TOKENS` `AGENT_LLM_PLANNER_ENABLED` `AGENT_TOOL_ROUND_CONCURRENCY` `HITL_IN_LOOP_ENABLED` `TASK_EXEC_ENABLED` `AGENT_ROLLBACK_ENABLED` `FAILURE_BOUNDARY_ENABLED` `CRON_ENABLED` `CRON_TICK_SECONDS` | 硬边界与执行支路 |
 | **记忆** | `MEMORY_CONTEXT_ENABLED` `MEMORY_RECALL_LIMIT` `MEMORY_RECENCY_HALF_LIFE_DAYS` `MEMORY_FANOUT_ENABLED` `MEMORY_REVIEW_ENABLED` `MEMORY_TOOLS_ENABLED` `MEMORY_VECTOR_RECALL_ENABLED` `MEMORY_INDEX_ENABLED` `MEMORY_PROFILE_SCOPE_ENABLED` | 长期记忆 |
-| **工具** | `DISABLED_TOOLS` `TOOL_SELECTION_ENABLED` `TOOL_SELECTION_MAX_RISK` `TOOL_DEFERRED_TOOLS` `TOOL_RESULT_CONTRACT_ENABLED` `TOOL_GATEWAY_ENFORCED` `TOOL_GUARDRAILS_ENABLED` | 工具集裁剪与工具面灰度（逗号分隔） |
+| **工具** | `DISABLED_TOOLS` `TOOL_SELECTION_ENABLED` `TOOL_SELECTION_MAX_RISK` `TOOL_DEFERRED_TOOLS` `TOOL_RESULT_CONTRACT_ENABLED` `TOOL_GATEWAY_ENFORCED` `TOOL_GUARDRAILS_ENABLED` `TOOL_SYNC_OFFLOAD_ENABLED` `TOOL_HANDLER_CONTRACT_ENABLED` `EXECUTION_SANDBOX_ENABLED` | 工具集裁剪与工具面灰度（逗号分隔）；`TOOL_SYNC_OFFLOAD_ENABLED` 见 §24.3 T0，`TOOL_HANDLER_CONTRACT_ENABLED` 见 §24.3 T1 ⑧，`EXECUTION_SANDBOX_ENABLED` 见 §24.3 T2 ⑭（[ADR-0007](adr/0007-execution-sandbox-port.md)） |
 | **特性开关** | `KG_FINAL_ANSWER_VALIDATION` `KG_PLANNER_SHADOW_ENABLED` `KG_PLANNER_UNIFIED_ENABLED` `KG_SCHEMA_AWARE_GENERATION_ENABLED` `EVIDENCE_POOL_ENABLED` `VERIFIER_GROUNDING_ENABLED` `LEGACY_ERROR_MODE` `TEXT2SQL_DRY_RUN_ENABLED` `TEXT2SQL_SCHEMA_CACHE_TTL_SECONDS` `LATENCY_BREAKDOWN_ENABLED` `LATENCY_TOTAL_BUDGET_MS` `EVENT_LOOP_LAG_METRIC_ENABLED` `ROUTING_FASTPATH_ENABLED` `VERIFICATION_MAX_LLM_CALLS` `VERIFICATION_TIMEOUT_MS` `VERIFICATION_TOKEN_BUDGET` `NEO4J_COST_GUARD_ENABLED` `ADMISSION_CONTROL_ENABLED` `RETRY_BUDGET_ENABLED` `ADAPTIVE_TOOL_TIMEOUT_ENABLED` `LOAD_SHEDDING_ENABLED` `TRAJECTORY_ASYNC_WRITE_ENABLED` `SSE_COALESCE_ENABLED` `SSE_QUEUE_SIZE` `SUBAGENT_RESULT_CONTRACT_ENABLED` `MULTIAGENT_EARLY_EXIT_ENABLED` | 默认关，见 [§5 特性开关](#5-特性开关回滚机制) |
 
 > 完整列表见 `.env.example`（每一项都有注释）。
@@ -84,7 +84,7 @@ def OPENAI_API_KEY(self) -> Optional[str]:
 |------|---------|------|
 | `SECRET_KEY` | **必须显式配置** | 缺失时：dev 临时生成 + 强告警；**prod/staging 直接启动失败**（`resolved_secret_key` 抛 `RuntimeError`） |
 | `API_KEY` | 必须显式配置 | 默认空串；`REQUIRE_API_KEY=True` 且为空时启动报错 |
-| `REQUIRE_API_KEY` | 建议 `true` | 默认 `false`（warn 模式）——开启前请先确认调用方已带 `X-API-Key`；同时管辖机器面端点级依赖（events/ops 的 `verify_api_key`） |
+| `REQUIRE_API_KEY` | 建议 `true` | 默认 `false`（warn 模式）——开启前请先确认调用方已带 `X-API-Key`；同时归属机器面端点级依赖（events/ops 的 `verify_api_key`） |
 | `V1_REQUIRE_JWT` | 按需 | 默认 `false`；`true` 时 v1 用户面端点（chat/sessions/upload 写操作）逐端点要求有效 Bearer JWT（`v1/deps.py`，只验签不查库）；与 `REQUIRE_API_KEY` 正交 |
 
 ### 启动期自检
@@ -173,10 +173,19 @@ SECRET_KEY= DEBUG=false python -m uvicorn agentix.main:application
 | `MULTIAGENT_PEER_MAX_STEPS` | `10` | Peer 独立预算（Phase 25，Ch10 §10.17 反预算失控）：经 `lg_supervisor` budget_factory 注入 Manager；镜像 `PeerBudget.max_steps` 默认值（两处相等有测试断言） |
 | `MULTIAGENT_PEER_MAX_MESSAGES` | `20` | Peer 独立预算：单 Peer 消息数上限；镜像 `PeerBudget.max_messages` 默认值 |
 | `MULTIAGENT_BUS_ENABLED` | `false` | 进程内 asyncio 消息总线（Phase 25，书 §10.3 Message Bus）：Peer 消息经 bus 收发 + peer 粒度取消；默认关 = 点对点直连现行为逐位等价 |
-| `MULTIAGENT_SUBAGENT_ISOLATION_ENABLED` | `false` | 子代理隔离三件套（Stage F2c·A-P2-1，multiagent-optimization §6）：flag-on ⇒ 子代理只见任务面 prompt（ephemeral，父对话轨迹不进）、父记忆活上下文从 config 摘除（skip_memory，唯一记忆入口 = `MemorySnapshot` 只读拷贝，Mapping 深拷贝后 `MappingProxyType` 冻结）、每 actor 独立 `SubAgentSession`（session_id + 独立 `PeerBudget` 经 Manager `budgets` 单源注入）+ 心跳保活 + live registry（kill 终态短路不执行内层 / pause 有界等待超时 fail-open / steer 指令一次性注入下轮 context）；默认关 = supervisor 现行为逐位等价 |
+| `MULTIAGENT_SUBAGENT_ISOLATION_ENABLED` | `false` | 子代理隔离三件套（Stage F2c·A-P2-1，multiagent-optimization §6）：flag-on ⇒ 子代理只见任务面 prompt（ephemeral，父对话轨迹不进）、父记忆活上下文从 config 摘除（skip_memory，唯一记忆入口 = `MemorySnapshot` 只读拷贝，Mapping 深拷贝后 `MappingProxyType` 暂停）、每 actor 独立 `SubAgentSession`（session_id + 独立 `PeerBudget` 经 Manager `budgets` 单源注入）+ 心跳保活 + live registry（kill 终态短路不执行内层 / pause 有界等待超时 fail-open / steer 指令一次性注入下轮 context）；默认关 = supervisor 现行为逐位等价 |
 | `SUBAGENT_RESULT_CONTRACT_ENABLED` | `false` | Phase H·W5（PhaseH 规划 §4）：Peer 结果进黑板换结构化契约面 `{status, claims[], evidence_refs[], artifact_refs[], confidence, cost{}}`（`multi_agent/contract.py::SubAgentResult`）——claims 为有界要点（5 行 × 200 字符）、`meta["evidence"]` 逐条经 `offload_content` 外置成 `obs://` 句柄、契约面过 `max_result_chars` 整体外置可取回；完整输出仍在 `ManagerOutcome.peer_results` 不丢信息；默认关 = 黑板仍走全文 `bound_result_face` 逐位等价 |
 | `MULTIAGENT_EARLY_EXIT_ENABLED` | `false` | Phase H·W5：proposer 结果**带证据**（`meta["evidence"]` 或输出内嵌 `obs://`）且相对入板前黑板**有信息增量**（复用既有 `information_increment` 判据，两条件缺一不可）⇒ 提前收敛（跳过 reviewer 调用与后续轮次，`exit_reason=completed`）；顺序拓扑下「停其余 peer」= 跳过调用，无在途消息需取消；默认关 = 每 peer 照常调用逐位等价 |
 | `TOOL_GUARDRAILS_ENABLED` | `false` | P4 异常闭环 4.1/4.2（借鉴 hermes `tool_guardrails.py`）：工具失败三计数器分级（同参连续失败 2/3/5 → warn/block、工具总失败 2/5/10 → warn/halt、同结果幂等 2 次 → warn）+ 恢复建议经 metadata/`task_retry` 终局/`RetryReplanner` rationale 回喂 + 重复结果字节级折叠 stub（第 2 次重复起，轮询不豁免）；flag-off 检查/记账/折叠零调用（与基线逐位等价） |
+| `TOOL_SYNC_OFFLOAD_ENABLED` | `false` | Phase S·G1（PROJECT_SPEC §24.2/§24.3 T0）：`ToolExecutor._invoke` 对**非协程** handler 改走 `asyncio.to_thread`，让外层 `asyncio.wait_for` 真正能截断——同步 handler 在自己的栈帧里跑时事件循环被占住，`timeout_ms` 形同虚设（实测声明 100ms、实跑 1201ms 且 `success=True`）。flag-off 与加固前逐位等价；打开前须确认 handler 无 loop 亲和依赖（线程内不再持有原循环） |
+| `TOOL_HANDLER_CONTRACT_ENABLED` | `false` | Phase S·T1 ⑧（PROJECT_SPEC §24.3）：`register_handler` 时按 `_invoke` 的**可等待口径**（`executor.py::handler_shape`：函数的 async、类异步 `__call__` 也算 async；async generator 单列）给非协程 handler 打一条点名告警，说明「这条工具的 `timeout_ms` 在 `TOOL_SYNC_OFFLOAD_ENABLED=false` 时不会截断」。默认关 = 不产生任何日志；这是把 G1 的发现前移到启动期，而不是等某次调用超时不生效再人肉反推 |
+| `EXECUTION_SANDBOX_ENABLED` | `false` | Phase S·T2 ⑭（PROJECT_SPEC §24.3，[ADR-0007](adr/0007-execution-sandbox-port.md)）：让 `ToolExecutor` 按 `ToolSpec.sandbox` **声明**选执行位置。关 = 一个都不查，走的还是原来那行进程内 await（逐位等价）。开 = `in_process`（默认档，与关着逐位等价）/ `thread`（把这条工具下放到线程，于是不必为它打开全局 `TOOL_SYNC_OFFLOAD_ENABLED`）；`subprocess` / `container` 在词汇表里但**尚未实现**（T2 ⑮ / T3 ⑰），声明它们会在执行点拿到 `sandbox_unavailable` 并**拒绝执行**——不静默退回进程内。⚠️ 两档能跑的都不构成隔离（同进程、同 GIL、同 `os.environ`、同文件权限），staging 打开只是让这条新缝被持续走到 |
+| `MCP_SUBPROCESS_ENV_SCRUB` | `false` | Phase S·G2：MCP stdio 子进程改传白名单环境（`client.py::OS_ENV_ALLOWLIST`，只含起进程/找包/正确编码/证书所需的键），不再继承主进程的 `LLM_API_KEY`/`SERPAPI_KEY`/`DATABASE_URL` 等全部密钥。白名单裁掉 `PYTHONPATH` 时自动补回仓库根，默认 `python -m agentix.capabilities.mcp.server` 仍能起来 |
+| `MCP_SUBPROCESS_ENV_EXTRA_KEYS` | 空 | Phase S·G2：逗号分隔的额外透传变量名，与内置白名单取并集（第三方 MCP server 需要自己的凭据时显式声明，不靠继承） |
+| `DB_ECHO` | 空（=沿用旧推断） | Phase S·G11：显式覆盖 SQLAlchemy `engine.echo`。留空 = 旧行为 `bool(DEBUG)`，而 `DEBUG` 出厂默认 `True` ⇒ 默认配置下 `engine.echo is True`，完整 SQL **连同参数**经标准库 logging 落盘，绕过 [PROJECT_SPEC §15.5](../PROJECT_SPEC.md) 的 loguru 单一出口。生产必须显式 `false` |
+| `UVICORN_RELOAD` | 空（=沿用 DEBUG） | Phase S·G6：热重载独立开关。旧口径 `reload=settings.DEBUG` 让「忘设 DEBUG=False」的容器在**生产开热重载**；compose 里默认值跟随 `DEBUG` 以保持本地联调行为不变，生产应显式 `false` |
+| `APP_ENV` | 空（=沿用 DEBUG 推断） | Phase S·G6：显式生产身份（`development`/`staging`/`production`），优先级高于 legacy `ENVIRONMENT` 环境变量，两者皆空才回落到 `DEBUG` 反推（旧行为）。留空且闸门未开时启动打一条 `SECURITY POSTURE` 告警点名当前关闭的 flag。**部署必须显式声明**——否则 `validate_app_settings()` 的 PRODUCTION 分支整段静默不生效 |
+| `SETTINGS_AUTHZ_ENABLED` | `false` | Phase S·T1 ⑪（PROJECT_SPEC §24.3）：`/settings/{kb_id}` 的授权收紧。关 = 只要登录即可读改**任意** `kb_id`（跨租户亦然）；开 = 读要求该 kb 属于调用者租户（不存在 → 404 `KB_NOT_FOUND`，跨租户 → 403 `FORBIDDEN`，与 `authz.py` 其余资源同口径），写在此之上再要求 `role=admin`（`rbac.py::require_admin`）。G9 的密钥掩码只解决「读回显」，没解决「谁能写」——`llm_base_url`/`embedding_base_url` 是可写字段，改指自己的端点就等于把目标租户的提问整批外送，所以掩码不能替代授权。**两个开启前置**：① `run_migrations()` 已把 `knowledgebase.tenant_id` 回填到默认租户（未回填的存量行一律 403）；② 该租户内确有 `role='admin'` 账号——注册路径只会产出 member，且全仓没有自助升格接口，缺这一条会让整面设置页 403。步骤见 [staging runbook](../runbooks/staging-environment.md) |
 | `AGENT_ROLLBACK_ENABLED` | `false` | P4 异常闭环 4.3（借鉴 claw-code 计划态）：`RollbackPort` 真实现（`InMemoryRollbackStore`，deepcopy 隔离 + per-run LRU + 缺失恢复抛异常）+ `enter_plan_mode`/`exit_plan_mode` 工具（enter 快照 `executor.policy` → 收紧 L0 只读、exit 按 checkpoint 恢复原策略；幂等不二次快照）；flag-off 不声明不装配（与基线逐位等价） |
 | `FAILURE_BOUNDARY_ENABLED` | `false` | P4 异常闭环 4.4（借鉴 hermes 失败 turn durable 边界）：ask 抛 HTTP 前 / 流式 error 帧发布前**先持久化**一条 assistant 边界消息（`[对话边界] 本轮请求失败（{code}）：…`），消除失败 turn 的 user-user 相邻；`context_overflow` 类显式排除；flag-off 不补写（与基线逐位等价） |
 | `CRON_ENABLED` | `false` | P5 Proactive 5.1/5.2（借鉴 hermes `cron/scheduler.py` 四件套）：后台 tick 循环（每 `CRON_TICK_SECONDS` 跑一轮 `CronScheduler.tick`：代码版本让位 → 卡死探测（`CRON_STALE_MS` 窗口）→ **先推进 next_run_at 再执行**（崩溃不 tight-loop）→ inflight 簿记防双跑 → 交付账本重投）+ `cron_create`/`cron_list`/`cron_delete`/`cron_run` 工具挂进声明清单（L1 → `HUMAN_REVIEW_ENABLED` 时人工审批半；不提供任意 shell——任务仅 `agent` 提示词或已注册工具两型）；flag-off 不启动循环不注册工具不建 `data/cron/jobs.json`（与基线逐项一致） |
@@ -193,13 +202,13 @@ SECRET_KEY= DEBUG=false python -m uvicorn agentix.main:application
 | `KB_LOCAL_FUSION_METHOD` | `rrf` | Channel B 融合算法：`rrf`（免调参）\| `zscore`（两通道 z 归一后各 0.5 加权）；检索主链 Channel A 的同名旋钮见 `.env.example` 注释示例（`RETRIEVAL_FUSION_METHOD`，retrieval 域专属键不入本表） |
 | `TEXT2SQL_DRY_RUN_ENABLED` | `false` | F2b-c·R-P2-4（rag-optimization §6 Text2SQL 加固）：`sql_validation` 节点对词法通过的 SQL 跑 `EXPLAIN` 试跑（先例 = Cypher `EXPLAIN` 试跑），失败喂既有重试环；基础设施故障 fail-open 不误杀合法查询；默认关 = 校验行为与基线逐位等价 |
 | `TEXT2SQL_SCHEMA_CACHE_TTL_SECONDS` | `0` | F2b-c·R-P2-4：按 `(DATABASE_URL, 归一问题)` 缓存 INFORMATION_SCHEMA 拉取（`schema_retrieval` 节点，失败不入缓存，128 条上限过期剪除），打点 `record_cache_hit/miss("text2sql_schema")`；`0` = 关闭（每问现拉，与基线逐位等价） |
-| `KG_SCHEMA_AWARE_GENERATION_ENABLED` | `false` | F2b-d·R-P2-3（rag-optimization §6 Graph 动态化）：text2cypher 生成提示 `{schema}` 改用与校验同源的「法律域文档摘要 + 发现态 `graph.schema`」渲染（`components/utils/utils.py::resolve_generation_schema`，替代裸格式/静态中文标签为权威源；孪生链静态冗余块同步置空）；flag-on 渲染异常 fail-open 回裸 `graph.schema`；flag-off = 基线裸 `graph.schema` 逐位等价 |
+| `KG_SCHEMA_AWARE_GENERATION_ENABLED` | `false` | F2b-d·R-P2-3（rag-optimization §6 Graph 动态化）：text2cypher 生成提示 `{schema}` 改用与校验同源的「测试数据域文档摘要 + 发现态 `graph.schema`」渲染（`components/utils/utils.py::resolve_generation_schema`，替代裸格式/静态中文标签为权威源；孪生链静态冗余块同步置空）；flag-on 渲染异常 fail-open 回裸 `graph.schema`；flag-off = 基线裸 `graph.schema` 逐位等价 |
 | `EVIDENCE_POOL_ENABLED` | `false` | F2b-d·R-P2-3：任务管线成功执行结果统一进观测 `meta["evidence"]`（`content` ≤4000 字符 + `source`，取去重 stub 前的原始正文），供分层验证器 L2 `sources` / L3 grounding 消费；flag-off = meta 无 `evidence` 键与基线逐位等价（L3 维持无证据 fail-open） |
 | `VERIFIER_GROUNDING_ENABLED` | `false` | F2b-d·R-P2-3：分层验证器 L3 grounding 总闸——`task_execution` 与 `agent_loop_adapter` 两处生产调用点原硬编码 `require_grounding=False`，改读本键；flag-off = 基线逐位等价；与 `EVIDENCE_POOL_ENABLED` 同开 = 图/工具执行结果真正进 L3 支撑度核验 |
 | `LATENCY_BREAKDOWN_ENABLED` | `false` | Phase H·W0（PhaseH_高性能运行时优化规划 §4）：SSE 终帧（finished/done/error）增量注入 `breakdown_ms`（ttft / retrieval 四阶段和 / stream），前端耗时芯片与回放消费；默认关 ⇒ 帧与基线逐位等价（p65 守卫通过） |
 | `LATENCY_TOTAL_BUDGET_MS` | `0` | Phase H·W0：端到端流延迟总预算（毫秒）。`0` = 不限额；`>0` 超限仅 warning + `record_degraded("latency_budget")` 计数——fail-open，绝不中断响应、绝不重试 |
 | `EVENT_LOOP_LAG_METRIC_ENABLED` | `false` | Phase H·W0：事件循环调度滞后后台采样（0.5s 间隔 → `event_loop_lag_seconds` 直方图）；默认关 = 不起采样任务，零开销 |
-| `ROUTING_FASTPATH_ENABLED` | `false` | Phase H·W1（PhaseH_高性能运行时优化规划 §4）：复杂度感知 fast-path——高置信确定性输入（寒暄、单条法条直取）前置短路，跳过 LLM 意图分类器（零模型构造、零分类调用，命中记 `llm_calls_saved_total`）；默认关 = 路由链与基线逐位等价 |
+| `ROUTING_FASTPATH_ENABLED` | `false` | Phase H·W1（PhaseH_高性能运行时优化规划 §4）：复杂度感知 fast-path——高置信确定性输入（寒暄、单条数据条目直取）前置短路，跳过 LLM 意图分类器（零模型构造、零分类调用，命中记 `llm_calls_saved_total`）；默认关 = 路由链与基线逐位等价 |
 | `LLM_TIER_ROUTING_ENABLED` | `false` | Phase H·W1：角色→档位接线——`LLM_ROLE_TIER_MAP`（逗号分隔 `role=tier`，tier ∈ fast/standard/reasoning）命中时经既有 `ModelGateway.resolve_model` 取该档模型；关/空表/未知角色或档位 ⇒ profile 与基线逐位等价 |
 | `LLM_ROLE_TIER_MAP` | 空 | 配 `LLM_TIER_ROUTING_ENABLED` 使用的角色→档位映射（如 `router=fast,planner=reasoning`）；空 = 全回退 `LLM_MODEL`（单模型部署零行为变化） |
 | `LLM_FALLBACK_MODEL_SPECS` | 空 | P1-1 跨端点 fallback：逗号分隔的 `model\|base_url\|api_key_env` 三元组（`api_key_env` 是环境变量名，密钥不落配置值、不与主 `LLM_API_KEY` 复用；`base_url`/`api_key_env` 段可空 = 仅换模型名回退主端点）。非空时**覆盖** `LLM_FALLBACK_MODELS`（旧键语义零变化）；两键皆空 = 无 fallback。生效面诚实边界：fallback 只接线在检索域 `query_knowledge_base` 工具链路，编排域不消费 |
@@ -233,12 +242,12 @@ SECRET_KEY= DEBUG=false python -m uvicorn agentix.main:application
 
 ---
 
-## 5.1 法律法规领域数据路径
+## 5.1 测试数据集领域数据路径
 
 | 配置键 | 默认值 | 说明 |
 |--------|--------|------|
-| `NEO4J_LEGAL_JSON_PATH` | `data/legal/legal_seed.json` | 法律法规领域种子（Neo4j 法律本体），由 `scripts/legal_kg_to_csv.py` 转换灌库 |
-| `LEGAL_LIGHTRAG_JSON_PATH` | `data/legal/legal_lightrag_corpus.json` | 法律法规 LightRAG 语料（法条全文 + 司法解释全文） |
+| `NEO4J_LEGAL_JSON_PATH` | `data/legal/legal_seed.json` | 测试数据集领域种子（Neo4j 测试数据本体），由 `scripts/legal_kg_to_csv.py` 转换灌库 |
+| `LEGAL_LIGHTRAG_JSON_PATH` | `data/legal/legal_lightrag_corpus.json` | 测试数据集 LightRAG 语料（数据条目全文 + 示例说明全文） |
 
 ---
 
@@ -255,6 +264,17 @@ SECRET_KEY= DEBUG=false python -m uvicorn agentix.main:application
 对端的**开关**叫 `KB_REQUIRE_API_KEY`（`kb_ingest` 自己的配置，本应用**不读它**——
 本应用只需知道"要不要带钥匙"，而这件事由 `KB_API_KEY` 是否为空决定；
 多读一个开关只会多一处可能不一致的配置面）。完整契约见 `kb_ingest/.env.example`。
+
+同样属于对端、本应用不读的还有 MySQL 导入的两道闸：连接串闸门 `KB_MYSQL_URL_GUARD`
+（默认 false）与主机白名单 `KB_MYSQL_ALLOWED_HOSTS`（默认空），以及过滤参数化闸门
+`KB_MYSQL_WHERE_PARAMETRIZED`（默认 false，开则原始 `where` 片段一律拒、过滤只能走结构化
+`filters`）。这三个键**不进本文件与运行时护栏的配置表**——表里的键都会被
+`tests/test_p41_doc_consistency.py` 索要成主应用 Settings 字段，
+而它们只活在 `kb_ingest/kb_service/core/config.py`；契约由
+`tests/test_p35_config_governance.py` 按「`config.py` 读到的键 ⊆ `kb_ingest/.env.example`
+声明的键，反向亦然」守。语义与「白名单留空 ⇒ 只校验 scheme」的过渡态见
+[运行时护栏 §15.5](runtime-guardrails.md)，`where` 那一半的迁移代价（开当天既有作业全 400）
+见 [§15.9](runtime-guardrails.md)。
 
 > ⚠️ **不要复用 `API_KEY`。** compose 里 `kb_ingest` 容器用 `env_file: .env` 加载
 > 仓库根 `.env`，复用会把主应用密钥原样注入该容器；而 `API_KEY` 是**对外发布**的

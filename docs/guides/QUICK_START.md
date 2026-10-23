@@ -59,7 +59,7 @@ Recall: 20 → Return: 6
 curl -X POST "http://localhost:8100/api/v1/knowledge/search" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "合同违约的法律后果是什么？",
+    "query": "示例文档异常的测试数据后果是什么？",
     "top_k": 6
   }' | jq
 ```
@@ -69,13 +69,13 @@ curl -X POST "http://localhost:8100/api/v1/knowledge/search" \
 {
   "results": [
     {
-      "content": "法条：民法典第577条\n内容：当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任...",
+      "content": "数据条目：示例数据集 A 第577条\n内容：参与方一方不履行示例文档义务或者履行示例文档义务不符合约定的，应当承担继续履行、采取补救措施或者补偿损失等异常责任...",
       "score": 0.95,
       "rerank_score": 0.98,
       "metadata": {
         "provision_id": "...",
-        "name": "民法典第577条",
-        "category": "合同编"
+        "name": "示例数据集 A 第577条",
+        "category": "示例文档编"
       }
     }
   ],
@@ -102,7 +102,7 @@ curl -X POST "http://localhost:8000/api/v1/chat/" \
   -d '{
     "user_id": "test_user_001",
     "session_id": "session_001",
-    "message": "合同违约怎么赔偿？",
+    "message": "示例文档异常怎么补偿？",
     "stream": false
   }' | jq
 ```
@@ -110,7 +110,7 @@ curl -X POST "http://localhost:8000/api/v1/chat/" \
 **预期响应**:
 ```json
 {
-  "message": "合同违约的法律后果如下：...",
+  "message": "示例文档异常的测试数据后果如下：...",
   "session_id": "session_001",
   "message_id": "...",
   "route": "graphrag-query",
@@ -126,7 +126,7 @@ curl -X POST "http://localhost:8000/api/v1/chat/" \
 ### 完整流程
 
 ```
-用户查询: "合同违约怎么赔偿？"
+用户查询: "示例文档异常怎么补偿？"
     │
     ▼
 ┌─────────────────────────────────────────────┐
@@ -134,7 +134,7 @@ curl -X POST "http://localhost:8000/api/v1/chat/" \
 │ ─────────────────────────────────────────── │
 │ API: http://your-embedding-host:9997/v1/embeddings │
 │ Model: bge-m3                               │
-│ Input: "合同违约怎么赔偿？"                       │
+│ Input: "示例文档异常怎么补偿？"                       │
 │ Output: [0.023, -0.145, ..., 0.089] (1024维)│
 └────────────────┬────────────────────────────┘
                  │
@@ -145,7 +145,7 @@ curl -X POST "http://localhost:8000/api/v1/chat/" \
 │ Collection: legal                           │
 │ Query Vector: 1024-dim                      │
 │ Top K: 20 (RERANK_MAX_CANDIDATES)           │
-│ Results: 20个相关法条文档                    │
+│ Results: 20个相关数据条目文档                    │
 └────────────────┬────────────────────────────┘
                  │
                  ▼
@@ -165,12 +165,12 @@ curl -X POST "http://localhost:8000/api/v1/chat/" \
 │ ─────────────────────────────────────────── │
 │ API: http://your-llm-host:8000/v1/chat/...   │
 │ Model: Qwen3-30B-A3B                        │
-│ Context: Top 6 法条文档                      │
+│ Context: Top 6 数据条目文档                      │
 │ Output: 自然语言答案                         │
 └────────────────┬────────────────────────────┘
                  │
                  ▼
-    返回用户: "合同违约的法律后果：..."
+    返回用户: "示例文档异常的测试数据后果：..."
 ```
 
 ---
@@ -201,12 +201,12 @@ curl -X POST "http://localhost:8100/api/v1/knowledge/ingest/mysql" \
 # 向量检索
 curl -X POST "http://localhost:8100/api/v1/knowledge/search" \
   -H "Content-Type: application/json" \
-  -d '{"query": "违约责任", "top_k": 6}' | jq
+  -d '{"query": "异常责任", "top_k": 6}' | jq
 
 # 向量 + 重排混合检索
 curl -X POST "http://localhost:8100/api/v1/knowledge/search/hybrid" \
   -H "Content-Type: application/json" \
-  -d '{"query": "违约责任", "vector_top_k": 20, "rerank_top_k": 6}' | jq
+  -d '{"query": "异常责任", "vector_top_k": 20, "rerank_top_k": 6}' | jq
 ```
 
 > LightRAG 图谱侧语料导入使用 `scripts/init_lightrag.py`
@@ -269,8 +269,8 @@ curl -X POST "http://your-rerank-host:9997/v1/rerank" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "bge-reranker-large",
-    "query": "合同违约",
-    "documents": ["合同违约责任", "民法典第577条"],
+    "query": "示例文档异常",
+    "documents": ["示例文档异常责任", "示例数据集 A 第577条"],
     "top_n": 2
   }' | jq
 

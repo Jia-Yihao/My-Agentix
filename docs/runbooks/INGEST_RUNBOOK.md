@@ -1,6 +1,6 @@
-# My Agentix 法律法规领域 —— 灌库 / 解锁图谱推理 起栈操作手册
+# My Agentix 测试数据集领域 —— 灌库 / 解锁图谱推理 起栈操作手册
 
-> 适用对象：需要在本机启动全套基础设施、把法律数据灌入各存储、并解锁图谱推理能力的工程师。
+> 适用对象：需要在本机启动全套基础设施、把测试数据灌入各存储、并解锁图谱推理能力的工程师。
 > 本文档只描述**起栈后的操作**。离线已完成的部分见文末「备注」。
 
 ---
@@ -55,7 +55,7 @@ NEO4J_PASSWORD = (空，auth 已关闭)
 
 ## 2. 分阶段执行灌库命令（复制即用）
 
-### ① Neo4j（法律本体图谱）
+### ① Neo4j（测试数据本体图谱）
 
 ```bash
 # 步骤 1：由 seed.json 生成 Neo4j 导入 CSV（14 个）
@@ -68,7 +68,7 @@ python scripts/legal_kg_to_csv.py \
 docker-compose up -d --build neo4j
 ```
 
-### ② kb 向量库（法律语料）
+### ② kb 向量库（测试数据语料）
 
 ```bash
 # kb_ingest 服务会读取 data/kb/legal_corpus.txt 并写入 Milvus legal 集合
@@ -81,7 +81,7 @@ docker-compose logs -f kb_ingest
 相关配置项（`agentix/config/settings.py`）：
 `KB_DATA_FILE=data/kb/legal_corpus.txt`、`KB_USE_LLM`、`KB_EMBEDDING_*`。
 
-### ③ LightRAG（法条 + 司法解释语料）
+### ③ LightRAG（数据条目 + 示例说明语料）
 
 ```bash
 # 以 JSON 语料源初始化 LightRAG（写入 LIGHTRAG_WORKING_DIR）
@@ -98,7 +98,7 @@ python scripts/init_lightrag.py \
 
 1. 打开 **LM Studio**，在 *Local Server* 页启动 Server，确认监听
    `http://localhost:1234/v1`（OpenAI 兼容）。
-2. 加载模型 **`qwen/qwen3.5-9b`**（用于后续对法条做语义抽取）。
+2. 加载模型 **`qwen/qwen3.5-9b`**（用于后续对数据条目做语义抽取）。
 3. 验证端点可达：
 
 ```bash
@@ -126,7 +126,7 @@ python scripts/data/verify_ingestion_pipeline.py
 // 节点总数
 MATCH (n) RETURN count(n) AS node_count;
 
-// 按标签统计（法律本体标签，如 Article / Clause / Cause 等）
+// 按标签统计（测试数据本体标签，如 Article / Clause / Cause 等）
 MATCH (n) RETURN labels(n)[0] AS label, count(*) AS cnt ORDER BY cnt DESC;
 
 // 边总数（注意：规则化抽取的 `引用` 边在本数据集为 0，属数据限制）
@@ -140,8 +140,8 @@ MATCH ()-[r]->() RETURN type(r) AS rel, count(*) AS cnt ORDER BY cnt DESC;
 - **离线已满量验证** `数据→CSV`：`scripts/legal_kg_to_csv.py` 已对
   `data/legal/legal_seed.json` 跑通，`article_nodes.csv` ≈ **1953 行**。
 - **就绪探测脚本** `scripts/data/verify_ingestion_pipeline.py` 已就绪，可随时评估各阶段。
-- **`引用` 边为空属数据限制**：本数据集中法条间无显式跨条引用，规则化抽取结果为 0；
-  若需补全 `引用` / `对应案由` / `有司法解释` 等边，须依赖 **LM Studio（qwen/qwen3.5-9b）**
+- **`引用` 边为空属数据限制**：本数据集中数据条目间无显式跨条引用，规则化抽取结果为 0；
+  若需补全 `引用` / `对应数据分类` / `有示例说明` 等边，须依赖 **LM Studio（qwen/qwen3.5-9b）**
   做语义抽取（见第 3 节）。
 - 当前环境（Docker 未启动、各端口关闭、LM Studio 关闭）下，探测器输出应全部为 ⛔/⏳，
   属预期状态，不影响脚本正常退出。

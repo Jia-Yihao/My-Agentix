@@ -17,11 +17,11 @@ export type ChatCitation = {
   /** 小写扩展名，不含点 */
   file_ext?: string | null
   /**
-   * R2-2 法条效力状态：in_force（现行有效）/ expired（已失效）/
+   * R2-2 数据条目效力状态：in_force（现行有效）/ expired（已失效）/
    * repealed（已废止）/ pending（未生效）；前端对未知值不渲染徽标。
    */
   effective_status?: string | null
-  /** 被何法替代（expired/repealed 时的展示字段） */
+  /** 被何条目替代（expired/repealed 时的展示字段） */
   replaced_by?: string | null
 }
 

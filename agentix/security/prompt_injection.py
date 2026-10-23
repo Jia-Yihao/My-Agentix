@@ -14,7 +14,7 @@ system prompt、诱导调用危险工具。企业级 Agent 上线审查必问项
 ② **入库检测（Layer ingest）**：文档解析入库时扫描指令模式
    （"忽略之前的指令"、jailbreak、工具滥用诱导等）。
    默认 observe-only（计数+告警日志）；``PROMPT_INJECTION_INGEST_BLOCK=true``
-   时阻断入库（fail-closed 可选，法律库误报代价高，默认不阻断）。
+   时阻断入库（fail-closed 可选，测试数据库误报代价高，默认不阻断）。
    → ``detect_prompt_injection`` / ``scan_chunks_for_injection``
 
 ③ **输出侧（Layer output）**：最终回答出站前 observe-only 复扫
@@ -24,7 +24,7 @@ system prompt、诱导调用危险工具。企业级 Agent 上线审查必问项
 
 规则说明：**规则引擎只能兜底已知模式，不是语义防火墙**。语义级防护
 （分类器/第二个 LLM 复核）见评估报告 P2。误报优先宁可漏报——
-法律域阻断正常问答的代价高于放行可疑内容（observe-first 原则）。
+测试数据域阻断正常问答的代价高于放行可疑内容（observe-first 原则）。
 """
 
 from __future__ import annotations

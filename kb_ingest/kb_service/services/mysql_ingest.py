@@ -1,7 +1,7 @@
 
 import logging
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from sqlalchemy import text
@@ -9,6 +9,8 @@ from sqlalchemy.engine import create_engine
 
 from kb_service.clients.llm import LLMClient
 from kb_service.core.config import Config
+from kb_service.core.db_url_guard import enforce_connection_url
+from kb_service.core.sql_filters import build_where, enforce_where_policy
 from kb_service.prompts.manager import PromptManager, SchemaColumn, build_prompt_manager_from_env
 from kb_service.schemas.ingest import MySQLIngestRequest
 from kb_service.services.utils import flatten_row
@@ -27,6 +29,14 @@ class MySQLIngestor:
         self.logger = logging.getLogger(__name__)
 
     def ingest(self, request: MySQLIngestRequest) -> Dict[str, int]:
+        # G12：连接串闸门（默认关）。放在这里是因为它是 HTTP 与 CLI 的**唯一**汇合点，
+        # 放在 pydantic 层则会让被拒的连接串连密码一起进 422 响应体（见 schemas 侧注释）。
+        enforce_connection_url(request.connection_url, self.config)
+        # ⑫：WHERE 口径同样在**建连接之前**判掉——参数化的拒绝理由全在本地可判定，
+        # 等到 `_build_query` 才发现，调用方付出的是一次真实的数据库握手。
+        enforce_where_policy(
+            self.config.mysql_where_parametrized, request.where, request.filters
+        )
         engine = create_engine(request.connection_url)
         total_rows = 0
         embedded_rows = 0
@@ -68,7 +78,7 @@ class MySQLIngestor:
                 "legal_effective_from": request.legal_effective_from,
                 "legal_effective_to": request.legal_effective_to,
                 "source_authority_level": request.source_authority_level,
-                # R2-2b（指南 §2.2.7①）：四字段效力契约——显式状态与替代法透传（人工标注已失效入口）
+                # R2-2b（指南 §2.2.7①）：四字段有效性契约——显式状态与替代法透传（人工标注已失效入口）
                 "effective_status": request.effective_status,
                 "replaced_by": request.replaced_by,
             }
@@ -138,12 +148,24 @@ class MySQLIngestor:
         return text or None
 
     def _build_query(self, request: MySQLIngestRequest):
-        base = f"SELECT * FROM `{request.table}`"  # nosec B608 - 表名已由 MySQLIngestRequest 标识符白名单校验，where 已拒绝 ;/-- 注释
-        if request.where:
+        parametrized = self.config.mysql_where_parametrized
+        enforce_where_policy(parametrized, request.where, request.filters)
+        base = f"SELECT * FROM `{request.table}`"  # nosec B608 - 表名已由 MySQLIngestRequest 标识符白名单校验
+        params: Dict[str, Any] = {}
+        if parametrized:
+            # flag 开：原始 `where` 已在上面被拒，这里只可能来自封闭枚举 + bindparams。
+            if request.filters:
+                clause, params = build_where([f.model_dump() for f in request.filters])
+                base += f" WHERE {clause}"
+        elif request.where:
+            # flag 关：与加固前逐位等价（`where` 已拒绝 ;/-- 注释，仍是拼接片段）。
             base += f" WHERE {request.where}"
         if request.limit:
             base += f" LIMIT {int(request.limit)}"
-        return text(base)
+        statement = text(base)
+        if params:
+            statement = statement.bindparams(**params)
+        return statement
 
     def _fetch_schema(self, conn, table: str) -> List[SchemaColumn]:
         result = conn.execute(text(f"SHOW FULL COLUMNS FROM `{table}`"))

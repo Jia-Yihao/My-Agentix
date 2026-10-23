@@ -86,7 +86,7 @@ def create_guardrails_node(
 
         if any(keyword in question for keyword in heuristics_keywords) or "?" in question or "？" in question:
             logger.info(
-                "Guardrails 前置规则命中法律领域关键词，直接进入 planner。",
+                "Guardrails 前置规则命中测试数据集领域关键词，直接进入 planner。",
                 extra={"question": question},
             )
             return {"next_action": "planner", "summary": None, "steps": ["guardrails"]}
@@ -105,13 +105,13 @@ def create_guardrails_node(
         if decision == "end":
             if any(keyword in question for keyword in heuristics_keywords) or "?" in question or "？" in question:
                 logger.info(
-                    "Guardrails 触发兜底：问题含有法律领域关键词，强制路由到 planner。",
+                    "Guardrails 触发兜底：问题含有测试数据集领域关键词，强制路由到 planner。",
                     extra={"question": question},
                 )
                 decision = "planner"
 
         if decision == "end":
-            summary = "抱歉，这个问题不在法律法规咨询范围内，您可以问我关于法条、案由、司法解释等方面的内容哦~"
+            summary = "抱歉，这个问题不在测试数据集问答范围内，您可以问我关于数据条目、数据分类、示例说明等方面的内容哦~"
 
         decision_info = {
             "next_action": decision,

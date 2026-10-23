@@ -580,7 +580,7 @@ _CACHE_CONFIG_GLOBS = (
     "package.json",
 )
 
-#: 扫描时要跳过的目录名（虚拟环境 / 依赖 / 产物 / 缓存）
+#: 扫描时要跳过的目录名（虚拟环境 / 依赖 / 产物 / 缓存 / 本地临时目录）
 _SKIP_DIR_PARTS = frozenset(
     {
         ".venv",
@@ -594,6 +594,10 @@ _SKIP_DIR_PARTS = frozenset(
         ".pytest_cache",
         "site-packages",
         "archive",
+        # `.tmp/` 被 `.gitignore` 的 `*.tmp` 规则忽略＝不随仓库交付，本守卫只约束
+        # 交付源码。且 pytest `--basetemp` 指到仓库内时，上面那个合成违规样例就落在
+        # 这里——不排除会让「无违规」这条守卫被测试自己的临时产物搞成随机红。
+        ".tmp",
     }
 )
 

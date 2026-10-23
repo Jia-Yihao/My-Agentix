@@ -12,27 +12,27 @@
 | **早上好** | `general-query` | `respond_to_general_query` | - | LLM 直接生成 |
 | **谢谢你** | `general-query` | `respond_to_general_query` | - | LLM 直接生成 |
 | **今天心情不错** | `general-query` | `respond_to_general_query` | - | LLM 直接生成 |
-| **我想咨询合同问题** | `additional-query` | `get_additional_info` | Guardrails → proceed | LLM 询问细节 |
-| **这条法条怎么适用** | `additional-query` | `get_additional_info` | Guardrails → proceed | LLM 询问情形 |
-| **这条法条适用哪些情形** | `additional-query` | `get_additional_info` | Guardrails → proceed | LLM 询问情形 |
+| **我想咨询示例文档问题** | `additional-query` | `get_additional_info` | Guardrails → proceed | LLM 询问细节 |
+| **这条数据条目怎么适用** | `additional-query` | `get_additional_info` | Guardrails → proceed | LLM 询问情形 |
+| **这条数据条目适用哪些情形** | `additional-query` | `get_additional_info` | Guardrails → proceed | LLM 询问情形 |
 | **今天天气怎么样** | `additional-query` | `get_additional_info` | Guardrails → **end** | 礼貌拒绝 |
-| **民法典的历史渊源** | `kb-query` | `create_kb_query` | Router → [milvus, kb_structured] → Reranker | Milvus + kb 结构化库 |
-| **合同法的特点** | `kb-query` | `create_kb_query` | Router → [milvus] | Milvus 向量检索 |
+| **示例数据集 A 的历史渊源** | `kb-query` | `create_kb_query` | Router → [milvus, kb_structured] → Reranker | Milvus + kb 结构化库 |
+| **示例文档集的特点** | `kb-query` | `create_kb_query` | Router → [milvus] | Milvus 向量检索 |
 | **物权编的由来** | `kb-query` | `create_kb_query` | Router → [milvus, kb_structured] | 多源融合 |
-| **违约责任的种类** | `kb-query` | `create_kb_query` | Router → [milvus] → Reranker | Milvus + Reranker |
-| **合同违约怎么认定** | `graphrag-query` | `create_research_plan` | Planner → [**predefined_cypher**] | Neo4j (预定义) |
-| **合同违约需要哪些证据** | `graphrag-query` | `create_research_plan` | Planner → [**predefined_cypher**] | Neo4j (HAS_EVIDENCE) |
-| **合同条款怎么认定效力** | `graphrag-query` | `create_research_plan` | Planner → [cypher_query, microsoft_graphrag] | Neo4j + GraphRAG |
-| **怎么判断合同生效** | `graphrag-query` | `create_research_plan` | Planner → [**microsoft_graphrag**] | LightRAG 图推理 |
-| **为什么违约金过高会被调整** | `graphrag-query` | `create_research_plan` | Planner → [cypher_query, microsoft_graphrag] | Neo4j + GraphRAG |
+| **异常责任的种类** | `kb-query` | `create_kb_query` | Router → [milvus] → Reranker | Milvus + Reranker |
+| **示例文档异常怎么认定** | `graphrag-query` | `create_research_plan` | Planner → [**predefined_cypher**] | Neo4j (预定义) |
+| **示例文档异常需要哪些证据** | `graphrag-query` | `create_research_plan` | Planner → [**predefined_cypher**] | Neo4j (HAS_EVIDENCE) |
+| **示例文档条目怎么认定有效性** | `graphrag-query` | `create_research_plan` | Planner → [cypher_query, microsoft_graphrag] | Neo4j + GraphRAG |
+| **怎么判断示例文档生效** | `graphrag-query` | `create_research_plan` | Planner → [**microsoft_graphrag**] | LightRAG 图推理 |
+| **为什么异常金过高会被调整** | `graphrag-query` | `create_research_plan` | Planner → [cypher_query, microsoft_graphrag] | Neo4j + GraphRAG |
 | **什么情形适用定金罚则** | `graphrag-query` | `create_research_plan` | Planner → [cypher_query, microsoft_graphrag] | Neo4j (DEPOSIT_PENALTY) + GraphRAG |
-| **数据库里有多少部法律** | `text2sql-query` | `create_research_plan` | Planner → [**text2sql_query**] | MySQL (SELECT COUNT) |
-| **哪个法律领域条文最多** | `text2sql-query` | `create_research_plan` | Planner → [**text2sql_query**] | MySQL (GROUP BY) |
-| **统计每类法律的数量** | `text2sql-query` | `create_research_plan` | Planner → [**text2sql_query**] | MySQL (GROUP BY) |
+| **数据库里有多少部测试数据** | `text2sql-query` | `create_research_plan` | Planner → [**text2sql_query**] | MySQL (SELECT COUNT) |
+| **哪个测试数据领域条文最多** | `text2sql-query` | `create_research_plan` | Planner → [**text2sql_query**] | MySQL (GROUP BY) |
+| **统计每类测试数据的数量** | `text2sql-query` | `create_research_plan` | Planner → [**text2sql_query**] | MySQL (GROUP BY) |
 | **适用定金罚则的情形有多少** | `graphrag-query` | `create_research_plan` | Planner → [cypher_query, text2sql_query] | Neo4j + MySQL |
-| **生成法条结构图** | `image-query` | `create_image_query` | LLM 优化 prompt → CogView-4 | 图片生成 API |
-| **这是什么法律关系（附图）** | `image-query` | `create_image_query` | Vision API 识别 → 描述 | 视觉模型 |
-| **分析法律文书（.txt）** | `file-query` | `create_file_query` | 读取 → 导入 KB → 查询 | 文件 + Milvus |
+| **生成数据条目结构图** | `image-query` | `create_image_query` | LLM 优化 prompt → CogView-4 | 图片生成 API |
+| **这是什么测试数据关系（附图）** | `image-query` | `create_image_query` | Vision API 识别 → 描述 | 视觉模型 |
+| **分析测试数据文档（.txt）** | `file-query` | `create_file_query` | 读取 → 导入 KB → 查询 | 文件 + Milvus |
 
 ---
 
@@ -54,13 +54,13 @@
 - **触发词**: 历史、典故、背景、文化、流派
 - **子决策**: **KB Multi-tool Router** 选择
   - `[milvus]` → 单一向量检索
-  - `[kb_structured]` → kb_ingest 结构化法律库（Milvus legal 集合）
+  - `[kb_structured]` → kb_ingest 结构化测试数据库（Milvus legal 集合）
   - `[milvus, kb_structured]` → 多源检索 + **Reranker**
   - `[milvus, external]` → 向量检索 + 外部搜索
 - **响应**: 知识科普、背景介绍
 
 ### 4️⃣ GraphRAG-Query（图谱推理）
-- **触发词**: 怎么认定、构成要件、证据、效力、技巧
+- **触发词**: 怎么认定、构成要件、证据、有效性、技巧
 - **子决策**: **Planner** 选择工具组合
   - `[predefined_cypher]` → 高频场景（认定、证据）
   - `[cypher_query]` → 动态生成 Cypher（通用查询）
@@ -162,7 +162,7 @@ get_additional_info
 └─────────────────┘
     ↓
     ├─→ ✅ proceed → 友好询问补充信息
-    └─→ ❌ end → 礼貌拒绝："不太属于我们的法律咨询范围"
+    └─→ ❌ end → 礼貌拒绝："不太属于我们的数据问答范围"
 ```
 
 ---
@@ -176,28 +176,28 @@ python -m tests.test_agent_routing --suite
 
 ### 测试单个问题
 ```bash
-python -m tests.test_agent_routing --single "合同违约怎么认定"
+python -m tests.test_agent_routing --single "示例文档异常怎么认定"
 ```
 
 ### 通过 API 测试
 ```bash
 curl -X POST "http://localhost:8000/api/v1/chat/" \
   -H "Content-Type: application/json" \
-  -d '{"message": "合同违约怎么认定", "session_id": "test_001"}'
+  -d '{"message": "示例文档异常怎么认定", "session_id": "test_001"}'
 ```
 
 ### 测试带图片
 ```bash
 curl -X POST "http://localhost:8000/api/v1/chat/" \
   -H "Content-Type: application/json" \
-  -d '{"message": "这是什么法律关系", "image_path": "/tmp/legal.jpg", "session_id": "test_002"}'
+  -d '{"message": "这是什么测试数据关系", "image_path": "/tmp/legal.jpg", "session_id": "test_002"}'
 ```
 
 ### 测试文件上传
 ```bash
 curl -X POST "http://localhost:8000/api/v1/chat/" \
   -H "Content-Type: application/json" \
-  -d '{"message": "分析这份法律文书", "file_path": "/tmp/legal_doc.txt", "session_id": "test_003"}'
+  -d '{"message": "分析这份测试数据文档", "file_path": "/tmp/legal_doc.txt", "session_id": "test_003"}'
 ```
 
 ---
@@ -263,8 +263,8 @@ WARN - KB multi-tool workflow unavailable ... falling back to direct search.
 - [ ] **打招呼问题** → general-query（无 KB 调用）
 - [ ] **模糊问题** → additional-query → Guardrails 检查
 - [ ] **历史文化问题** → kb-query → 多源检索 + Reranker
-- [ ] **法条认定** → graphrag-query → Planner 选 predefined_cypher
-- [ ] **法律要件分析** → graphrag-query → Planner 选 GraphRAG
+- [ ] **数据条目认定** → graphrag-query → Planner 选 predefined_cypher
+- [ ] **测试数据要件分析** → graphrag-query → Planner 选 GraphRAG
 - [ ] **统计数字** → text2sql-query → SQL 查询
 - [ ] **无关问题** → Guardrails 拦截 → 礼貌拒绝
 - [ ] **异常情况** → Fallback 降级 → 不崩溃

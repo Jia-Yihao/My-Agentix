@@ -7,7 +7,7 @@ tool_calls / tokens / latency / cost。
 与既有 ``application/services/token_budget.py`` 的关系：BudgetLedger 是
 **编排域**的请求级 token 台账（子 Agent 切片语义），保留不动；BudgetManager
 是 **Runtime 层**的全维度预算（steps/llm/tool/latency/cost），面向
-AgentState。二者管辖层级不同，接入点也不同。
+AgentState。二者归属层级不同，接入点也不同。
 """
 
 from __future__ import annotations

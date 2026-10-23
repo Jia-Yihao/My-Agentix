@@ -24,6 +24,24 @@ def run_search(query: str, top_k: int, threshold: float | None, metric: str) -> 
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
+def _parse_filters(raw: str | None) -> list[dict] | None:
+    """`--filters` 收一段 JSON 数组（`[{"column":"year","op":"eq","value":2024}]`）。
+
+    刻意**不**做一个 `column=op=value` 的迷你语法：那等于再造一层解析器，
+    而它的产出仍然要过 `core/sql_filters` 的同一份校验——JSON 是已有语言，
+    与 HTTP 请求体逐字同形，操作员把 curl 的片段粘过来就能用。
+    """
+    if raw is None:
+        return None
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"--filters must be a JSON array of {{column, op, value}}: {exc.msg}") from exc
+    if not isinstance(loaded, list):
+        raise SystemExit("--filters must be a JSON array of {column, op, value}")
+    return loaded
+
+
 def ingest_mysql(
     connection_url: str,
     table: str,
@@ -35,6 +53,7 @@ def ingest_mysql(
     id_column: str | None,
     company_field: str | None,
     report_year_field: str | None,
+    filters: list[dict] | None = None,
 ) -> None:
     config = load_config()
     ingestor = MySQLIngestor(config)
@@ -42,6 +61,7 @@ def ingest_mysql(
         connection_url=connection_url,
         table=table,
         where=where,
+        filters=filters,
         limit=limit,
         mode=mode,
         prompt_key=prompt_key,
@@ -71,7 +91,11 @@ def main() -> None:
     mysql_parser = subparsers.add_parser("ingest-mysql", help="Ingest data from a MySQL table")
     mysql_parser.add_argument("connection_url", help="SQLAlchemy style MySQL connection URL")
     mysql_parser.add_argument("table", help="Target table name")
-    mysql_parser.add_argument("--where", help="Optional SQL WHERE clause")
+    mysql_parser.add_argument("--where", help="Optional SQL WHERE clause (only while KB_MYSQL_WHERE_PARAMETRIZED=false)")
+    mysql_parser.add_argument(
+        "--filters",
+        help='JSON array of {column, op, value}; requires KB_MYSQL_WHERE_PARAMETRIZED=true, e.g. \'[{"column":"year","op":"eq","value":2024}]\'',
+    )
     mysql_parser.add_argument("--limit", type=int, help="Maximum number of rows to ingest")
     mysql_parser.add_argument("--mode", choices=["rewrite", "flatten"], default="rewrite")
     mysql_parser.add_argument("--prompt-key", help="Template key to look up in prompt config")
@@ -99,6 +123,7 @@ def main() -> None:
             id_column=args.id_column,
             company_field=args.company_field,
             report_year_field=args.report_year_field,
+            filters=_parse_filters(args.filters),
         )
 
 

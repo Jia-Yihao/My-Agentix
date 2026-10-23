@@ -83,7 +83,7 @@ class IsolationPolicy:
 
 @dataclass(frozen=True)
 class MemorySnapshot:
-    """父记忆只读快照：文本面 + （可选）结构化面深拷贝后冻结。"""
+    """父记忆只读快照：文本面 + （可选）结构化面深拷贝后暂停。"""
 
     text: str = ""
     #: Mapping 深拷贝 → MappingProxyType（写入抛 TypeError——真只读，非口头）
@@ -104,7 +104,7 @@ class MemorySnapshot:
 
 
 def take_memory_snapshot(memory_context: Any) -> Optional[MemorySnapshot]:
-    """把父记忆活上下文固化为只读快照（str 原样冻结；Mapping 深拷贝冻结）。
+    """把父记忆活上下文固化为只读快照（str 原样暂停；Mapping 深拷贝暂停）。
 
     空值（``None`` / 空串 / 空 Mapping）⇒ ``None``（不产无意义快照）。
     """

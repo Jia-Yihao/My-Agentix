@@ -2,10 +2,10 @@
 """
 LightRAG 初始化脚本
 
-从 Neo4j 法律法规图谱导出数据并导入到 LightRAG，用于图谱检索增强
+从 Neo4j 测试数据集图谱导出数据并导入到 LightRAG，用于图谱检索增强
 支持两种模式:
-1. 从 Neo4j 导入完整法条数据
-2. 从 JSON 文件导入法律法规数据
+1. 从 Neo4j 导入完整数据条目数据
+2. 从 JSON 文件导入测试数据集数据
 """
 import asyncio
 import sys
@@ -31,12 +31,12 @@ def format_legal_document(record: Dict[str, Any]) -> str:
     Parameters
     ----------
     record : Dict[str, Any]
-        法条记录，字段可为 title/content/法规/条号/内容/关键词
+        数据条目记录，字段可为 title/content/数据集/条号/内容/关键词
 
     Returns
     -------
     str
-        格式化后的法律法规文档
+        格式化后的测试数据集文档
     """
     title = record.get("title") or ""
     content = record.get("content") or record.get("内容") or ""
@@ -72,14 +72,14 @@ def format_legal_document(record: Dict[str, Any]) -> str:
 
 async def import_from_neo4j(lightrag: LightRAGAPI, limit: int = None) -> int:
     """
-    从 Neo4j 导入法条数据到 LightRAG
+    从 Neo4j 导入数据条目数据到 LightRAG
 
     Parameters
     ----------
     lightrag : LightRAGAPI
         LightRAG API 实例
     limit : int, optional
-        限制导入的法条数量，用于测试
+        限制导入的数据条目数量，用于测试
 
     Returns
     -------
@@ -89,7 +89,7 @@ async def import_from_neo4j(lightrag: LightRAGAPI, limit: int = None) -> int:
     try:
         from neo4j import GraphDatabase
 
-        logger.info("开始从 Neo4j 导入法条数据")
+        logger.info("开始从 Neo4j 导入数据条目数据")
 
         # 连接 Neo4j
         driver = GraphDatabase.driver(
@@ -100,7 +100,7 @@ async def import_from_neo4j(lightrag: LightRAGAPI, limit: int = None) -> int:
         documents = []
 
         with driver.session(database=settings.NEO4J_DATABASE) as session:
-            # 构建查询：法律法规图谱的「法条」节点
+            # 构建查询：测试数据集图谱的「数据条目」节点
             query = """
             MATCH (f:法条)
             RETURN f.法规 as 法规,
@@ -125,7 +125,7 @@ async def import_from_neo4j(lightrag: LightRAGAPI, limit: int = None) -> int:
 
         driver.close()
 
-        logger.info(f"共准备了 {len(documents)} 个法条文档")
+        logger.info(f"共准备了 {len(documents)} 个数据条目文档")
 
         # 批量插入到 LightRAG
         logger.info("开始插入文档到 LightRAG")
@@ -145,7 +145,7 @@ async def import_from_neo4j(lightrag: LightRAGAPI, limit: int = None) -> int:
 
 async def import_from_json(lightrag: LightRAGAPI, json_path: str, limit: int = None) -> int:
     """
-    从 JSON 文件导入法律法规数据到 LightRAG
+    从 JSON 文件导入测试数据集数据到 LightRAG
 
     Parameters
     ----------
@@ -154,7 +154,7 @@ async def import_from_json(lightrag: LightRAGAPI, json_path: str, limit: int = N
     json_path : str
         JSON 文件路径
     limit : int, optional
-        限制导入的法条数量，用于测试
+        限制导入的数据条目数量，用于测试
 
     Returns
     -------
@@ -182,7 +182,7 @@ async def import_from_json(lightrag: LightRAGAPI, json_path: str, limit: int = N
             if len(documents) % 10 == 0:
                 logger.info(f"已准备 {len(documents)} 个文档")
 
-        logger.info(f"共准备了 {len(documents)} 个法条文档")
+        logger.info(f"共准备了 {len(documents)} 个数据条目文档")
 
         # 批量插入到 LightRAG
         logger.info("开始插入文档到 LightRAG")
@@ -229,11 +229,11 @@ def _normalize_legal_payload(raw: Any) -> List[Dict[str, Any]]:
             records.append(record)
         return records
 
-    raise ValueError("不支持的法律法规数据格式，期望为 list 或 dict。")
+    raise ValueError("不支持的测试数据集数据格式，期望为 list 或 dict。")
 
 
 def _coerce_legal_entry(entry: Any) -> Dict[str, Any]:
-    """确保每个法条条目是 dict，并复制一份以避免修改原对象。"""
+    """确保每个数据条目条目是 dict，并复制一份以避免修改原对象。"""
     if isinstance(entry, dict):
         return dict(entry)
     return {"title": str(entry), "content": ""}  # 最少保留标题
@@ -283,7 +283,7 @@ async def main():
         elif args.source == "json":
             count = await import_from_json(lightrag, args.json_path, limit=args.limit)
 
-        logger.info(f"✅ LightRAG 初始化完成！成功导入 {count} 个法律法规文档")
+        logger.info(f"✅ LightRAG 初始化完成！成功导入 {count} 个测试数据集文档")
         logger.info(f"📂 工作目录: {lightrag.working_dir}")
         logger.info(f"🔍 检索模式: {lightrag.retrieval_mode}")
 

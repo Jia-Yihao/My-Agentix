@@ -76,15 +76,38 @@ class StaticToolSource:
 
 _ALLOWED_UNARYOPS = (ast.UAdd, ast.USub)
 
+MAX_EXPRESSION_CHARS = 200
+MAX_POW_EXPONENT = 64
+MAX_INT_BITS = 512
+MAX_FLOAT_ABS = 1e308
+
+
+def _guard(value: float, operation: str) -> float:
+    """白名单挡语法不挡资源：字面量再大也只是内存，一次 ** 就能算到天荒地老。"""
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError(f"{operation} produced a non-finite result")
+        if abs(value) > MAX_FLOAT_ABS:
+            raise ValueError(f"{operation} result out of range")
+        return value
+    if isinstance(value, int) and value.bit_length() > MAX_INT_BITS:
+        raise ValueError(f"{operation} result has too many bits")
+    return value
+
 
 def _safe_eval(node: ast.AST) -> float:
     """AST 白名单求值（只允许数字字面量与一元正负号；二元运算由 ev 处理）。"""
     if isinstance(node, ast.Expression):
         return _safe_eval(node.body)
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        if isinstance(node.value, float) and (
+            node.value != node.value or node.value in (float("inf"), float("-inf"))
+        ):
+            raise ValueError("literal must be finite")
         return node.value
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, _ALLOWED_UNARYOPS):
-        return _safe_eval(node.operand)
+        operand = _safe_eval(node.operand)
+        return -operand if isinstance(node.op, ast.USub) else operand
     raise ValueError(f"unsupported expression element: {type(node).__name__}")
 
 
@@ -92,6 +115,8 @@ def _calc(args: Dict[str, Any]) -> Dict[str, Any]:
     expr = str(args.get("expression", "")).strip()
     if not expr:
         raise ValueError("expression is required")
+    if len(expr) > MAX_EXPRESSION_CHARS:
+        raise ValueError(f"expression longer than {MAX_EXPRESSION_CHARS} chars")
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
@@ -100,22 +125,27 @@ def _calc(args: Dict[str, Any]) -> Dict[str, Any]:
     def ev(n: ast.AST) -> float:
         if isinstance(n, ast.Expression):
             return ev(n.body)
+        if isinstance(n, ast.UnaryOp) and isinstance(n.op, _ALLOWED_UNARYOPS):
+            operand = ev(n.operand)
+            return -operand if isinstance(n.op, ast.USub) else operand
         if isinstance(n, ast.BinOp):
             left, right = ev(n.left), ev(n.right)
             if isinstance(n.op, ast.Add):
-                return left + right
+                return _guard(left + right, "+")
             if isinstance(n.op, ast.Sub):
-                return left - right
+                return _guard(left - right, "-")
             if isinstance(n.op, ast.Mult):
-                return left * right
+                return _guard(left * right, "*")
             if isinstance(n.op, ast.Div):
-                return left / right
+                return _guard(left / right, "/")
             if isinstance(n.op, ast.FloorDiv):
-                return left // right
+                return _guard(left // right, "//")
             if isinstance(n.op, ast.Mod):
-                return left % right
+                return _guard(left % right, "%")
             if isinstance(n.op, ast.Pow):
-                return left**right
+                if abs(right) > MAX_POW_EXPONENT:
+                    raise ValueError(f"exponent magnitude exceeds {MAX_POW_EXPONENT}")
+                return _guard(left**right, "**")
         return _safe_eval(n)
 
     value = ev(tree)

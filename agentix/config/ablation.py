@@ -56,7 +56,7 @@ ENV_PREFIX = "AGENTIX_ABLATION_"
 #: * ``memory_enabled=False``：``settings.MEMORY_CONTEXT_ENABLED`` 默认 ``False``
 #:   （见 ``agentix/config/settings.py``），长期记忆召回默认关闭。
 #: * ``multi_agent=False``：主图为**扁平图**（``lg_builder.build_graph`` 注册
-#:   8 节点）；``True`` ⇒ ``lg_builder.get_active_graph`` 切到 supervisor 拓扑
+#:   9 节点）；``True`` ⇒ ``lg_builder.get_active_graph`` 切到 supervisor 拓扑
 #:   （Phase 19 接线，见 ``WIRED_FLAGS``）。
 #: * ``full_pipeline=True``：信息性标记。
 FLAG_DEFAULTS: Dict[str, bool] = {

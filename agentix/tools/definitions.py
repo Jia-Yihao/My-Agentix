@@ -23,7 +23,7 @@ class ToolRegistry:
         self._frozen: Optional[Tuple[str, ...]] = None
 
     def register(self, spec: ToolSpec, factory: Callable[[], Any]) -> None:
-        # Phase 22（KV Cache 纪律）：冻结快照后拒绝运行期动态注册——
+        # Phase 22（KV Cache 纪律）：暂停快照后拒绝运行期动态注册——
         # schema 前缀「首次构建后不可重排」（Gotcha：动态注册属违例）。
         if self._frozen is not None:
             logger.warning(
@@ -36,7 +36,7 @@ class ToolRegistry:
         self._factories[spec.name] = factory
 
     def freeze(self) -> Tuple[str, ...]:
-        """冻结注册序快照（幂等）：返回快照并从现在起拒绝 ``register``。
+        """暂停注册序快照（幂等）：返回快照并从现在起拒绝 ``register``。
 
         ``delete_tool`` 不受限（下线工具不重排序）；测试可用
         ``unfreeze`` 解冻。这是「首次构建后不可重排」的可执行形式。
@@ -49,7 +49,7 @@ class ToolRegistry:
         return self._frozen is not None
 
     def unfreeze(self) -> None:
-        """解除冻结（测试隔离用；生产路径不调用）。"""
+        """解除暂停（测试隔离用；生产路径不调用）。"""
         self._frozen = None
 
     def get_spec(self, name: str) -> ToolSpec:

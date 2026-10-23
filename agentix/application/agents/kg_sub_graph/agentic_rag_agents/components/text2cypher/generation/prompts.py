@@ -55,7 +55,7 @@ def create_text2cypher_generation_prompt_template() -> ChatPromptTemplate:
 
                         {fewshot_examples}
 
-                        以下是法律法规图谱的静态 Schema 说明（冗余保险，动态 schema 以 {schema} 为准）：
+                        以下是测试数据集图谱的静态 Schema 说明（冗余保险，动态 schema 以 {schema} 为准）：
 {legacy_schema_hint}
 
                         用户输入: {question}

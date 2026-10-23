@@ -6,8 +6,8 @@
    ``STATIC_PREFIX_VERSION`` 由 ``content_version`` 对其求 sha256——
    前缀文案任何改动都会让版本号变化，配合不变性测试保证
    「同一版本号 ⇒ 同一前缀文案」（Prompt 回放 / eval 归因的前提）。
-2. **法律 authority 排序**（§26 Ranking）：按 ``source_authority_level``
-   元数据把片段分成五档——法律正式文本 > 司法解释 > 法院案例 >
+2. **测试数据 authority 排序**（§26 Ranking）：按 ``source_authority_level``
+   元数据把片段分成五档——测试数据正式文本 > 示例说明 > 处理机构案例 >
    二级资料 > 普通网页；同档保持检索分序（稳定排序），
    缺失/未知档案位为 0（fail-open：存量数据顺序不变）。
 3. **Context Budget**（§27）：token 级贪心装配，超预算的低档片段被
@@ -65,24 +65,24 @@ def estimate_tokens(text: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 3. 法律 authority 排序（架构文档 §26：authority 维度）
+# 3. 测试数据 authority 排序（架构文档 §26：authority 维度）
 # ---------------------------------------------------------------------------
 
 AUTHORITY_LEVEL_KEY = "source_authority_level"
 
 #: 档位表：数值越大越权威。未知/缺失 = 0（fail-open，稳定排序不改变顺序）。
 AUTHORITY_TIERS: dict[str, int] = {
-    # tier 5：法律正式文本
+    # tier 5：测试数据正式文本
     "statute": 5,
     "law": 5,
     "法律": 5,
     "法律正式文本": 5,
     "正式文本": 5,
-    # tier 4：司法解释
+    # tier 4：示例说明
     "judicial_interpretation": 4,
     "judicial": 4,
     "司法解释": 4,
-    # tier 3：法院案例
+    # tier 3：处理机构案例
     "case": 3,
     "court_case": 3,
     "案例": 3,

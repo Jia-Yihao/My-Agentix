@@ -22,7 +22,7 @@
 |---|---|---|
 | Codex | Agent 按类型工具白名单（Explore 无写）+ 独立 system prompt + 后台线程 + 迭代上限 32；`Guardian` LLM 安全分类 + OS 沙箱；工具失败降级为 `is_error` tool_result 回喂不打断循环；计划模式 = 可回滚权限切换；TodoWrite 持久化 | 子代理白名单 + Guardian 门 + 失败回喂 + Plan 模式 + Todo |
 | Claude Code | Subagent 独立上下文、主会话只回终讯息 + metadata；可嵌套 5 层、动态工作流可编排数十上百后台 agent；Hooks（PreToolUse exit 2 拦截是强制）；Skills 按需加载零常驻成本 | 隔离 + 只回摘要 + Hook 强制 + 按需技能 |
-| Hermes | `delegate` 完整隔离（`ephemeral_prompt/skip_memory/独立 session_db+budget/weakref/心跳`）+ 明确契约 `status/exit_reason/truncated` + live registry 可 kill/pause/steer；阶段管线判决对象（continue/break/return）；三计数器自愈 + 结果 stub 化；`jobs.py/scheduler.py` 分半（本期只留口） | 隔离三件套 + 退出契约 + 判决对象 + 自愈 |
+| Hermes | `delegate` 完整隔离（`ephemeral_prompt/skip_memory/独立 session_db+budget/weakref/心跳`）+ 明确契约 `status/exit_reason/truncated` + live registry 可 kill/pause/steer；阶段管线决策对象（continue/break/return）；三计数器自愈 + 结果 stub 化；`jobs.py/scheduler.py` 分半（本期只留口） | 隔离三件套 + 退出契约 + 决策对象 + 自愈 |
 | 智谱系 | 多智能体分工（检索/分析/执行角色）+ 协作看板 + 分级审批 | Manager 分工 + 看板（P2）+ L1+ 审批 |
 
 ---

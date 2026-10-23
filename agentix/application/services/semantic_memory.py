@@ -22,7 +22,7 @@ Dedup → Conflict Detection → Store。本模块 v1 实现全链路，但两�
 
 Procedural Memory（§33）决策：当前无真实多步骤任务模板场景（KG 工作流
 为静态构图），做空壳存储属 dead-code（P2-5 纪律）——待出现真实消费方
-（如合同审查步骤模板）再建，接口不复用本模块。
+（如示例文档审查步骤模板）再建，接口不复用本模块。
 
 接线：``LongTermMemory.store_summary`` 时提取并合并卡片（生产者）；
 ``get_context_for_query`` 时读回注入（消费者）；总开关
@@ -50,7 +50,7 @@ from agentix.application.services.card_schema import (
 # MemoryCard（§32 Store 侧协议）
 # ---------------------------------------------------------------------------
 
-CARD_TYPE_PREFERENCE = "preference"  # 用户偏好/要求（如"回答要附法条出处"）
+CARD_TYPE_PREFERENCE = "preference"  # 用户偏好/要求（如"回答要附数据条目出处"）
 CARD_TYPE_INSTRUCTION = "instruction"  # 操作性指示（如"先检索再回答"）
 
 _CARD_TYPES = (CARD_TYPE_PREFERENCE, CARD_TYPE_INSTRUCTION)

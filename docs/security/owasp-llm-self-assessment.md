@@ -66,7 +66,7 @@
 **现有缓解（部分）**：
 
 - 依赖**钉版**（`requirements.txt` / `pyproject.toml`），重建可复现。
-- CI 定期跑 `pip-audit`（`.github/workflows/` 中 security 相关 workflow）扫描已知 CVE。
+- 依赖漏洞：CI 侧由 Dependabot 提更新 PR（`.github/dependabot.yml`，pip / npm / github-actions / docker 四生态）；`pip-audit` 不是常态化作业，而是按安全批次以 `pip-audit -r requirements.txt` 实测并记录残余（口径见 `SECURITY.md`「依赖安全现状」）。
 - 代码扫描：CodeQL（`.github/workflows/codeql.yml`）+ secrets 扫描（`.github/workflows/secrets-scan.yml`）。
 
 **残余风险（如实标注：本项未专项治理）**：无 SBOM 生成与锁定哈希（pip hash-checking mode 未启用）；钉版只锁直接依赖的版本号，不锁构建输入完整性；GitHub Actions 第三方 action 未按 commit SHA 钉定。改进项：SBOM（cyclonedx）、pip hash 钉定、action SHA 钉定。
@@ -146,8 +146,33 @@
   未启用时启动期大声告警（`kb_ingest/kb_service/main.py`）。
 - **密钥隔离的理由**：同上文件 docstring——本服务是**写入**语义（改 Milvus 集合），
   对外 Key 一旦复用即权限抬升。
+- **MySQL 连接串闸门**：`/ingest/mysql` 的 `connection_url` 原样进 `create_engine()`，
+  持 key 者等于能让服务端替自己发起任意 TCP 连接（内网探测 / 外带凭据 / 读容器内
+  `sqlite:` 文件）。`KB_MYSQL_URL_GUARD=true` 后由 `kb_ingest/kb_service/core/db_url_guard.py`
+  要求 scheme 为 mysql 且主机命中 `KB_MYSQL_ALLOWED_HOSTS`；另拒 `?local_infile=1`
+  一类改写**客户端行为**的选项——主机白名单只回答「连到谁」，而 `local_infile` 回答的是
+  「对端服务器可以要求本客户端上传哪个文件」（实测该键经 SQLAlchemy 进入 pymysql
+  connect args 并置上 `CLIENT_LOCAL_FILES` 位）；被拒时 400 的 detail
+  **不回放输入**（初版用 pydantic validator 时被拒连接串连密码一起进了 422 的 `input`，
+  实测泄漏后改掉了）。
 
-**残余风险**：`KB_REQUIRE_API_KEY` 默认 false（保持既有部署行为），安全态需显式开启；Milvus/Neo4j 等底层库自身未设应用层鉴权（依赖网络边界）。改进项：默认开启鉴权、底层库访问控制。
+- **MySQL 过滤参数化闸门**：同一条导入接口的另一半输入是 `where`——一段**原始 SQL 片段**，
+  加固前直接 `f" WHERE {where}"` 拼进语句，前面只有一道拦 `;` 与注释的黑名单。黑名单拦得住
+  堆叠语句，拦不住 `1=1 OR 1=1`、`id IN (SELECT … FROM mysql.user)` 这类合法但越界的片段：
+  对拼出来的 SQL 而言，调用方给的就是语法。`KB_MYSQL_WHERE_PARAMETRIZED=true` 后由
+  `kb_ingest/kb_service/core/sql_filters.py` 只认结构化 `filters`（列名过标识符白名单、
+  运算符取封闭枚举、值全部 `bindparams`、条件间只允许 `AND`），原始片段一律 400；
+  关着时传 `filters` 也 400（静默忽略等于把整张表灌进库）。**这一位是硬切**，
+  开之前要先让调用方迁完，所以默认 false。口径见
+  [运行时护栏 §15.9](../architecture/runtime-guardrails.md)。
+
+**残余风险**：`KB_REQUIRE_API_KEY`、`KB_MYSQL_URL_GUARD`、`KB_MYSQL_WHERE_PARAMETRIZED`
+默认 false（保持既有部署行为），安全态需显式开启；连接串闸门**不做 DNS 解析**，白名单留空时
+只校验 scheme，因此它约束的是配置意图而不是 IP 归属，内网地址仍可由持 key 者使用；
+Milvus/Neo4j 等底层库自身未设应用层鉴权（依赖网络边界）；过滤参数化在 flag 关着时仍是
+黑名单式拼接，且它收紧的是「值不进 SQL 文本」，不保证调用方选出的列/条件本身合理。
+改进项：默认开启鉴权与两道 kb_ingest 闸门、底层库访问控制（见 PROJECT_SPEC §24.2 G12、
+§24.3 T1 ⑫）。
 
 ---
 

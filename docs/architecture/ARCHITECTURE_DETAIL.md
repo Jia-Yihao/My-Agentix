@@ -17,7 +17,7 @@
 2. **路由决策** → 分发至不同子图 (`graphrag-query` / `kb-query` / `general-query` 等)
 3. **子图执行** → Guardrails 检查 → Planner 分解 → Tool Selection → 并行工具调用
 4. **结果融合** → Summarize Node 聚合 → Final Answer 生成最终回答
-5. **返回用户** → 带来源标注（法规名 + 条号）的完整答案
+5. **返回用户** → 带来源标注（数据集名 + 条号）的完整答案
 
 ## 项目特色
 
@@ -33,7 +33,7 @@
 知识图谱 (Neo4j Cypher) → 向量语义检索 (Milvus) → 外部搜索补充 (External API)
 ```
 
-- **优先查询知识图谱**: 精准返回结构化数据（法条内容、法规名、条号、效力状态等）
+- **优先查询知识图谱**: 精准返回结构化数据（数据条目内容、数据集名、条号、有效性状态等）
 - **Milvus 语义兜底**: 图谱无结果时，向量检索处理长文本与释义（统一 Milvus 口径，R3.4）
 - **外部搜索**: Hybrid 模式下调用外部 API 补充最新知识
 
@@ -56,9 +56,9 @@ rerank_score >= KB_POSTGRES_RERANK_THRESHOLD    # 重排分数阈值
 
 ### 5. 多源知识融合 - 全面的信息整合
 
-- **图谱推理** (Neo4j): 法条互引、案由对应、司法解释、制定机关与效力层级
+- **图谱推理** (Neo4j): 数据条目互引、数据分类对应、示例说明、数据来源与数据层级
 - **统计分析** (MySQL): 数量统计、排行榜、聚合查询
-- **语义检索** (Milvus + PostgreSQL): 法条释义、背景说明
+- **语义检索** (Milvus + PostgreSQL): 数据条目释义、背景说明
 - **社区摘要** (Microsoft GraphRAG): 全局/局部/混合检索
 - **外部知识** (Search API): 实时互联网信息补充
 
@@ -68,7 +68,7 @@ rerank_score >= KB_POSTGRES_RERANK_THRESHOLD    # 重排分数阈值
 
 | 应用领域 | 知识源示例 | 图谱节点示例 |
 |---------|-----------|------------|
-| **法律咨询（当前落地）** | 法律条文、司法解释、案例 | 法规、法条、章节、案由、司法解释、机关 |
+| **数据问答（当前落地）** | 数据条目、示例说明、案例 | 数据集、数据条目、章节、数据分类、示例说明、机构 |
 | **宝可梦百科** | 宝可梦图鉴 | 宝可梦、技能、属性、进化链 |
 | **中医药典** | 本草纲目、方剂 | 中药、病症、方剂、炮制方法 |
 | **电商客服** | 商品数据、订单库 | 商品、订单、类目、售后流程 |
@@ -76,7 +76,7 @@ rerank_score >= KB_POSTGRES_RERANK_THRESHOLD    # 重排分数阈值
 
 ### 7. 多模态交互 - 丰富的用户体验
 
-- **图片识别**: Vision Model 识别法律文书/证据材料，返回关键信息
+- **图片识别**: Vision Model 识别测试数据文档/证据材料，返回关键信息
 - **文件处理**: Excel（kb_ingest 入库）、PDF（文档管理接口）可入库分析；文本类 `.txt/.md/.json/.csv/.log` 仅上传，入库暂不支持
 - **对话管理**: LangGraph Checkpointer + Redis 维护完整会话历史
 
@@ -84,8 +84,8 @@ rerank_score >= KB_POSTGRES_RERANK_THRESHOLD    # 重排分数阈值
 
 - **范围检查**: 每个查询都经过 Guardrails 节点检查是否在服务范围内
 - **Schema 验证**: 验证 Neo4j 图谱 Schema，确保查询可执行
-- **拒绝策略**: 明确拒绝超出法律法规咨询范围的问题，引导用户提供有效输入
-- **免责声明**: 答复附"本回答由 AI 基于公开法律文本生成，不构成正式法律意见"提示
+- **拒绝策略**: 明确拒绝超出测试数据问答范围的问题，引导用户提供有效输入
+- **免责声明**: 答复附"本回答由 AI 基于公开测试文本生成，不构成正式测试结论"提示
 
 ## 系统架构图
 
@@ -139,7 +139,7 @@ graph TB
     SG1_GraphRAG --> SG1_Summarize
     SG1_Text2SQL --> SG1_Summarize
 
-    SG1_Summarize --> SG1_FinalAnswer["Final Answer Node<br/>━━━━━━━━━━━━━━━━<br/>RAGSEARCH_SYSTEM_PROMPT<br/>LLM 生成最终回答<br/>引用来源标注（法规名 + 条号）<br/>幻觉检查 (可选)"]
+    SG1_Summarize --> SG1_FinalAnswer["Final Answer Node<br/>━━━━━━━━━━━━━━━━<br/>RAGSEARCH_SYSTEM_PROMPT<br/>LLM 生成最终回答<br/>引用来源标注（数据集名 + 条号）<br/>幻觉检查 (可选)"]
 
     SG1_FinalAnswer --> SG1_End["返回到主工作流<br/>answer 字段"]
     SG1_FinalAnswer_Reject --> SG1_End
@@ -147,7 +147,7 @@ graph TB
     %% ========== 第二层B：知识库多工具子图 ==========
     KBNode --> SubGraph2["╔═══════════════════════════════════════╗<br/>║  知识库多工具子图 (create_kb_multi_tool_workflow)  ║<br/>╚═══════════════════════════════════════════════╝"]
 
-    SubGraph2 --> SG2_Guardrails["KB Guardrails Node<br/>━━━━━━━━━━━━━━━━<br/>KBGuardrailsDecision<br/>scope_description 范围检查<br/>仅处理法律条文/案例类问题"]
+    SubGraph2 --> SG2_Guardrails["KB Guardrails Node<br/>━━━━━━━━━━━━━━━━<br/>KBGuardrailsDecision<br/>scope_description 范围检查<br/>仅处理数据条目/案例类问题"]
 
     SG2_Guardrails --> SG2_GuardCheck{"通过检查?"}
     SG2_GuardCheck -->|decision=end| SG2_Finalize_Reject["直接返回拒绝<br/>返回 summary"]
@@ -155,7 +155,7 @@ graph TB
 
     SG2_Router --> SG2_RouteCheck{"路由类型?"}
 
-    SG2_RouteCheck -->|local/hybrid| SG2_LocalSearch["Local Search Node<br/>━━━━━━━━━━━━━━━━<br/>多级检索策略:<br/>━━━━━━━━━━━━━━━━<br/>Step 1: 查询 Milvus legal 集合<br/>  • 法条/释义向量（kb_ingest 导入）<br/>  • 法条名称、法规、枚举字段<br/>  • 快速、精准<br/>  • threshold 阈值过滤<br/>━━━━━━━━━━━━━━━━<br/>Step 2: 相似度阈值过滤<br/>  • 效力过滤（失效/废止不进答案）<br/>━━━━━━━━━━━━━━━━<br/>Step 3: Reranker 重排<br/>  • 双重阈值过滤<br/>  • 提升命中精度"]
+    SG2_RouteCheck -->|local/hybrid| SG2_LocalSearch["Local Search Node<br/>━━━━━━━━━━━━━━━━<br/>多级检索策略:<br/>━━━━━━━━━━━━━━━━<br/>Step 1: 查询 Milvus legal 集合<br/>  • 数据条目/释义向量（kb_ingest 导入）<br/>  • 数据条目名称、数据集、枚举字段<br/>  • 快速、精准<br/>  • threshold 阈值过滤<br/>━━━━━━━━━━━━━━━━<br/>Step 2: 相似度阈值过滤<br/>  • 有效性过滤（失效/废止不进答案）<br/>━━━━━━━━━━━━━━━━<br/>Step 3: Reranker 重排<br/>  • 双重阈值过滤<br/>  • 提升命中精度"]
 
     SG2_RouteCheck -->|external| SG2_ExternalSearch
 
@@ -229,7 +229,7 @@ graph TB
 **工作流**: `guardrails → planner → tool_selection → [工具并行执行] → summarize → final_answer`
 
 1. **Guardrails Node** - 安全防护
-   - 检查问题是否在法律法规服务范围内
+   - 检查问题是否在测试数据集服务范围内
    - 验证 Neo4j 图谱 Schema
    - 决策: `proceed` / `end`
 
@@ -254,7 +254,7 @@ graph TB
 
 6. **Final Answer Node** - 生成最终回答
    - 使用 `RAGSEARCH_SYSTEM_PROMPT`
-   - 引用来源标注（法规名 + 条号）
+   - 引用来源标注（数据集名 + 条号）
    - 可选幻觉检查
 
 ### 第二层B：知识库多工具子图 (multi_tool.py - create_kb_multi_tool_workflow)
@@ -262,8 +262,8 @@ graph TB
 **工作流**: `guardrails → kb_router → local_search → [reranker] → finalize`
 
 1. **KB Guardrails Node** - 范围检查
-   - 仅处理法律条文/案例类问题
-   - 拒绝与法律无关的内容
+   - 仅处理数据条目/案例类问题
+   - 拒绝与测试数据无关的内容
 
 2. **KB Router Node** - 路由决策
    - LLM 决定路由类型: `local` / `external` / `hybrid`
@@ -271,7 +271,7 @@ graph TB
 
 3. **Local Search Node** - 本地检索 (核心)
    - **统一向量口径**（R3.4）: Milvus `legal` 集合（归一化 + 阈值过滤）
-   - 效力过滤（R2-2）：失效/废止法条不进答案
+   - 有效性过滤（R2-2）：失效/废止数据条目不进答案
    - 相似度阈值过滤
 
 4. **Reranker Process** - 重排序 (可选)
@@ -287,7 +287,7 @@ graph TB
 
 6. **Finalize Node** - 融合生成
    - LLM 融合图谱 + Milvus + External 结果
-   - 格式化 context，收集 sources（法规名 + 条号）
+   - 格式化 context，收集 sources（数据集名 + 条号）
    - 生成最终回答
 
 ### 第三层：原子工具层
@@ -306,7 +306,7 @@ graph TB
 5. **LangGraph Checkpointer**: 维护会话状态和对话历史
 6. **多源融合**: LLM 综合 Milvus、PostgreSQL、External 多源信息
 7. **安全防护**: 每个查询都经过 Guardrails 检查
-8. **溯源与免责**: 答案标注法条出处，并附非法律意见免责声明
+8. **溯源与免责**: 答案标注数据条目出处，并附非测试结论免责声明
 9. **模块化架构**: 核心逻辑拆分为 6 个职责单一的模块（router/guardrails/image_handler/file_handler/general_handler/constants）
 10. **LLM 工厂模式**: 统一的 `get_llm_client()` 工厂，消除重复实例化
 11. **真流式响应**: 基于 LangGraph `astream()` 的 SSE 流式输出

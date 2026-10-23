@@ -48,7 +48,7 @@ def create_summarization_node(
                 return "; ".join(f"{key}：{value}" for key, value in row.items())
             lines = []
 
-            # 检查是否是法条列表（包含"法规"和"条号"，法律法规领域主路径）
+            # 检查是否是数据条目列表（包含"数据集"和"条号"，测试数据集领域主路径）
             is_legal_articles = all(
                 "法规" in row and "条号" in row
                 for row in rows
@@ -57,7 +57,7 @@ def create_summarization_node(
 
             for idx, row in enumerate(rows, 1):
                 if is_legal_articles and isinstance(row, dict):
-                    # 法条：显示「《法规》第X条」与条文内容，便于溯源
+                    # 数据条目：显示「《数据集》第X条」与条文内容，便于溯源
                     law = row.get("法规", "")
                     article_no = row.get("条号", "")
                     content = row.get("内容", "")
@@ -67,7 +67,7 @@ def create_summarization_node(
                         label = f"第{article_no}条"
                     lines.append(f"{label}：{content}" if content else label)
                 else:
-                    # 其他数据（案由 / 司法解释 / 机关等）：显示所有字段
+                    # 其他数据（数据分类 / 示例说明 / 机构等）：显示所有字段
                     row_desc = ", ".join(f"{key}：{value}" for key, value in row.items())
                     lines.append(f"{idx}. {row_desc}")
             return "\n".join(lines)

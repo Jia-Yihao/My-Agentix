@@ -102,7 +102,7 @@ class TestGuardrailsNode:
         llm = _make_llm(KBGuardrailsDecision(decision="end", summary=None))
         node = create_guardrails_node(llm, scope_text="测试范围")
         result = _run(node({"question": "越界问题"}))
-        assert "不在法律法规知识库的支持范围内" in result["summary"]
+        assert "不在测试数据集知识库的支持范围内" in result["summary"]
 
 
 # ---------------------------------------------------------------------------

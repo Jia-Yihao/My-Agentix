@@ -327,17 +327,17 @@ guardrails_chain = full_system_prompt | model.with_structured_output(AdditionalG
 **是什么**: Neo4j 的图查询语言，类似 SQL 但用于图
 **项目里怎么用**:
 ```cypher
--- 查询法条内容
-MATCH (a:Article {条号: '577', 法规: '民法典'})
+-- 查询数据条目内容
+MATCH (a:Article {条号: '577', 数据集: '示例数据集 A'})
 RETURN a.内容, a.关键词
 
--- 查询法条引用的其他法条
+-- 查询数据条目引用的其他数据条目
 MATCH (a:Article {条号: '577'})-[:CITES_ARTICLE]->(b:Article)
-RETURN b.法规, b.条号, b.内容
+RETURN b.数据集, b.条号, b.内容
 
--- 查询案由对应的法条
-MATCH (a:Article)-[:ARTICLE_CAUSE]->(c:Cause {名称: '合同违约'})
-RETURN a.法规, a.条号, a.内容
+-- 查询数据分类对应的数据条目
+MATCH (a:Article)-[:ARTICLE_CAUSE]->(c:Cause {名称: '示例文档异常'})
+RETURN a.数据集, a.条号, a.内容
 ```
 **在哪个文件**: `legal_cypher_dict.py`（预定义查询）、`legal_retriever.py`（动态生成）
 **需要掌握**: `MATCH`、`WHERE`、`RETURN`、关系模式 `(a)-[r]->(b)`、属性过滤
@@ -347,20 +347,20 @@ RETURN a.法规, a.条号, a.内容
 **项目里的 Schema**:
 ```
 节点类型:
-  - Regulation (法规): name, 生效日期, 效力层级
+  - Regulation (数据集): name, 生效日期, 数据层级
   - Chapter (章节): name
-  - Article (法条): 条号, 内容, 关键词
-  - Cause (案由): 名称, 类别
-  - JudicialInterpretation (司法解释): name, 发布机关
-  - Authority (制定机关): name, 层级
+  - Article (数据条目): 条号, 内容, 关键词
+  - Cause (数据分类): 名称, 类别
+  - JudicialInterpretation (示例说明): name, 发布来源
+  - Authority (数据来源): name, 层级
 
 关系类型:
   - BELONGS_TO_CHAPTER: Article → Chapter
-  - CITES_ARTICLE: Article → Article (法条互引)
-  - ARTICLE_CAUSE: Article → Cause (法条-案由映射)
+  - CITES_ARTICLE: Article → Article (数据条目互引)
+  - ARTICLE_CAUSE: Article → Cause (数据条目-数据分类映射)
   - ARTICLE_INTERPRETATION: Article → JudicialInterpretation
   - REGULATION_AUTHORITY: Regulation → Authority
-  - UPPER_LAW: Regulation → Regulation (上位法关系)
+  - UPPER_LAW: Regulation → Regulation (上级数据集关系)
 ```
 **在哪个文件**: `legal_kg_to_csv.py`（导入脚本）、`legal_seed.json`（种子数据）
 **需要掌握**: 节点/关系设计原则、属性 vs 关系的选择
@@ -452,9 +452,9 @@ class VectorStore:
 **在哪个文件**: `kb_ingest/kb_service/services/vector_store.py`
 **需要掌握**: `Collection`、`insert`、`search`、索引类型（IVF_FLAT）、相似度度量（IP/L2）
 
-### 6.3 结构化法律库（Milvus legal 集合）
+### 6.3 结构化测试数据库（Milvus legal 集合）
 
-**是什么**: 原基于 pgvector 的结构化法律知识库，R3.7 起统一迁移至 Milvus
+**是什么**: 原基于 pgvector 的结构化测试数据集知识库，R3.7 起统一迁移至 Milvus
 `legal` 集合（确定性主键 `sha1(source_table|source_id)[:32]` + L2 归一化 + IP 度量 ≡ cosine）
 **项目里怎么用**:
 ```python
@@ -463,7 +463,7 @@ store.upsert([{
     "source_table": "laws",
     "source_id": "1",
     "rewritten_content": "善意取得的构成要件……",
-    "original_data": {"title": "民法典", "legal_effective_from": "2021-01-01"},
+    "original_data": {"title": "示例数据集 A", "legal_effective_from": "2021-01-01"},
 }])  # 先删后插实现幂等 upsert，content_hash 支持增量跳过
 
 results = store.search_similar(

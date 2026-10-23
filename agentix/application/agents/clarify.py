@@ -62,7 +62,7 @@ _OPTIONS: Mapping[str, Tuple[str, ...]] = {
 #: 各 reason 的澄清文案（无 PII；候选项随后缀追加）
 _PROMPTS: Mapping[str, str] = {
     "too_short": "在继续之前先和您确认一下：您的问题信息还比较少，请选择或补充具体情况。",
-    "domain_conflict": "您提到的内容可能涉及多个法律领域，请先确认主要想咨询的方向。",
+    "domain_conflict": "您提到的内容可能涉及多个测试数据领域，请先确认主要想咨询的方向。",
     "missing_subject": "您的问题里涉及的对象还不够明确，请先确认具体主体。",
     "low_confidence": "我对您的需求理解还不够确定，请先确认一下方向。",
 }

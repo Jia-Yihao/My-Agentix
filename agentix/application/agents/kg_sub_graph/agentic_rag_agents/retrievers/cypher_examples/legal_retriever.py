@@ -1,6 +1,6 @@
-"""法律领域 Cypher 示例检索器（自包含）。
+"""测试数据集领域 Cypher 示例检索器（自包含）。
 
-本模块提供 ``LegalCypherRetriever``，为 Neo4j 法律法规知识图谱的 text2cypher
+本模块提供 ``LegalCypherRetriever``，为 Neo4j 测试数据集知识图谱的 text2cypher
 生成提供高质量 few-shot 示例。它不调用任何规则式分类模块
 （``QuestionClassifier`` / ``QuestionParser`` 已移除）。
 
@@ -29,7 +29,9 @@ from agentix.application.agents.kg_sub_graph.agentic_rag_agents.retrievers.cyphe
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# 法律法规图谱静态 Schema 说明（喂给 text2cypher 的强化文本）
+# 测试数据集图谱静态 Schema 说明（喂给 text2cypher 的强化文本）。
+# 其中的节点 Label、关系类型、属性名与参数名是图谱的功能性标识符，必须与 Neo4j
+# 实际 schema 一致，因此不参与文案泛化。
 # ---------------------------------------------------------------------------
 LEGAL_GRAPH_SCHEMA = """你正在查询一个中国法律法规知识图谱（Neo4j）。图谱结构如下：
 
@@ -61,7 +63,7 @@ LEGAL_GRAPH_SCHEMA = """你正在查询一个中国法律法规知识图谱（Ne
 
 
 class LegalCypherRetriever(BaseCypherExampleRetriever):
-    """法律法规场景的 Cypher 示例检索器（自包含；动态分类未实现——R-P0-4 显式降级）。"""
+    """测试数据集场景的 Cypher 示例检索器（自包含；动态分类未实现——R-P0-4 显式降级）。"""
 
     def __init__(self):
         """初始化检索器，无需任何外部分类器。"""

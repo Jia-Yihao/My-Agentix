@@ -31,7 +31,7 @@ class tool_search(BaseModel):
     否则 ``selection._spec_for_schema`` 的 title 回查会静默 miss——
     按 kg_tools_list 的既有约定命名，而非 CamelCase）。"""
 
-    query: str = Field(description="查询（自然语言或关键词，如「法条查询」「统计报表」）")
+    query: str = Field(description="查询（自然语言或关键词，如「数据条目查询」「统计报表」）")
     top_k: int = Field(default=8, ge=1, le=20, description="返回条数上限")
 
 

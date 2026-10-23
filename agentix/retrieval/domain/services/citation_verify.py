@@ -4,7 +4,7 @@ M4.3: 问答引用可溯源校验。
 - 无法溯源的引用被剥离并记录 WARN。
 
 R1-2（引用验证器 v1，依据《技术变更与架构演进指南 v2.0》§2.1.5⑥）：
-- 从**答案文本**中抽取法条引用（`《法律名》第X条`），与本次检索命中集
+- 从**答案文本**中抽取数据条目引用（`《测试数据名》第X条`），与本次检索命中集
   交叉核验——防止"引用格式正确但内容不在证据里"的伪造/幻觉引用；
 - 无法核验的引用**显式标注**在答案尾部（v1 不做自动修正；LLM 复核 Agent
   属 L5 演进项）。验证器与被审 Agent 隔离：纯函数、无 Agent 上下文依赖。
@@ -16,7 +16,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# 法条引用模式：《法律名》第X条（中文数字/阿拉伯数字均支持）
+# 数据条目引用模式：《测试数据名》第X条（中文数字/阿拉伯数字均支持）
 _STATUTE_CITATION_RE = re.compile(
     r"《(?P<law>[^《》\n]{2,40})》\s*第\s*(?P<article>[0-9零一二三四五六七八九十百千]+)\s*条"
 )
@@ -30,7 +30,7 @@ def _normalize(text: str) -> str:
 
 
 def extract_statute_citations(answer_text: str) -> list[tuple[str, str]]:
-    """从答案文本抽取 (法律名, 条号) 引用列表（保持出现顺序、去重）。"""
+    """从答案文本抽取 (测试数据名, 条号) 引用列表（保持出现顺序、去重）。"""
     if not answer_text:
         return []
     refs: list[tuple[str, str]] = []
@@ -47,7 +47,7 @@ def verify_answer_citations(
     answer_text: str,
     hit_chunks: list[dict],
 ) -> tuple[str, list[tuple[str, str]], list[tuple[str, str]]]:
-    """答案文本法条引用 ↔ 检索证据交叉核验（引用验证器 v1）。
+    """答案文本数据条目引用 ↔ 检索证据交叉核验（引用验证器 v1）。
 
     Args:
         answer_text: 生成的最终答案。
@@ -81,7 +81,7 @@ def verify_answer_citations(
     unverified: list[tuple[str, str]] = []
     for law, article in refs:
         needle = _normalize(f"《{law}》第{article}条")
-        # 宽松匹配：证据里出现法律名 + 同条号（允许条文号写法差异）
+        # 宽松匹配：证据里出现测试数据名 + 同条号（允许条编号写法差异）
         loose_law = _normalize(f"《{law}》")
         loose_article = re.compile(rf"第{_normalize(article)}条")
         matched = any(

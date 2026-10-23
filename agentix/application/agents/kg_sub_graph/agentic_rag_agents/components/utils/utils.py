@@ -116,7 +116,7 @@ def _format_legal_schema_from_docs() -> str:
     Build a concise, LLM-friendly schema summary based on docs/design/legal_domain_schema.md.
 
     领域迁移（2026-09-12）：路径由原先的 `parents[6]`（指向不存在的 `agentix/docs/`，
-    使本函数始终返回空串）修正为仓库根目录 `parents[7]`，让法律法规 Schema 说明
+    使本函数始终返回空串）修正为仓库根目录 `parents[7]`，让测试数据集 Schema 说明
     真正进入 text2cypher / guardrails 提示词。
     """
     doc_path = (
@@ -256,7 +256,7 @@ def resolve_generation_schema(graph: Neo4jGraph) -> str:
     - flag-off（``KG_SCHEMA_AWARE_GENERATION_ENABLED`` 默认关）＝基线裸
       ``graph.schema`` 逐位等价；
     - flag-on ＝与校验同源的 ``retrieve_and_parse_schema_from_graph_for_prompts``
-      （法律域文档摘要 + 发现态 schema，标签/属性/关系均来自库内发现而非
+      （测试数据域文档摘要 + 发现态 schema，标签/属性/关系均来自库内发现而非
       静态中文标签描述）；
     - 发现/渲染异常 fail-open 回裸 ``graph.schema``，绝不打断生成链路。
     """

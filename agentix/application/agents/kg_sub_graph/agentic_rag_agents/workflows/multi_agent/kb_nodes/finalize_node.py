@@ -61,7 +61,7 @@ def create_finalize_node(llm: BaseChatModel, *, top_k: int):
         sources = collect_sources(milvus_results, postgres_results, external_results)
 
         if not local_results and not external_results:
-            fallback = "抱歉，法律法规知识库暂未找到相关记载，请尝试描述得更具体一些（如法规名称、条号或案由），或稍后再试。"
+            fallback = "抱歉，测试数据集知识库暂未找到相关记载，请尝试描述得更具体一些（如数据集名称、条号或数据分类），或稍后再试。"
             return {
                 "answer": fallback,
                 "sources": sources,
@@ -86,10 +86,10 @@ def create_finalize_node(llm: BaseChatModel, *, top_k: int):
             kb_logger.error("Failed to synthesise KB answer: {}", exc)
             answer = local_context if local_context and local_context != "（无本地检索结果）" else ""
             if not answer:
-                answer = "检索已完成，但当前无法生成可靠的法律解答。"
+                answer = "检索已完成，但当前无法生成可靠的测试数据解答。"
 
         if not answer:
-            answer = "检索已完成，但当前无法生成可靠的法律解答。"
+            answer = "检索已完成，但当前无法生成可靠的测试数据解答。"
 
         if sources:
             sources = list(dict.fromkeys(sources))

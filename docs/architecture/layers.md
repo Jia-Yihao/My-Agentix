@@ -93,7 +93,7 @@
 | `status.py` | 响应状态枚举 `RequestStatus`（ok / degraded / error） |
 | `tracing.py` | `trace_id` 的 ContextVar 与读写函数 |
 | `agent/` `runtime/` `tool/` | Agent / Runtime / Tool 的**领域类型与端口**（M0 拆分，纯契约） |
-| `policies/` | 判定**函数**：`is_retryable`、`aretry`、冲突仲裁 |
+| `policies/` | 判定**函数**：`is_retryable`、`aretry`、冲突裁决 |
 | `ports/` | 抽象接口（`Protocol`）+ `Payload` TypedDict |
 
 > **词汇表 vs 策略**的分区：`errors.py` 回答「有哪些错、属哪一类」；

@@ -119,6 +119,9 @@
   文件写的 workspace 边界（`:108`）、bash 只读启发式（`:145/:241`，拒绝命令链/解释器/git 写子命令/重定向）。
 - **沙箱是能力探测**：`unshare_probe` 探测内核能力而非看 binary 是否存在
   （`claw-code/rust/crates/runtime/src/sandbox.rs:334`）。
+  对照本项目：My-Agentix **没有这一层**——工具全部在主进程内执行，隔离只到
+  「闸门 + 容器配额」，`unshare`/namespace/`seccomp` 一律未接线。
+  实测口径与逐项缺口见 `docs/PROJECT_SPEC.md` §24（含 T0 已落地的执行边界加固）。
 - 规则语法 `tool:pattern`（Any/Exact/Prefix 三 matcher，`permissions.rs:355`）。
 
 ### 2.5 上下文与记忆
@@ -194,7 +197,7 @@
   announce_api_call → _run_api_retry_loop → apply_retry_restarts → normalize_model_response →
   （有 tool_calls ? run_tool_round : finish_text_response）`。
 - 每阶段由 `_run_phase`（`conversation_loop.py:1480`）包裹，返回
-  `action ∈ {continue, break, return}` 的**判决对象**——把控制流从深层 return 里抽离；
+  `action ∈ {continue, break, return}` 的**结论对象**——把控制流从深层 return 里抽离；
   异常统一交 `handle_outer_loop_error`（`:1680`）；循环状态装 `_LoopState`（`:1615`）。
 - 工具轮 `run_tool_round`（`hermes/agent/turn_tool_round.py:46`）三条顺序：
   先持久化 assistant 的 tool_calls（`:224`）→ 再执行 → 最后做工具后压缩；
@@ -319,7 +322,7 @@
 ## 4. 岗位要求逐项对照矩阵
 
 > 满足度口径：✅ 满足｜⚠️ 部分（组件在库/已实现但未接线或默认关）｜❌ 缺失。
-> My-Agentix 列为 2026-10-01 实测（P1–P6 批次落地后终态；逐批记录见 `CHANGELOG.md` 与 `docs/migration/module-inventory.md` §6）。
+> My-Agentix 列为 2026-10-01 实测（P1–P6 批次落地后终态；逐批记录见 `CHANGELOG.md`，当前目录归属见 `docs/architecture/overview.md`）。
 
 ### 4.1 职责对照（7 条）
 
@@ -328,9 +331,9 @@
 | 1 | 任务执行 Task Execution（非仅问答） | 无预置任务路由；靠 55 工具 + 循环完成任意任务（`claw-code/rust/crates/tools/src/lib.rs:484`） | 通用任务执行是本体；`delegate_task` 并发派发（`hermes/tools/delegate_tool.py:440`） | 任务执行链路已接线：`lg_states.TaskRouter` 路由 `task-query` → `execute_task` 图节点（8→9）→ `agentix/application/services/task_execution.py` 分波管线 + `LayeredVerifier` 终态 + `task_note`/`task_artifact` 写工具 + `AGENT_MAX_REPLANS` 重规划注入（`agentix/application/services/agent_loop_adapter.py`）；`TASK_EXEC_ENABLED=False` 默认关灰度 | ✅（默认关） |
 | 2 | Skills 体系 + Registry + 动态调度组合 | 55 工具静态 spec 表 + `GlobalToolRegistry`；Skill 按需读全文；`ToolSearch` 召回延迟工具（`claw-code/rust/crates/tools/src/lib.rs:5550`） | 导入期自注册（`hermes/tools/registry.py:96`）、toolset 聚合（`hermes/toolsets.py:286`）、技能 manifest 热更新（`hermes/agent/skill_commands.py:448`）、技能自创建 | 文档型 Skill 两段式披露扎实（`agentix/agent/skills/loader.py:51`、`agentix/agent/context/instructions.py:126`）；`ToolRegistry` 治理链完整（M6 后见 `agentix/tools/definitions.py:134`、`agentix/tools/gateway/executor.py:168`，旧路径 capabilities/tools 已删）。P2 补齐：`tool_policy` 注入方（ask/stream 双路径）、`tool_search` 延迟召回 + CJK bigram ranking、manifest 指纹热重载、规范即测试、三注册表对账与裁决序列守卫；P6 补 `create_skill_draft` 草稿沉淀（`agentix/agent/skills/learn.py` → `data/skills_drafts` 隔离目录）。**残余**：多技能组合编排仍为零、`SKILLS_ENABLED` 默认关 | ⚠️（组合编排未做，其余闭环） |
 | 3 | 渐进式上下文 Progressive Context | 指令文件 4k/12k 预算 + hash 去重（`claw-code/rust/crates/runtime/src/prompt.rs:519`）、三层压缩 + 超限渐进重试（`main.rs:7838`）、Skill/ToolSearch 按需展开 | 缓存断点纪律（`hermes/agent/prompt_caching.py:323`）、可插拔 `ContextEngine` 生命周期（`hermes/agent/context_engine.py:48`）、压缩+回溯原语（`hermes/agent/context_compressor.py:5677`）、`/context` 只读可见性 | L1–L4 分层/预算/隔离/压缩在库（agentix/application/runtime/budget.py 已删除，A4 直删；`agentix/application/agents/compactor.py`、`tests/test_r3_context_engine.py`）；P3 补齐：指令 sha256 去重 + 12k 总预算、`CONTEXT_COMPACT_LADDER` keep-last 阶梯 4→2→1→0、`AgentLoop(context_budget_tokens)` 逐步重建（组合根注入）、`artifact_read` 隔离正文取回、`GET /ops/context` 只读诊断。**残余**：`ContextPolicy` 仍只声明不执行、无分阶段检索、`CONTEXT_COMPACT_LADDER` 默认关 | ⚠️（接线大半，默认关） |
-| 4 | Planning/ReACT/Tool 调用/回滚重试 | 循环 + 迭代上限 + 工具失败降级回喂（`conversation.rs:468`）；计划=可回滚权限切换（`tools/src/lib.rs:6013`）；静态错误分类（`main.rs:437`） | 阶段管线判决对象（`hermes/agent/conversation_loop.py:1480`）、退避梯（`turn_recovery_autorecover.py:26`）、三计数器+恢复提示（`tool_guardrails.py:577`）、先持久化后发布（`cli_session_mixin.py:753`） | 组件齐全：planner/replanner `max_replans=3`（agentix/agent/replanner/retry.py（M6 已删，现见 `agentix/policies/planner/retry.py`））、分层 verifier（agentix/agent/verifier/layered.py（M6 已删，现见 `agentix/policies/verifier/layered.py`））、指数退避/DLQ（`agentix/application/services/task_queue.py`）、熔断（`agentix/reliability/circuit_breaker.py`）、断点续跑（`agentix/application/services/breakpoint_resume.py`）。P1 补 `AGENT_MAX_REPLANS` 生产注入（replanner 未传参缺口关闭），P4 补三计数器护栏 + 重复折叠 stub + `plan_mode` 权限快照恢复 + `InMemoryRollbackStore`（`RollbackPort` 首个生产实现）+ 失败 turn 先持久化边界。**残余**：L3 `AgentLoop` 直连工具表仍旁路 `ToolExecutor` 治理链（`agentix/application/services/agent_loop_adapter.py:104`） | ⚠️（旁路未清） |
+| 4 | Planning/ReACT/Tool 调用/回滚重试 | 循环 + 迭代上限 + 工具失败降级回喂（`conversation.rs:468`）；计划=可回滚权限切换（`tools/src/lib.rs:6013`）；静态错误分类（`main.rs:437`） | 阶段管线结论对象（`hermes/agent/conversation_loop.py:1480`）、退避梯（`turn_recovery_autorecover.py:26`）、三计数器+恢复提示（`tool_guardrails.py:577`）、先持久化后发布（`cli_session_mixin.py:753`） | 组件齐全：planner/replanner `max_replans=3`（agentix/agent/replanner/retry.py（M6 已删，现见 `agentix/policies/planner/retry.py`））、分层 verifier（agentix/agent/verifier/layered.py（M6 已删，现见 `agentix/policies/verifier/layered.py`））、指数退避/DLQ（`agentix/application/services/task_queue.py`）、熔断（`agentix/reliability/circuit_breaker.py`）、断点续跑（`agentix/application/services/breakpoint_resume.py`）。P1 补 `AGENT_MAX_REPLANS` 生产注入（replanner 未传参缺口关闭），P4 补三计数器护栏 + 重复折叠 stub + `plan_mode` 权限快照恢复 + `InMemoryRollbackStore`（`RollbackPort` 首个生产实现）+ 失败 turn 先持久化边界。**残余**：L3 `AgentLoop` 直连工具表仍旁路 `ToolExecutor` 治理链（`agentix/application/services/agent_loop_adapter.py:104`） | ⚠️（旁路未清） |
 | 5 | Multi-Agent 协作 | 子代理按类型工具白名单 + 独立 prompt + 32 上限 + 后台线程（`tools/src/lib.rs:4257/:4175`）；Task/Worker/Team 注册表 | 完整实例隔离三件套 + status/exit_reason/truncated 契约（`delegate_tool.py:236/:299`）+ kanban 看板 + A2A | 已实现：supervisor + `multi_agent/` 工作流 + 3 个 phase 测试（`tests/test_agent_phase11_multiagent.py` 等）；`multi_agent` ablation 默认 False（`agentix/config/ablation.py:67`）——灰度问题非能力问题 | ✅（默认关） |
-| 6 | RAG/GraphRAG 作辅助而非核心 | 有独立 `claw-rag-service`（`claw-code/concept.md:13`）定位为旁挂服务 | 检索只是工具之一（FTS5、`session_search`），核心是循环与记忆 | 检索作为工具已接入；Channel A 有 Dense/BM25/RRF/Rerank、改写/HyDE 与证据门禁，均由配置灰度。2026-10-10 补齐 BM25 活动 `artifact_id` 隔离、倒排查询、Dense/Sparse 并发、法条号跨格式规范化，以及 rerank HTTP 200 错误的降级识别。**残余**：真实人工检索/答案金标与 live 基线尚未录制；标题/法条结构字段加权仍需消融验证，LM Studio 的 embedding API 不是 `/rerank` 交叉编码器接口。路线见 `docs/design/rag-optimization.md` §8 | ⚠️（质量证据待补） |
+| 6 | RAG/GraphRAG 作辅助而非核心 | 有独立 `claw-rag-service`（`claw-code/concept.md:13`）定位为旁挂服务 | 检索只是工具之一（FTS5、`session_search`），核心是循环与记忆 | 检索作为工具已接入；Channel A 有 Dense/BM25/RRF/Rerank、改写/HyDE 与证据门禁，均由配置灰度。2026-10-10 补齐 BM25 活动 `artifact_id` 隔离、倒排查询、Dense/Sparse 并发、数据条目号跨格式规范化，以及 rerank HTTP 200 错误的降级识别。**残余**：真实人工检索/答案金标与 live 基线尚未录制；标题/数据条目结构字段加权仍需消融验证，LM Studio 的 embedding API 不是 `/rerank` 交叉编码器接口。路线见 `docs/design/rag-optimization.md` §8 | ⚠️（质量证据待补） |
 | 7 | AI Coding 高质量可维护代码 | mock parity harness + 5-job CI + PRD 验收契约（§2.8） | ~5600 测试文件 + 分层 AGENTS.md + 变异契约测试（§3.10） | ✅ 2847 tests/150 模块、CI 门禁、evals、p41 文档守卫 33 条（含 P1–P6 新键名单，见 `README.md` §11、`evals/README.md`） | ✅ |
 
 ### 4.2 岗位要求对照（8 条）
@@ -356,7 +359,7 @@
 | # | 借鉴动作 | 源出处 | 本仓落点 |
 |---|---|---|---|
 | 1.1 | 工具失败/权限拒绝一律降级为可自纠消息回喂模型，不打断循环 | `claw-code/rust/crates/runtime/src/conversation.rs:468-511` | agentix/agent/core/loop.py（M6 已删，现见 `agentix/orchestration/orchestrator.py`） 与 replanner 协同 |
-| 1.2 | 阶段管线 + 判决对象（continue/break/return），把控制流从深层 return 抽离 | `hermes/agent/conversation_loop.py:1480/:1636` | agentix/agent/core/loop.py（M6 已删，现见 `agentix/orchestration/orchestrator.py`） 重构骨架 |
+| 1.2 | 阶段管线 + 结论对象（continue/break/return），把控制流从深层 return 抽离 | `hermes/agent/conversation_loop.py:1480/:1636` | agentix/agent/core/loop.py（M6 已删，现见 `agentix/orchestration/orchestrator.py`） 重构骨架 |
 | 1.3 | 静态错误分类表（稳定 error kind）供上层重试决策与输出契约 | `claw-code/rust/crates/rusty-claude-cli/src/main.rs:437` | `agentix/domain/policies/`、`agentix/application/services/task_retry.py` |
 | 1.4 | 子代理/后台任务的明确退出契约（status/exit_reason/truncated） | `hermes/tools/delegate_tool.py:299-314` | 任务型路由 + 任务终态建模（P1 新增） |
 
@@ -416,3 +419,9 @@
 | G.2 | PRD 即验收契约（story + acceptanceCriteria + passes） | `claw-code/prd.json`、`progress.txt:95` | 优化批次 DoD 写法（`docs/migration/` 规划文档） |
 | G.3 | 契约测试/变异测试守「血泪规则」 | `hermes/tests/gateway/test_stream_final_contract.py` | 关键不变量测试化（p41 已有同思路） |
 | G.4 | mock 对拍 harness（确定性 mock + 场景清单 + 子进程对拍） | `claw-code/rust/crates/rusty-claude-cli/tests/mock_parity_harness.rs` | `evals/` 场景对拍扩展 |
+
+### 未采纳项（明确记录，不是遗漏）
+
+| # | 借鉴动作 | 源出处 | 未采纳原因与当前替代 |
+|---|---|---|---|
+| X.1 | 内核能力探测式沙箱（`unshare` / namespace / seccomp） | `claw-code/rust/crates/runtime/src/sandbox.rs:334` | 本仓工具全部在主进程内执行，且部署形态是 compose 单机——起 namespace 需要容器特权，与同一份 compose 里「不额外给能力」的降权方向冲突。2026-10-23 先落地**不依赖特权**的 T0（超时真截断 flag、MCP 子进程环境白名单、表达式资源护栏、只读 SQL 词表两闸合一、日志凭据脱敏、显式生产身份、容器配额 + `no-new-privileges`）；namespace 级隔离仍是 T2，路线与逐项实测见 `docs/PROJECT_SPEC.md` §24.3、行为口径见 `docs/architecture/runtime-guardrails.md` §15 |

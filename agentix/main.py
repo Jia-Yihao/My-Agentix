@@ -19,8 +19,9 @@ from loguru import logger
 from agentix.application.services.lightrag_service import get_lightrag_service
 from agentix.config import settings
 from agentix.infrastructure.core import configure_logging
-from agentix.infrastructure.core.database import Base, engine
+from agentix.infrastructure.core.database import Base, get_engine
 from agentix.interfaces.http import lightrag_router
+from agentix.interfaces.http.public_paths import PUBLIC_PATHS, PUBLIC_PREFIXES
 from agentix.interfaces.http.v1 import api_router as api_v1_router
 from agentix.retrieval.api.routers import router as retrieval_router
 from agentix.retrieval.errors import AppError
@@ -64,10 +65,14 @@ class APIKeyMiddleware:
     """Optional API key authentication middleware.
 
     Enabled via REQUIRE_API_KEY=true in settings.
-    Exempts /docs, /redoc, /health, /favicon.ico from auth.
+    Exempts probes, docs and the Prometheus scrape endpoint — the list lives in
+    ``agentix/interfaces/http/public_paths.py`` and is shared with the rate-limit
+    middleware. The root ``/api`` info endpoint is deliberately NOT exempt: it is
+    not a probe (``/health`` is), so there is no reason to disclose the version
+    anonymously when auth is on.
     """
 
-    EXEMPT_PATHS = {"/docs", "/redoc", "/health", "/liveness", "/readiness", "/favicon.ico", "/api", "/openapi.json", "/metrics"}
+    EXEMPT_PATHS = PUBLIC_PATHS
 
     def __init__(self, app):
         self.app = app
@@ -89,7 +94,7 @@ class APIKeyMiddleware:
             return await self.app(scope, receive, send)
 
         path = scope.get("path", "")
-        if path in self.EXEMPT_PATHS or path.startswith("/docs") or path.startswith("/redoc"):
+        if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
             return await self.app(scope, receive, send)
 
         headers = dict(scope.get("headers", []))
@@ -194,7 +199,7 @@ from agentix.interfaces.http.middleware import TraceIdMiddleware  # noqa: E402
 application.add_middleware(TraceIdMiddleware)
 
 # 企业化 P0-3：全局限流中间件——置于 trace_id 外层（最先执行，先于鉴权/
-# 日志 shed load）。按客户端 IP 令牌桶限流，覆盖法律编排域 + 检索域全部入口；
+# 日志 shed load）。按客户端 IP 令牌桶限流，覆盖测试数据编排域 + 检索域全部入口；
 # 知识域聊天路由另有更细粒度的路由级限流（retrieval/settings.py RATE_LIMIT_*）。
 # 多副本部署时应切 RedisRateLimiter（见 rate_limit_middleware 模块注释）。
 from agentix.interfaces.http.rate_limit_middleware import GlobalRateLimitMiddleware  # noqa: E402
@@ -327,18 +332,64 @@ def prometheus_metrics() -> Response:
     return Response(content=get_metrics(), media_type=get_metrics_content_type())
 
 
+#: 出厂默认关闭、但决定「这台实例能不能直接对外」的闸门。
+#: 判据是「关着会让实例不该对外」，不是「凡是新 flag 都列进来」——
+#: `TOOL_HANDLER_CONTRACT_ENABLED`（§24.3 T1 ⑧）只产启动日志、不改变任何执行语义，
+#: 关着不构成对外风险，列进来只会让这条告警变成噪音。
+_INSECURE_GATE_FLAGS: tuple[str, ...] = (
+    "REQUIRE_API_KEY",
+    "V1_REQUIRE_JWT",
+    "RATE_LIMIT_ENABLED",
+    "HUMAN_REVIEW_ENABLED",
+    "TOOL_GUARDRAILS_ENABLED",
+    "TOOL_SYNC_OFFLOAD_ENABLED",
+    "MCP_SUBPROCESS_ENV_SCRUB",
+    # §24.3 T1 ⑪：关着时任意登录用户可改写任意 kb 的 base_url（把该租户的提问外送）
+    "SETTINGS_AUTHZ_ENABLED",
+)
+
+
+def _warn_insecure_posture() -> None:
+    """G6：把「当前安全姿态」变成启动时一条响亮日志，而不是靠人记住该开哪些 flag。
+
+    只在**未显式声明** APP_ENV 时告警——显式声明即代表运维已经做过判断，
+    再叫就是噪音。生产/staging 身份下这条件不成立（STRICT_VALIDATION 分支另有 raise）。
+    """
+    if (settings.APP_ENV or "").strip():
+        return
+    off = [name for name in _INSECURE_GATE_FLAGS if not getattr(settings, name, False)]
+    if not off:
+        return
+    from agentix.retrieval.settings import settings as _rs
+
+    logger.warning(
+        "SECURITY POSTURE: APP_ENV is not declared, so env is inferred from DEBUG={} "
+        "(=> env={!r}). {} gate flag(s) are OFF and this instance must NOT be exposed "
+        "to untrusted traffic: {}. Set APP_ENV=production (and enable the gates) before "
+        "any real deployment.",
+        settings.DEBUG,
+        _rs.ENVIRONMENT,
+        len(off),
+        ", ".join(off),
+    )
+
+
 def _run_settings_validation() -> None:
-    """执行检索域的生产配置校验，把结果变成**启动日志**，生产环境则**拒绝启动**。
+    """执行检索域的生产配置校验，把结果变成**启动日志**，生产/staging 则**拒绝启动**。
 
     语义（三态，与"自检不得成为新的故障源"的原则一致）：
 
-    ==================  ==========================  ========================
-    校验结果            开发环境                    生产环境（PRODUCTION）
-    ==================  ==========================  ========================
+    ==================  ==========================  ================================
+    校验结果            开发环境                    硬失败面（STRICT_VALIDATION）
+    ==================  ==========================  ================================
     无 error            记一条 info（含告警条数）    同左
     有 warning          逐条 warning（不阻断）       同左
     有 error            逐条 error（**不阻断**）     逐条 error + **raise**
-    ==================  ==========================  ========================
+    ==================  ==========================  ================================
+
+    硬失败面 = production **+ staging**（口径同 `resolved_secret_key`）。staging 的价值是
+    「用生产的失败语义提前跑一遍」，只判 PRODUCTION 会让显式声明 `APP_ENV=staging` 的
+    部署**静默丢掉**这道 raise——G6 之前它靠 `DEBUG=false` 反推出 "production" 才拿到。
 
     为什么生产环境要拒绝启动：这些 error 对应的都是"能被静默容忍、但会导致错误行为"的
     配置（典型：milvus + 未归一化 ⇒ 相似度口径错，但接口仍返回 200 和一堆结果）。
@@ -350,6 +401,7 @@ def _run_settings_validation() -> None:
     from agentix.retrieval.settings import settings as _rs
     from agentix.retrieval.settings import validate_app_settings
 
+    _warn_insecure_posture()
     errors, warnings = validate_app_settings()
     for w in warnings:
         logger.warning("settings validation (warning): {}", w)
@@ -362,10 +414,15 @@ def _run_settings_validation() -> None:
         return
     for e in errors:
         logger.error("settings validation (error): {}", e)
-    if _rs.PRODUCTION:
+    if _rs.STRICT_VALIDATION:
         raise RuntimeError(
-            "refusing to start: {} settings validation error(s) in production "
-            "(env={}): {}".format(len(errors), _rs.ENVIRONMENT, "; ".join(errors))
+            "refusing to start: {} settings validation error(s) in {} "
+            "(env={}): {}".format(
+                len(errors),
+                "production" if _rs.PRODUCTION else "staging",
+                _rs.ENVIRONMENT,
+                "; ".join(errors),
+            )
         )
 
 
@@ -489,7 +546,7 @@ async def _startup() -> None:
     # Auto-create database tables on startup
     import agentix.infrastructure.persistence.db.models  # noqa: F401 - Import all models to register them with Base
     logger.info("Creating database tables if not exist...")
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=get_engine())
     # R3.1: 检索域建表（PG 落 retrieval schema / SQLite 同文件）。此前仅在测试与
     # 迁移脚本中调用、启动流程缺失，全新部署会缺表。
     from agentix.retrieval.infra.db.session import create_db_and_tables
@@ -853,11 +910,13 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 
 if __name__ == "__main__":
+    # G6：reload 与 DEBUG 解耦；UVICORN_RELOAD 未显式设置时沿用旧行为（=DEBUG）。
+    _reload = settings.DEBUG if settings.UVICORN_RELOAD is None else settings.UVICORN_RELOAD
     uvicorn.run(
         "agentix.main:application",
         host=settings.HOST,
         port=settings.PORT,
-        reload=settings.DEBUG,
+        reload=_reload,
         log_level="info",
     )
 

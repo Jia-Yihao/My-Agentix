@@ -13,19 +13,157 @@ docker compose -f docker-compose.yml -f docker/compose.override.staging.yml \
 
 ## 配置矩阵（环境间差异清单）
 
-| 配置 | dev | staging | production |
+| 配置 | dev | staging | production（**手写，无部署物兜底**） |
 |---|---|---|---|
+| `APP_ENV` | 空（由 `DEBUG` 反推） | **`staging`** | **`production`**（必须显式） |
 | `DEBUG` | true | **false** | false |
+| `DB_ECHO` | 空（=沿用 `DEBUG`） | **false** | **false** |
+| `UVICORN_RELOAD` | 空（=沿用 `DEBUG`） | **false** | **false** |
 | `REQUIRE_API_KEY` | false | **true** | true（强校验） |
 | `SECRET_KEY` | 临时生成+告警 | 显式注入 | 显式注入（缺失拒绝启动） |
 | `RATE_LIMIT_ENABLED` | false | **true** | true（强校验） |
+| `TOOL_SYNC_OFFLOAD_ENABLED` | false | **false**（override 显式钉住：线程下放改变循环亲和语义，先逐个确认 handler 无 loop 亲和依赖再打开） | true（确认后开；这是让 `timeout_ms` 真生效的唯一路径） |
+| `TOOL_HANDLER_CONTRACT_ENABLED` | false | **true**（override 已置：把 `TOOL HANDLER CONTRACT:` 点名的工具清单抄进部署记录，作为上一行的决策输入） | 按需（只打日志，不改执行语义） |
+| `MCP_SUBPROCESS_ENV_SCRUB` | false | **true**（override 已置） | true（server 需凭据时用 `MCP_SUBPROCESS_ENV_EXTRA_KEYS` 显式加名） |
+| `SETTINGS_AUTHZ_ENABLED` | false | **false**（override 显式钉住：注册只会产出 member，全仓没有自助升 admin 的接口，直接打开会让整面设置页 403） | true（多租户对外必须开；两个前置见下面「设置接口授权收紧」一节） |
+| `EXECUTION_SANDBOX_ENABLED` | false | **true**（override 已置：让「按 `ToolSpec.sandbox` 声明选执行位置」这条新缝在预发被持续走到；默认档 `in_process` 与关着逐位等价。**不等于预发已经有隔离**——能跑的 `in_process`/`thread` 都不隔离，⑮ 才有 `subprocess`） | 按需（⑮ 落地前打开只多一件事：声明了未实现档位的工具会在执行点被**拒绝**，而不是静默在进程内跑） |
 | `LLM_MAX_CONCURRENCY` | 0（不限） | **10** | 按配额定（建议 20） |
-| `PROMPT_INJECTION_DETECTION_ENABLED` | true | true | true |
+| `PROMPT_INJECTION_DETECTION_ENABLED` | true | **true**（override 已置：三档环境都检测，这里加粗只表示"预发真的设了"，不代表它与 dev 不同） | true |
 | `PROMPT_INJECTION_INGEST_BLOCK` | false | **false**（观察期） | 上线 2 周后评估开启 |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | 空（本地 span） | **prometheus:9090** | 真实 OTLP 后端 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | 空（本地 span） | **http://prometheus:9090**（带 scheme 的完整 URL，照抄 override；先前写的 `prometheus:9090` 少了协议头，抄进别的部署物就是一个无效端点） | 真实 OTLP 后端 |
 | 监控栈 | 不起 | **--profile monitoring** | 独立部署或同 compose |
 | 数据 | sqlite/内存 | 真实存储 + 小容量 | 真实存储全量 |
 | 卷 | 本地目录 | `staging_` 前缀独立卷 | 持久卷 + 备份 |
+
+> **这张表的 dev / staging 两列现在是生成物**，不是抄来的：由
+> [`scripts/gen_staging_matrix.py`](../../scripts/gen_staging_matrix.py) 从
+> `docker-compose.yml` 与 `docker/compose.override.staging.yml` 算出来（dev 列缺省回落
+> `agentix/config/settings.py` 的字段默认值，**刻意不实例化 Settings**——实例化会吃宿主机
+> `.env`，那正是这张表要避免的污染源）。改完部署物或改完表，跑一次
+> `python scripts/gen_staging_matrix.py --check`，退出码 0 才算对齐；`--check` 非零时它会点名
+> 是哪一格、按什么口径不对。回归由 `tests/test_p115_staging_matrix_generated.py` 钉住（G13
+> 的两例形态——表里加粗声明、部署物里没设——都有反向用例）。
+>
+> 表的覆盖面是**环境差异项**，机械定义成「staging override 的 backend 里设了的键 ∪ 脚本里
+> 登记为手填的键」，不是 compose 的全量 92 项。想让一个键进表：要么让 override 也管它，要么
+> 在脚本的 `MANUAL_KEYS` 里登记理由——两条路都留下署名，没有静默跳过。
+> **加粗 = 「预发真的设了」**：反过来说，一个没加粗的 staging 值只是基线 compose/Settings
+> 的取值在这里长什么样，不是预发做了什么。
+>
+> production 列**没有**对应的 override 文件，所以脚本不校验它。它靠两件事兜底：
+> `STRICT_VALIDATION` 分支的拒绝启动（`REQUIRE_API_KEY` / `RATE_LIMIT_ENABLED` 等配错根本
+> 起不来），以及部署方自己的 `.env`。也就是说 production 列里「按需」「确认后开」那一类
+> **没有机制保证，只有约定**——别把这张表当成生产实际配置的证据。
+
+## 容器降权（非 root）切换步骤
+
+backend 与 retrieval-worker 的运行身份由 `AGENTIX_CONTAINER_USER`（默认 `0:0`）决定。
+默认值**就是今天的行为**：`Dockerfile` 的 server stage 没有 `USER` 指令，容器本来以 uid 0 起，
+所以 `user: "0:0"` 与不写这一行逐位等价（由 `tests/test_p111_container_user_knob.py` 钉住，
+含「镜像一旦加了 `USER`，`0:0` 就从 no-op 变成升权」这条前置口径）。
+
+**为什么不直接把默认改成 1000:1000**：这两个服务共享 `./data` 与 `./uploads` 两个绑定挂载，
+而 entrypoint 会往里写（LightRAG bootstrap 的 `mkdir`/`cp -a`、`TIKTOKEN_CACHE_DIR=/app/data/tiktoken_cache`）。
+属主不对时 entrypoint 的 `set -euo pipefail` 直接退出，`restart: unless-stopped` 把它变成
+崩溃循环——**降权失败的表现不是「拒绝启动」而是「反复重启」**，这比启动期报错难发现得多。
+所以它是一个需要配套动作的旋钮，不是一个默认值。
+
+切换步骤（Linux 主机；Docker Desktop 的 Windows/macOS 下绑定挂载的属主由 virtiofs/gRPC-FUSE
+仿真，`uid` 语义与 Linux 原生不一致，别按本节的期望推断）：
+
+1. 选定 uid/gid，并让**两个服务用同一个值**（共享挂载 ⇒ 两把 uid 必有一方 EACCES）：
+   `AGENTIX_CONTAINER_USER=1000:1000`
+2. 把挂载目录属主改过去（在**宿主机**上，容器内没有权限做这件事）：
+   ```bash
+   sudo chown -R 1000:1000 data uploads
+   ```
+3. `.env` 以 bind mount 进容器（`./.env:/app/.env`），必须对该 uid 可读。
+   **不要图省事 `chmod 644`**：那等于把密钥对整个主机可读位展开；
+   用「同组可读 + 组 gid 与容器 gid 一致」的方式（`chgrp 1000 .env && chmod 640 .env`），
+   或改成 `env_file` 注入而不是挂载文件（见 [密钥管理 Runbook](secrets-management.md)）。
+4. 起服务并**当场验证身份**，不要只看 healthcheck 过了：
+   ```bash
+   docker compose -f docker-compose.yml -f docker/compose.override.staging.yml up -d
+   docker compose exec -T backend id -u        # 期望 1000，不是 0
+   docker compose exec -T retrieval-worker id -u
+   docker compose ps                            # 两分钟后再看一次，确认没在 Restarting
+   ```
+5. 回滚：删掉这个变量（或设回 `0:0`）后 `up -d`；目录属主**不必**回改，
+   root 对任何属主都可写，回滚方向永远是安全的。
+
+**这一格买到什么、没买到什么**：买到的是「容器里进程被 RCE 后，写宿主挂载要过属主检查、
+setuid 提权又被已存在的 `no-new-privileges:true` 挡掉」；
+没买到的是——`cap_drop`（docker 默认 capability 集仍然全给）、`read_only` 根文件系统、
+user namespace 映射（容器内 uid 1000 与宿主 uid 1000 是**同一个身份**），
+`deploy.resources.limits.pids` 只是 cgroup 计数上限而不是隔离手段。
+容器本来就有自己的 pid/mount/net namespace，但那是 docker 默认给的，不等于墙。
+实测口径：`docker-compose.yml` 的 backend 段没有 `cap_drop` / `read_only` / `privileged` /
+`network_mode` 任何一项。所以 §24.1 的结论不变：**容器是「有边界的一格」，不是墙**。
+本节只覆盖 backend 与 retrieval-worker；`kb_ingest` 是独立镜像、独立 `Dockerfile`，
+本轮**未**给它同一个旋钮（它的可写路径与 entrypoint 需单独确认），不要把本节的步骤套到它头上。
+
+## 设置接口授权收紧（`SETTINGS_AUTHZ_ENABLED`）切换步骤
+
+这一位管的是 `GET/PUT /api/v1/retrieval/settings/{kb_id}`（模型配置页）。
+**默认关的时候，含义是「任何登录用户可以读改任意 `kb_id` 的配置」**——包括别的租户的。
+G9 的密钥掩码只解决「读回来的值不外泄」，没解决「谁都能换掉它」：`llm_base_url` /
+`embedding_base_url` 是可写字段，改成自己的端点之后，那个知识库的每一条提问和每一段
+召回上下文都会发过去，全程不需要拿到任何密钥。口径全文见
+[runtime-guardrails.md §15.8](../architecture/runtime-guardrails.md)。
+
+开启后的判定复用既有两套闸，没有新造语义：读要求 kb 属于调用者租户
+（不存在 → 404 `KB_NOT_FOUND`；跨租户 → 403 `FORBIDDEN`，不回显目标 kb），
+写在此之上再要求 `role=admin`。
+
+**两个前置，缺一个就会把设置页变成 403**：
+
+1. **`knowledgebase.tenant_id` 已回填**。`authz.py::require_kb_in_tenant` 对
+   `tenant_id IS NULL` 的行一律 403（「谁的都不是」不等于「谁都能读」）。正常启动会走
+   `run_migrations()` → `_seed_default_tenant()` 回填，但**只回填它当时看得见的行**，
+   迁移后又手工导入的库不会补。先数一遍：
+   ```sql
+   -- PostgreSQL（检索域在 retrieval schema；SQLite 开发库把前缀去掉即可）
+   SELECT count(*) FROM retrieval.knowledgebase WHERE tenant_id IS NULL;   -- 必须为 0
+   ```
+2. **目标租户内确有 admin 账号**。注册路径只会产出 `member`，而**全仓没有自助升格
+   admin 的接口**（`DELETE /knowledge-bases/{kb_id}` 早就有同一个空洞）。一个 admin 都没有
+   的实例开这一位，等于把设置页的读写同时对所有人关掉。逐租户数：
+   ```sql
+   SELECT t.name, count(u.id) FILTER (WHERE u.role = 'admin') AS admins
+   FROM retrieval.tenant t LEFT JOIN retrieval."user" u ON u.tenant_id = t.id
+   GROUP BY t.name;   -- 需要能改配置的每个租户都应 ≥ 1
+   ```
+   补一个 admin 目前只能直接改库（确认过密码哈希字段不动即可）：
+   ```sql
+   UPDATE retrieval."user" SET role = 'admin' WHERE email = 'owner@example.com';
+   ```
+
+切换与验证：
+
+```bash
+# .env 里改 SETTINGS_AUTHZ_ENABLED=true 后
+docker compose -f docker-compose.yml -f docker/compose.override.staging.yml up -d
+# 越权面应当 403、不存在的库应当 404，用真实登录态各打一次：
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  https://staging.internal/api/v1/retrieval/settings/<别的租户的kb_id>     # 期望 403
+```
+前端（`web/src/modules/knowledge/components/KbRagSettings.vue`）拿到的 403/404 会显示服务端
+的**具体** `message`（「无权访问该知识库」/「需要管理员权限」/「知识库不存在」），而不是
+共享助手默认优先的通用 `user_hint`「你没有访问该资源的权限」——这块面板的读者需要分清自己
+差的是哪一层权限，所以这里刻意取 `message` 优先。member 的口径是「能看不能存」：GET 只收
+归属、PUT 才要 admin，点保存才会看见「需要管理员权限」，这是预期而不是 bug。
+
+另有一条**与授权无关的护栏**：GET 失败时面板会落在一整份前端默认值上，此时**保存按钮被禁用**。
+否则「读取失败 → 直接点保存」会把默认值整批盖掉该 kb 的真实配置（PUT 是合并写，前端提交的
+键又很全）。所以现场看到「按钮是灰的」先查 GET 为什么失败，不要以为是页面坏了。
+
+回滚：设回 `false` 后 `up -d`。回滚方向永远是安全的——它只是把闸门放回加固前的位置，
+不改动任何已落库的配置。
+
+**这一位买到什么、没买到什么**：买到的是「跨租户改写出站目标」这条路径被关闭，
+以及「配置写权限收进 admin」。没买到的是身份治理本身：admin 只能改库补（前置 2），
+租户内多角色、按 kb 粒度的授权（现在是整租户一刀切）、以及「谁审核 admin 的任命」
+都还没有，归在 T1 之后的成员/角色治理里收。
 
 ## staging 验收清单（发布前跑一遍）
 
@@ -33,4 +171,38 @@ docker compose -f docker-compose.yml -f docker/compose.override.staging.yml \
 2. 登录 → 上传 → 索引 → 检索 → 流式问答全链路通
 3. Grafana 看板有数据（QPS/P95/5xx/限流/降级/熔断六组曲线）
 4. `LLM_MAX_CONCURRENCY` 生效：压测中观察到排队（llm_concurrency 贴上限）
-5. 配置矩阵逐项 diff（`docker compose config` 输出比对）
+5. 配置矩阵：`python scripts/gen_staging_matrix.py --check` 退出码 0。
+   人眼 diff `docker compose config` 不是这一条的判据——它既看不出「表里加粗了但 override
+   没设」（G13 两例都是这么漏过去的），也会被宿主机 `.env` 污染，把工作站上的临时值读成
+   环境事实。
+   注：矩阵 staging 列里凡是加粗声明具体值的行，`docker/compose.override.staging.yml`
+   必须真的设了同值——这条对齐关系已由 `tests/test_p109_tool_handler_contract.py` 的
+   部署面一节做成断言，不再是「靠人眼 diff 才发得现」。
+6. **启动日志的校验语义对得上**：`settings validation: passed`（或 error + **拒绝启动**）；
+   且**不应**出现 `SECURITY POSTURE` 告警——该告警只在未显式声明 `APP_ENV` 时打，
+   staging 已显式声明，出现它说明 override 没生效。
+   ⚠️ 回归点：staging 的拒绝启动走的是 `STRICT_VALIDATION`（prod + staging）而不是
+   `PRODUCTION`。G6 之前 staging 是靠 `DEBUG=false` 反推出 "production" 才拿到这道
+   raise 的；把 `APP_ENV` 显式写成 `staging` 后若只判 `PRODUCTION`，这道校验会
+   **静默降级为只打日志**。由 `tests/test_p107_sandbox_hardening.py` 钉住。
+7. `docker compose config` 里 backend 的 `deploy.resources.limits`（CPU/内存/pids）
+   与 `security_opt: no-new-privileges:true` 存在——这是 §24.2 G8 的容器面，
+   配额值可用 `BACKEND_CPUS` / `BACKEND_MEMORY` / `BACKEND_PIDS_LIMIT` 调
+8. 启动日志里收集 `TOOL HANDLER CONTRACT:` 行（⑧ 在 staging 常开）：被点名的工具
+   即「`timeout_ms` 当前不会截断」的清单，写进部署记录。**没有**这些行不代表契约坏，
+   代表这批工具尚未注册；有这些行也不代表要立刻开 `TOOL_SYNC_OFFLOAD_ENABLED`——
+   先逐个确认 handler 无 loop 亲和依赖
+9. 运行身份：`docker compose config` 里 backend 与 retrieval-worker 的 `user` 一致
+   （未降权时应为 `0:0`）。**选了非 root 就必须当场验**，因为这条的失败形态是崩溃循环
+   而不是拒绝启动：`docker compose exec -T backend id -u` 输出目标 uid，
+   且 `docker compose ps` 在两分钟后仍为 `Up`。
+10. 设置接口授权（⑪）：矩阵这一行 staging 钉的是 `false`，所以本条验的是「**开关确实没被
+    宿主机插值偷偷打开**」——`docker compose config` 里 backend 的
+    `SETTINGS_AUTHZ_ENABLED` 应为 `false`。要在 staging 提前跑收紧语义，先跑上面
+    「设置接口授权收紧」一节的**两条预检 SQL**（`tenant_id` 空值计数为 0、目标租户 admin ≥ 1），
+    再用真实登录态各打一次越权 403 / 不存在 404；只验「页面能打开」不算过。
+
+> `AGENTIX_CONTAINER_USER` **有意不进上面的配置矩阵**：矩阵的每一行都要能被 override 兜底，
+> 而这个值必须等于「宿主机上 `./data`/`./uploads` 的属主」，是**按主机**定的——
+> 在版本库里的 override 写死 `1000:1000`，对属主不是 1000 的主机就是直接把 staging 起崩。
+> 它属于上面那一节的「切换步骤」，不属于「环境间差异清单」。

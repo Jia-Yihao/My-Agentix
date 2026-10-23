@@ -9,7 +9,7 @@
 
 My Agentix 是一个**以 Agent 内核 + RAG 等多路检索为核心的综合服务平台**：以「**分层 + 依赖倒置 + 可插拔注册表**」组织代码，
 以「**三层 Multi-Agent**」组织运行时（主路由层 → 多工具子图层 → 原子工具层），
-以「**领域适配**」保持可迁移性（法律 → 中医药典 → 政务服务 … 等参考领域均可接入）。
+以「**领域适配**」保持可迁移性（测试数据 → 中医药典 → 政务服务 … 等参考领域均可接入）。
 
 ---
 
@@ -17,13 +17,14 @@ My Agentix 是一个**以 Agent 内核 + RAG 等多路检索为核心的综合�
 
 | 文档 | 内容 | 适合谁 |
 |------|------|--------|
+| [**overview.md**](overview.md) | **项目全景**：两套问答域 + 入库流、三条端到端链路、完整目录地图、默认开关矩阵、关键代码索引 | 新人 / 所有贡献者（建议先读） |
 | [**layers.md**](layers.md) | 分层架构、模块职责、**依赖规则**（含自动化守卫） | 所有贡献者（必读） |
 | [**interfaces.md**](interfaces.md) | 端口抽象（Protocol）、Payload 契约、工具/Provider 接口定义 | 二次开发者 |
 | [**extension.md**](extension.md) | **如何扩展**：新增工具 / Provider / Agent 子图 / 新领域 | 扩展开发者 |
 | [**configuration.md**](configuration.md) | 配置管理：单一事实来源、分层覆盖、敏感项、启动自检 | 运维 / 部署者 |
 | [**runtime-guardrails.md**](runtime-guardrails.md) | 运行时护栏：**上下文隔离 · 控制平面 · 感知工具限量 · 人工审批** | 运维 / 扩展开发者 |
 | [**../design/orchestration-rationale.md**](../design/orchestration-rationale.md) | 逐环节「为何用自主 Agent 而非 Workflow」的论证 | 架构评审 |
-| [**../design/design-legal-domain.md**](../design/design-legal-domain.md) | 法律领域设计（图谱 Schema、领域知识） | 领域适配者 |
+| [**../design/design-legal-domain.md**](../design/design-legal-domain.md) | 测试数据领域设计（图谱 Schema、领域知识） | 领域适配者 |
 | [**../VERSIONING.md**](../VERSIONING.md) | 版本管理与发布策略 | 维护者 |
 
 ---
@@ -46,19 +47,21 @@ My Agentix 是一个**以 Agent 内核 + RAG 等多路检索为核心的综合�
 
 ```mermaid
 graph TD
-    U([用户提问]) --> MW[中间件链<br/>TraceId → 日志 → 鉴权 → CORS]
+    U([用户提问]) --> MW[中间件链：GlobalRateLimit → TraceId → RequestLogging → APIKey → CORS]
     MW --> CS[ChatService<br/>编排 / 错误分类 / 指标]
-    CS --> G[LangGraph 主图<br/>lg_builder.build_graph]
+    CS --> G[LangGraph L2 主图<br/>lg_builder.build_graph]
 
     G --> W[message_window<br/>历史窗口化]
     W --> R[analyze_and_route_query<br/>L1 主路由]
+    R --> RQ{route_query<br/>条件边（非节点）}
 
-    R -->|general| GEN[respond_to_general_query]
-    R -->|additional| ADD[get_additional_info]
-    R -->|graphrag / text2sql| KGS[KG 子图<br/>create_multi_tool_workflow]
-    R -->|kb| KBS[KB 子图<br/>create_kb_multi_tool_workflow]
-    R -->|image| IMG[create_image_query]
-    R -->|file| FILE[create_file_query]
+    RQ -->|general| GEN[respond_to_general_query]
+    RQ -->|additional| ADD[get_additional_info]
+    RQ -->|graphrag / text2sql| KGS[KG 子图<br/>create_multi_tool_workflow]
+    RQ -->|kb| KBS[KB 子图<br/>create_kb_multi_tool_workflow]
+    RQ -->|image| IMG[create_image_query]
+    RQ -->|file| FILE[create_file_query]
+    RQ -->|task, flag on| TASK[execute_task<br/>TASK_EXEC_ENABLED]
 
     KGS --> KGT[原子工具层<br/>cypher / predefined / graphrag / text2sql]
     KBS --> KBT[原子工具层<br/>PostgreSQL / Milvus / Reranker / External]
@@ -69,8 +72,13 @@ graph TD
     ADD --> OUT
     IMG --> OUT
     FILE --> OUT
+    TASK --> OUT
     OUT --> U
 ```
+
+> 上图只画**测试数据编排域**。检索域 `/api/v1/retrieval/*` 是独立的自建 ReAct 工具循环（不经过 LangGraph），入库流由 `kb_ingest` 独立服务承载；三者的完整对照见 [overview.md](overview.md) 第 3 节。
+>
+> 两个容易误读的点：`route_query` 是条件边而非节点；`check_hallucinations` 已定义但**故意未注册**到主图。
 
 | 层 | 职责 | 关键模块 |
 |----|------|---------|
@@ -94,7 +102,7 @@ agentix/
 │   ├── agent/         Agent 领域类型与端口（types / ports）
 │   ├── runtime/       Runtime 状态契约（RunState / 终态集）
 │   ├── tool/          ToolSpec 与风险分级（纯契约）
-│   ├── policies/      判定函数（错误分类 / 重试策略 / 冲突仲裁）
+│   ├── policies/      判定函数（错误分类 / 重试策略 / 冲突裁决）
 │   └── ports/         抽象接口（Protocol）+ Payload TypedDict
 ├── application/     应用层：编排与业务规则
 │   ├── agents/        LangGraph 业务节点、子图 prompt、LLM 工厂
@@ -156,3 +164,7 @@ agentix/
 | [0001](adr/0001-layered-architecture-with-ports.md) | 采用分层架构 + 端口抽象（依赖倒置） |
 | [0002](adr/0002-registry-based-plugin-mechanism.md) | 采用注册表驱动的可插拔扩展机制 |
 | [0003](adr/0003-declarative-configuration-single-source.md) | 配置声明单一事实来源（Pydantic Settings） |
+| [0004](adr/0004-dual-orm-coexistence.md) | 双 ORM（SQLAlchemy + SQLModel）长期共存 |
+| [0005](adr/0005-dual-retrieval-channels.md) | 双检索通道边界与选择矩阵 |
+| [0006](adr/0006-infrastructure-criticality.md) | 关键基础设施边界与降级策略 |
+| [0007](adr/0007-execution-sandbox-port.md) | 工具执行位置做成可声明的端口（ExecutionSandbox；**端口 ≠ 隔离**，⑮ 未落） |

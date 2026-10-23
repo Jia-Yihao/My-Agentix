@@ -48,7 +48,7 @@ gateway_fallback_total
 ### 第 5 步：发一次带知识库检索的请求
 
 ```powershell
-$body = @{ message = "合同违约的构成要件是什么？"; session_id = "drill-p11" } | ConvertTo-Json
+$body = @{ message = "示例文档异常的构成要件是什么？"; session_id = "drill-p11" } | ConvertTo-Json
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/chat" -Method Post -Body $body -ContentType "application/json"
 ```
 

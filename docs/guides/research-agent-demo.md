@@ -26,7 +26,7 @@ from agentix.policies.planner.simple import DeclaredStepsPlanner  # 或 SingleSt
 from agentix.policies.verifier.layered import LayeredVerifier
 
 task = TaskSpec(
-    goal="梳理违约责任构成要件并引用依据",
+    goal="梳理数据条目分类并引用依据",
     task_id="demo-research-1",
     success_criteria=("contains_structure", "has_sources"),
 )

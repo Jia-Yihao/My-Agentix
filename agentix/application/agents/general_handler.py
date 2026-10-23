@@ -315,7 +315,7 @@ async def create_kb_query(state: AgentState, *, config: RunnableConfig) -> Dict[
     # Fallback: direct KB query
     # P0-3：多工具工作流失败属于系统故障（替代路径降级），最终答复必须
     # 携带 degraded 标记——chat 层据此返回 status="degraded"，
-    # 让前端区分「系统降级」与「知识库无记载」，避免降级文案被当成法律答复。
+    # 让前端区分「系统降级」与「知识库无记载」，避免降级文案被当成测试数据答复。
     if knowledge_service is None:
         knowledge_service = KnowledgeGateway()
     knowledge_node = create_knowledge_query_node(retrieval_port=get_retrieval_port())

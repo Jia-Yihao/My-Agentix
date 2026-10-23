@@ -12,9 +12,9 @@ class CitationData(BaseModel):
     page_no: int | None = None
     snippet: str = ""
     source: str | None = None
-    # 效力状态（实时 SSE 一直有；历史 DTO 缺失 → 刷新后徽标消失，Phase 23 补齐）
+    # 有效性状态（实时 SSE 一直有；历史 DTO 缺失 → 刷新后徽标消失，Phase 23 补齐）
     effective_status: str | None = None
-    # 失效法条的替代信息（前端「已被…替代」提示；老数据无此键 → None）
+    # 失效数据条目的替代信息（前端「已被…替代」提示；老数据无此键 → None）
     replaced_by: str | None = None
     # 文件级元信息（历史数据无此键 → None）
     document_title: str | None = None

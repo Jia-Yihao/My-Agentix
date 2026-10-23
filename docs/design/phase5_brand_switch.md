@@ -11,7 +11,7 @@
 | 位置 | 改动 |
 | --- | --- |
 | `web/src/modules/knowledge/views/LoginView.vue` | 登录页标题 `Tracerag` → `My Agentix` |
-| `web/src/modules/knowledge/components/chat/HomeWelcomeHero.vue` | 欢迎区标题 `Tracerag` → `My Agentix`；副标题改为「法律法规智能咨询助手」 |
+| `web/src/modules/knowledge/components/chat/HomeWelcomeHero.vue` | 欢迎区标题 `Tracerag` → `My Agentix`；副标题改为「测试数据集智能咨询助手」 |
 | `web/index.html` | `<title>` 统一为 `My Agentix` |
 | `agentix/retrieval/usecases/chat_thinking.py` | 思考过程 system prompt 品牌自称 → My Agentix |
 | `agentix/retrieval/usecases/chat_service.py` | 文档问答 prompt 品牌自称 → My Agentix |
@@ -62,7 +62,7 @@
 | # | 验收项 | 结果 | 依据 |
 | --- | --- | --- | --- |
 | 1 | 架构：单一主服务 + 独立 worker，Port 缝线 | ✅ | `docker compose config --services` = backend + retrieval-worker（`deploy.replicas` 可独立伸缩）+ 6 存储；`RetrievalPort` Protocol（`agentix/domain/ports/retrieval.py`）贯穿编排层 |
-| 2 | 单一 RAG 引擎 | ✅ | 向量实现全部收敛于 `agentix/retrieval/infra/vectorstore/`（FAISS + Factory 注册制）；旧 RAG 归档且兼容 shim 已删（R5.2）；kb_ingest 的 `MilvusLegalStore` 为结构化法律库通道（设计内，非平行通用引擎） |
+| 2 | 单一 RAG 引擎 | ✅ | 向量实现全部收敛于 `agentix/retrieval/infra/vectorstore/`（FAISS + Factory 注册制）；旧 RAG 归档且兼容 shim 已删（R5.2）；kb_ingest 的 `MilvusLegalStore` 为结构化测试数据库通道（设计内，非平行通用引擎） |
 | 3 | 功能等价 + 前端单入口 | ✅ | 全量 pytest 1146 passed / 7 skipped / 0 failed；e2e 6/6（品牌统一后复跑：登录 gate/统一 shell/JWT 持久化/无重复登录/旧 URL 重定向/切回保持） |
 | 4 | 存储收敛：6 类存储，无重复 | ✅ | 服务清单 = postgres/redis/milvus/mysql/neo4j/minio（各 1 套）+ backend/kb_ingest/retrieval-worker/etcd；无 pgvector/kb_postgres 残留（仅迁移历史注释） |
 | 5 | 安全与隔离：JWT+Tenant、PII | ✅ | 测试面：test_jwt_auth / test_authz_tenant / test_tenant_crud / test_tenant_id_extension / test_unit_security / test_upload_security；PII 脱敏默认开启（`chat_output_filter.py`，trajectory 测试覆盖 mask） |
