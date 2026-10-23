@@ -1,6 +1,6 @@
-"""目标优先级与冲突仲裁（纯领域规则，零外部依赖）。
+"""目标优先级与冲突裁决（纯领域规则，零外部依赖）。
 
-《My Agentix_架构优化方案》§9.1 D 组缺口：「有目标优先级与冲突仲裁规则」——
+《My Agentix_架构优化方案》§9.1 D 组缺口：「有目标优先级与冲突裁决规则」——
 现状：无对应模块；``guardrails`` 仅做 scope 判定。
 
 **为什么需要它**：Agent 同时被多个目标拉扯，而目标之间**天然冲突**：
@@ -15,7 +15,7 @@
 
 **规则分两层**（先硬后软，避免「什么都按优先级排」的粗暴做法）：
 
-1. **硬优先级**（``PRECEDENCE``）：安全 > 合规 > 准确 > 有用 > 时延 > 成本。
+1. **硬优先级**（``PRECEDENCE``）：安全 > 规范 > 准确 > 有用 > 时延 > 成本。
    高优先目标**否决**（veto）与之冲突的低优先目标。
 2. **显式覆盖**（``Goal.priority``）：同一 ``GoalKind`` 的实例可用更小的
    ``priority`` 数值提权（例如「本请求必须最快」把 LATENCY 提到 0）。
@@ -47,7 +47,7 @@ class GoalKind(str, Enum):
     """目标种类（按硬优先级从高到低排列）。"""
 
     SAFETY = "safety"            # 不伤害、不越界
-    COMPLIANCE = "compliance"    # 合规：该拒答就拒答、该免责就免责、必须引用
+    COMPLIANCE = "compliance"    # 规范：该拒答就拒答、该免责就免责、必须引用
     ACCURACY = "accuracy"        # 事实正确、引用可溯源
     HELPFULNESS = "helpfulness"  # 有用、完整、可读
     LATENCY = "latency"          # 响应速度
@@ -64,10 +64,10 @@ PRECEDENCE: Dict[GoalKind, int] = {
     GoalKind.COST: 5,
 }
 
-#: 已知冲突对 → 仲裁依据（人类可读，直接进审计日志/文档）
+#: 已知冲突对 → 裁定流程依据（人类可读，直接进审计日志/文档）
 CONFLICTING_PAIRS: Dict[frozenset, str] = {
     frozenset({GoalKind.HELPFULNESS, GoalKind.COMPLIANCE}): (
-        "越界问题必须拒答，即使「帮忙」看起来更有用（合规优先）"
+        "越界问题必须拒答，即使「帮忙」看起来更有用（规范优先）"
     ),
     frozenset({GoalKind.HELPFULNESS, GoalKind.SAFETY}): (
         "任何「有用」都不得以安全为代价（安全优先）"
@@ -85,10 +85,10 @@ CONFLICTING_PAIRS: Dict[frozenset, str] = {
         "回答质量优先于速度（速度优先需显式提权）"
     ),
     frozenset({GoalKind.ACCURACY, GoalKind.COMPLIANCE}): (
-        "合规要求（如强制引用/免责）优先于一般准确性优化"
+        "规范要求（如强制引用/免责）优先于一般准确性优化"
     ),
     frozenset({GoalKind.SAFETY, GoalKind.COMPLIANCE}): (
-        "安全高于合规：合规操作若危及安全，安全否决"
+        "安全高于规范：规范操作若危及安全，安全否决"
     ),
 }
 
@@ -139,7 +139,7 @@ class ConflictResolution:
 
 @dataclass
 class ArbitrationResult:
-    """仲裁结果。"""
+    """裁定流程结果。"""
 
     #: 按优先级从高到低排序的目标
     ordered: List[Goal] = field(default_factory=list)

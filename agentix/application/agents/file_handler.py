@@ -109,7 +109,7 @@ async def create_file_query(state: AgentState, *, config: RunnableConfig) -> Dic
         elif suffix == ".pdf":
             # PDF 不是"不支持"，而是**走错了入口**：入库管线（切分 → 向量化 →
             # 索引）挂在检索域的文档管理接口上。这里必须给准确指引，否则
-            # 平台主业（法律 PDF）的用户会在这里被告知"不支持 .pdf"。
+            # 平台主业（测试数据 PDF）的用户会在这里被告知"不支持 .pdf"。
             return {"messages": [AIMessage(content=FILE_PDF_USE_DOCUMENT_API_MESSAGE)]}
         else:
             return {"messages": [AIMessage(content=FILE_TYPE_UNSUPPORTED_MESSAGE.format(suffix=suffix))]}

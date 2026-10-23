@@ -5,7 +5,7 @@ retrieval API contract and can be used by answer renderers without knowing
 which source database produced a document.
 
 R2-2b（指南 v2.0 §2.2.7①）：在旧三键（legal_effective_from/to、
-source_authority_level）基础上新增四字段效力契约——
+source_authority_level）基础上新增四字段有效性契约——
 
     effective_status : "in_force" | "pending" | "expired" | "repealed"
     effective_date   : 生效日期（ISO，别名 legal_effective_from）
@@ -26,9 +26,9 @@ from zoneinfo import ZoneInfo
 #:
 #: **必须与检索侧** ``agentix.retrieval.domain.policies.legal_effectiveness._LEGAL_TZ``
 #: **及** ``agentix.config.settings.DISPLAY_TZ`` **一致**——本模块是**入库侧**
-#: 效力推导，检索侧是**查询侧**推导，两者判同一条法条必须得出同一结论。
+#: 有效性推导，检索侧是**查询侧**推导，两者判同一条数据条目必须得出同一结论。
 #: 原实现用 ``date.today()``（进程本地时区）：容器 ``TZ`` 未设置时为 UTC，
-#: 与 +08:00 相差 8 小时，会在北京时间 00:00–08:00 之间让**两侧对同一条法条
+#: 与 +08:00 相差 8 小时，会在北京时间 00:00–08:00 之间让**两侧对同一条数据条目
 #: 给出不同的 status**——而本模块顶部注释声称"与检索侧语义一致"，实际不一致。
 #:
 #: ``kb_ingest`` 是独立包（全包 0 处 import agentix），故此处重复**字面量**
@@ -40,7 +40,7 @@ EFFECTIVE_FROM = "legal_effective_from"
 EFFECTIVE_TO = "legal_effective_to"
 AUTHORITY_LEVEL = "source_authority_level"
 
-# R2-2b 四字段效力契约（检索侧读取的规范名）
+# R2-2b 四字段有效性契约（检索侧读取的规范名）
 EFFECTIVE_STATUS = "effective_status"
 EFFECTIVE_DATE = "effective_date"
 EXPIRE_DATE = "expire_date"
@@ -80,7 +80,7 @@ def _iso_date(value: Any) -> str | None:
 
 
 def _derive_status(effective: str | None, expire: str | None, today: date | None = None) -> str:
-    """由日期推导效力状态（与检索侧 effective_status_of 推导分支一致）。
+    """由日期推导有效性状态（与检索侧 effective_status_of 推导分支一致）。
 
     ``today`` 可注入以便测试；缺省取 ``_LEGAL_TZ``（+08:00）的今天。
     """
@@ -127,7 +127,7 @@ def normalise_legal_metadata(metadata: Mapping[str, Any] | None) -> dict[str, An
         if isinstance(value, (datetime, date)):
             result[key] = value.isoformat()
 
-    # R2-2b：效力状态——显式值归一化；缺失时由日期推导（fail-open：日期坏 → in_force）
+    # R2-2b：有效性状态——显式值归一化；缺失时由日期推导（fail-open：日期坏 → in_force）
     raw_status = result.get(EFFECTIVE_STATUS)
     if isinstance(raw_status, str) and raw_status.strip():
         result[EFFECTIVE_STATUS] = _STATUS_ALIASES.get(raw_status.strip().lower(), raw_status.strip().lower())

@@ -29,7 +29,7 @@ describe('HomeWelcomeHero', () => {
     await wrapper.get('.suggestion-card').trigger('click')
 
     expect(wrapper.emitted('select-prompt')?.[0]).toEqual([
-      '借条没有写还款日期，诉讼时效从什么时候起算？',
+      '示例数据集 A 中关于条目生效时间的说明在哪里？',
     ])
   })
 })

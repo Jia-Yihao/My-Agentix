@@ -6,6 +6,10 @@
 
 而不是 Agent 直接 ``neo4j_driver.run(...)``。
 
+「Execution」这一步**在哪儿跑**是 §24.3 T2 ⑭ 起可声明的（``ToolSpec.sandbox`` +
+``EXECUTION_SANDBOX_ENABLED``，端口见 `agentix/domain/tool/sandbox.py`）；默认关时
+这一步就是下面 ``_invoke`` 的进程内 await，与加固前逐位等价。
+
 设计约束（Strangler 迁移期，文档 §98）：
 - 工具**实现**暂不搬家——既有 KG 节点/SearchTool 保持原样，通过
   :meth:`ToolExecutor.register_handler` 把可调用体登记进来即可获得
@@ -19,6 +23,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import time
@@ -26,6 +31,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
+from agentix.domain.tool.sandbox import ExecutionSandbox, Handler, SandboxUnavailable
 from agentix.tools.definitions import RISK_LEVELS, ToolSpec, registry as tool_registry
 from agentix.tools.gateway.human_review import (
     ReviewRequest,
@@ -35,6 +41,7 @@ from agentix.tools.gateway.human_review import (
     effective_risk_level,
     rank_of,
 )
+from agentix.tools.sandbox import invoke_in_process, resolve_sandbox
 from agentix.config import settings
 
 logger = logging.getLogger(__name__)
@@ -64,8 +71,45 @@ def _effective_timeout_ms(spec_timeout_ms: int) -> int:
     return max(1, min(int(spec_timeout_ms), int(remaining)))
 
 
-#: 工具处理器签名：``handler(args: dict) -> Any``（同步或 async 均可）
-Handler = Callable[[dict], Awaitable[Any]] | Callable[[dict], Any]
+#: 工具处理器签名（``Handler``）定义在端口上 `agentix/domain/tool/sandbox.py`：
+#: 沙箱与 executor 对「交给它的是什么」必须有同一个口径，两处各写一份就是漂移的起点。
+
+
+def _dunder_call(handler: Handler) -> object:
+    """取 handler 的 ``__call__`` 定义体；没有（不可调用）时给 None。
+
+    属性访问而不是 ``getattr(x, "__call__", None)``：后者是 ruff B004 眼里的
+    「用 `__call__` 探可调用性」（不可靠），而这里要的从来不是能不能调用，
+    是**调用体是不是协程函数**。
+    """
+    try:
+        return type(handler).__call__
+    except AttributeError:
+        return None
+
+
+def handler_shape(handler: Handler) -> str:
+    """把 handler 归成 ``"async"`` / ``"sync"`` / ``"async_gen"``。
+
+    口径与 ``_invoke`` 一致：**能否拿到一个可 await 的结果**，而不是
+    ``iscoroutinefunction`` 的字面返回值。差别在两处：
+
+    - 类的异步 ``__call__``（``iscoroutinefunction(实例)`` 为 False，但调用结果
+      确实是协程）算 async——否则每个类形式的工具都会吃一条假告警；
+    - 异步生成器函数返回的是 async_generator，执行链 await 不了它，单列出来，
+      因为把它当成"阻塞 handler 下放线程"只会把一个错变成另一个错。
+    """
+    call = _dunder_call(handler)
+    if asyncio.iscoroutinefunction(handler) or (
+        call is not None and asyncio.iscoroutinefunction(call)
+    ):
+        return "async"
+    if inspect.isasyncgenfunction(handler) or (
+        call is not None and inspect.isasyncgenfunction(call)
+    ):
+        return "async_gen"
+    return "sync"
+
 
 #: 审批拦截钩子签名（Phase 16 HITL 桥）：``(request, raw_args) -> awaitable``
 ReviewBlockedHook = Callable[[ReviewRequest, dict], Awaitable[Any]]
@@ -187,6 +231,43 @@ class ToolExecutor:
         if spec is not None and not tool_registry.has_tool(tool_name):
             tool_registry.register(spec, lambda: None)
         self._handlers[tool_name] = handler
+        self._check_handler_contract(tool_name, handler)
+
+    def _check_handler_contract(self, tool_name: str, handler: Handler) -> None:
+        """§24.3 T1 ⑧：注册期就把「这条工具调用的超时到底生不生效」说清楚。
+
+        默认关（``TOOL_HANDLER_CONTRACT_ENABLED=false``）时本函数直接返回，
+        与加固前逐位等价。打开后只在注册时刻警一次，而不是等到某次调用
+        超时没截断、再让人从结果里反推原因。
+        """
+        if not settings.TOOL_HANDLER_CONTRACT_ENABLED:
+            return
+        shape = handler_shape(handler)
+        if shape == "async":
+            return
+        if shape == "async_gen":
+            logger.warning(
+                "TOOL HANDLER CONTRACT: tool %r handler is an async generator function; "
+                "the executor awaits a single result, so this call yields a generator object "
+                "instead of a value",
+                tool_name,
+            )
+            return
+        # sync：G1 的教训——非协程 handler 占住事件循环，wait_for 无从取消。
+        logger.warning(
+            "TOOL HANDLER CONTRACT: tool %r handler is not a coroutine function; it blocks "
+            "the event loop, so its timeout_ms truncates nothing unless "
+            "TOOL_SYNC_OFFLOAD_ENABLED=true (declared timeout: %sms)",
+            tool_name,
+            self._declared_timeout_ms(tool_name),
+        )
+
+    def _declared_timeout_ms(self, tool_name: str) -> int | str:
+        """告警里给出声明值更有用；registry 里没有 spec 时给 '?' 而不是抛。"""
+        try:
+            return tool_registry.get_spec(tool_name).timeout_ms
+        except Exception:  # noqa: BLE001 - 诊断信息取不到不该影响注册
+            return "?"
 
     def has_handler(self, tool_name: str) -> bool:
         return tool_name in self._handlers
@@ -311,6 +392,26 @@ class ToolExecutor:
         if review_error is not None:
             return review_error
 
+        # 5.5 执行位置解析（§24.3 T2 ⑭，``EXECUTION_SANDBOX_ENABLED`` 默认关 ⇒
+        # 不解析、不看 `spec.sandbox`，下面走的还是与加固前逐位相同的那条 `_invoke`）。
+        # 为什么排在观测钩子**之前**：「声明的隔离档位跑不了」是一次闸门拒绝，不是一次
+        # 执行——与风险/权限/HITL 同口径（被闸拒的尝试不触发观测）；而重试也换不来
+        # 一个实现，所以这里直接终局，不进重试循环。
+        sandbox: ExecutionSandbox | None = None
+        if bool(getattr(settings, "EXECUTION_SANDBOX_ENABLED", False)):
+            try:
+                sandbox = resolve_sandbox(spec.sandbox)
+            except SandboxUnavailable as exc:
+                logger.warning(
+                    "tool %s refused: declared execution sandbox %r is unavailable",
+                    tool_name, spec.sandbox,
+                )
+                return self._failed(
+                    tool_name, call_id, started, str(exc),
+                    retryable=False,
+                    metadata={"reason": "sandbox_unavailable", "sandbox": spec.sandbox},
+                )
+
         # 观测钩子 before（Phase 21）：闸门全放行、真正执行才观察
         self._observe_before(tool_name, args)
 
@@ -324,9 +425,10 @@ class ToolExecutor:
             timeout_ms = _effective_timeout_ms(spec.timeout_ms)
             pool = pool_for_tool(tool_name)
             try:
-                outcome = await pooled_wait_for(
-                    self._invoke(handler, args), timeout_ms / 1000, pool
+                awaitable = (
+                    self._invoke(handler, args) if sandbox is None else sandbox.run(handler, args)
                 )
+                outcome = await pooled_wait_for(awaitable, timeout_ms / 1000, pool)
             except asyncio.TimeoutError:
                 last_exc = asyncio.TimeoutError()
                 last_error = f"timeout after {timeout_ms}ms"
@@ -588,10 +690,13 @@ class ToolExecutor:
 
     @staticmethod
     async def _invoke(handler: Handler, args: dict) -> Any:
-        outcome = handler(args)
-        if asyncio.iscoroutine(outcome):
-            outcome = await outcome
-        return outcome
+        """就地执行（含 G1 的同步下放口径）。
+
+        实现只有 `agentix/tools/sandbox.py::invoke_in_process` 一份——
+        ``InProcessSandbox.run`` 走的是同一条，所以「flag 关时的行为」与
+        「flag 开 + 默认 ``sandbox="in_process"``」之间不存在第二套语义。
+        """
+        return await invoke_in_process(handler, args)
 
     @staticmethod
     def _failed(

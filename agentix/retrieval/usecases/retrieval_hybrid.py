@@ -6,7 +6,7 @@
 阶段职责（rag-optimization.md §5）：
 
 - **rewrite**：问题归一（计时；由调用方传入 ``rewrite_ms``）；
-- **dense**：既有 ``retrieve_docs_with_retry`` 向量路（fetch_k/阈值/效力过滤口径不变，
+- **dense**：既有 ``retrieve_docs_with_retry`` 向量路（fetch_k/阈值/有效性过滤口径不变，
   R-P1-4：分通道阈值在各自通道内生效）；
 - **sparse**（R-P1-1，子闸 ``RETRIEVAL_SPARSE_ENABLED``）：进程内 BM25，
   语料 = PostgreSQL chunk 表；无 session 或异常时 fail-open 跳过；

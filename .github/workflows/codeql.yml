@@ -1,0 +1,43 @@
+name: CodeQL
+
+# Python 静态安全扫描（queries: security-and-quality）。
+# analyze 步目前是 continue-on-error：仓库尚未清零存量告警，先取得可见性
+# 再收紧为阻断；收紧前请先看一周的告警量。
+on:
+  schedule:
+    - cron: "30 3 * * 1"
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 解释器版本与 CI/运行时口径对齐（PROJECT_SPEC §21.2：py3.10）。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-and-quality
+      - uses: github/codeql-action/autobuild@v3
+      - name: Analyze
+        continue-on-error: true
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"

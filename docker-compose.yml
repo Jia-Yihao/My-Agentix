@@ -23,6 +23,26 @@ services:
     environment:
       # 基础配置
       - DEBUG=${DEBUG:-True}
+      # G6：生产身份显式声明，不再由 DEBUG 反推；空值 = 沿用旧的 DEBUG 推断。
+      - APP_ENV=${APP_ENV:-}
+      # G6：热重载独立于 DEBUG。默认跟随 DEBUG，保持既有本地联调行为不变。
+      - UVICORN_RELOAD=${UVICORN_RELOAD:-${DEBUG:-True}}
+      # §24.3 T0：沙箱加固闸门（默认关 = 与加固前逐位等价）
+      - TOOL_SYNC_OFFLOAD_ENABLED=${TOOL_SYNC_OFFLOAD_ENABLED:-False}
+      # §24.3 T1 ⑧：非协程 handler 的注册期点名告警（只打日志，不改执行语义）。
+      - TOOL_HANDLER_CONTRACT_ENABLED=${TOOL_HANDLER_CONTRACT_ENABLED:-False}
+      # §24.3 T2 ⑭（ADR-0007）：执行位置端口。关 = 完全不查 `ToolSpec.sandbox`，与加固前
+      # 逐位等价；开 = 按声明选执行位置（当前只有 in_process / thread 两档能跑，
+      # 两档都**不是**隔离边界；subprocess/container 声明了会被拒绝执行，不静默降级）。
+      - EXECUTION_SANDBOX_ENABLED=${EXECUTION_SANDBOX_ENABLED:-False}
+      - MCP_SUBPROCESS_ENV_SCRUB=${MCP_SUBPROCESS_ENV_SCRUB:-False}
+      - MCP_SUBPROCESS_ENV_EXTRA_KEYS=${MCP_SUBPROCESS_ENV_EXTRA_KEYS:-}
+      - DB_ECHO=${DB_ECHO:-}
+      # §24.3 T1 ⑪：/settings/{kb_id} 的租户归属（读）+ admin（写）校验。
+      # 默认关 = 与加固前逐位等价。开之前需要「kb.tenant_id 已回填」且「租户内已有 admin」
+      # 两个前置，否则设置页整面 403（步骤见 docs/runbooks/staging-environment.md）。
+      # 只有 backend 挂了这个路由，retrieval-worker 不需要该变量。
+      - SETTINGS_AUTHZ_ENABLED=${SETTINGS_AUTHZ_ENABLED:-False}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
@@ -153,7 +173,7 @@ services:
       - agentix-network
     restart: unless-stopped
     command: >
-      sh -c "if [ '$${DEBUG}' = 'True' ]; then
+      sh -c "if [ '$${UVICORN_RELOAD}' = 'true' ]; then
         uvicorn agentix.main:application --host 0.0.0.0 --port 8000 --reload;
       else
         uvicorn agentix.main:application --host 0.0.0.0 --port 8000 --workers 2;
@@ -164,6 +184,24 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    # G8（§24.2）：此前整个数据面只有 retrieval-worker 带资源上限，backend 既无配额
+    # 也不降权——一次同步 handler 挂起（G1）或大文档导入没有兜底，容器层不会止血。
+    # 上限取宽松值以免影响既有本地联调；要更紧或完全关掉，改这三个变量即可。
+    # §24.3 T0 ⑤：容器运行身份。默认 `0:0` 与「不写 user:」逐位等价（server stage 没有
+    # USER 指令，本来就以 root 起），所以这一行不是行为变更，只是把「要不要非 root」
+    # 变成可声明的旋钮。换值前必须先按 docs/runbooks/staging-environment.md 的
+    # 「容器降权」节处理挂载目录属主——`./data`（LightRAG bootstrap 的 mkdir/cp、
+    # tiktoken 缓存、日志）与 `./uploads` 不可写时，backend 会在 entrypoint 里
+    # `set -e` 直接退出并进入 restart 崩溃循环。
+    user: "${AGENTIX_CONTAINER_USER:-0:0}"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "${BACKEND_CPUS:-4.0}"
+          memory: ${BACKEND_MEMORY:-8g}
+          pids: ${BACKEND_PIDS_LIMIT:-4096}
 
   # R3.8：统一 PostgreSQL 实例（编排侧元数据 public schema + 知识库元数据 retrieval schema）
   postgres:
@@ -233,6 +271,10 @@ services:
       timeout: 15s
       retries: 3
       start_period: 60s
+    # 与 backend 用同一个变量：两者共享 `./data` 与 `./uploads` 两个绑定挂载，
+    # 一个非 root 一个 root 只会让其中一方 EACCES（也正是 §24.2 G5 那条
+    # 「两个闸各持一份口径」的老毛病，别再在容器面复现一遍）。
+    user: "${AGENTIX_CONTAINER_USER:-0:0}"
     deploy:
       replicas: ${RETRIEVAL_WORKER_REPLICAS:-1}
       resources:
@@ -418,6 +460,15 @@ services:
     env_file:
       - .env
     environment:
+      # G12（docs/PROJECT_SPEC.md §24.2）：MySQL 连接串闸门。默认关 = 与加固前逐位等价；
+      # 开启后只接受 mysql[+driver] scheme + 必须有主机名，配置了白名单时再按主机收紧。
+      KB_MYSQL_URL_GUARD: ${KB_MYSQL_URL_GUARD:-false}
+      KB_MYSQL_ALLOWED_HOSTS: ${KB_MYSQL_ALLOWED_HOSTS:-}
+      # T1 ⑫（§24.2 G12 的第二半）：WHERE 参数化。默认关 = 原始 `where` 照旧拼接、
+      # 新字段 `filters` 被拒；开启后 `where` 一律 400、过滤只能走 bindparams 化的
+      # `filters`。**破坏性**：现存传 `--where` 的导入任务在打开当天会全部失败，
+      # 先迁到 `filters` 再开（口径见 kb_ingest/kb_service/core/sql_filters.py）。
+      KB_MYSQL_WHERE_PARAMETRIZED: ${KB_MYSQL_WHERE_PARAMETRIZED:-false}
       # R3.7：向量后端 = Milvus legal 集合（pgvector/kb_postgres 已移除）
       MILVUS_HOST: ${KB_MILVUS_HOST:-milvus}
       MILVUS_PORT: ${KB_MILVUS_PORT:-19530}
@@ -452,7 +503,7 @@ services:
       RETRY_DELAY: ${KB_RETRY_DELAY:-5}
       # Excel 初始数据导入
       INIT_KB_EXCEL: ${INIT_KB_EXCEL:-true}
-      KB_EXCEL_PATH: ${KB_EXCEL_PATH:-/app/data/法律法条源头.xlsx}  # 法律结构化表（可选，缺省跳过导入）
+      KB_EXCEL_PATH: ${KB_EXCEL_PATH:-/app/data/法律法条源头.xlsx}  # 测试数据集结构化表（可选，缺省跳过导入；路径为数据文件名，未随文案改名）
       KB_EXCEL_SENTINEL: ${KB_EXCEL_SENTINEL:-/app/data/.kb_excel_ingested}
     ports:
       - "${KB_INGEST_PORT:-8100}:8000"

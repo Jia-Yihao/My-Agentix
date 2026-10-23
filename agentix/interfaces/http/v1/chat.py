@@ -74,7 +74,7 @@ class ChatResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
     timestamp: datetime = Field(default_factory=datetime.now)
     # P0-3：结构化错误语义——前端据此区分「正常」/「系统降级」/「无结果」，
-    # 而不是把降级兜底文案当成正常法律答复。
+    # 而不是把降级兜底文案当成正常测试数据答复。
     status: str = Field(
         "ok",
         description="ok | degraded | no_evidence | out_of_scope",
@@ -525,32 +525,32 @@ async def get_route_info() -> Dict[str, Any]:
             "additional-query": {
                 "name": "补充信息",
                 "description": "当问题模糊时，询问更多信息",
-                "examples": ["我想咨询法律", "帮我推荐相关法条"]
+                "examples": ["我想查测试数据集里的内容", "帮我推荐相关的数据条目"]
             },
             "kb-query": {
                 "name": "知识库查询",
-                "description": "查询法条释义、立法背景、法律学说等内容",
-                "examples": ["善意取得的含义", "民法典的编纂历程"]
+                "description": "查询条目释义、数据来源背景与配套说明等内容",
+                "examples": ["「生效日期」这个字段是什么意思", "示例数据集 A 是怎么构建的"]
             },
             "graphrag-query": {
                 "name": "图谱查询",
-                "description": "查询法条内容、案由适用、司法解释",
-                "examples": ["民法典第577条讲了什么", "合同违约适用哪些法条"]
+                "description": "查询数据条目内容、分类适用范围与示例说明",
+                "examples": ["示例数据集 A 的第 577 条讲了什么", "哪些数据条目适用于示例文档异常场景"]
             },
             "text2sql-query": {
                 "name": "统计查询",
-                "description": "统计分析、计数、排名（法律统计库暂缓启用）",
-                "examples": ["有多少部行政法规", "刑法有多少条文"]
+                "description": "统计分析、计数、排名（测试数据统计库暂缓启用）",
+                "examples": ["一共有多少个数据分类", "示例数据集 B 有多少条数据条目"]
             },
             "image-query": {
                 "name": "图片处理",
-                "description": "生成或分析法律文书图片",
-                "examples": ["生成一张民法典主题的图片"]
+                "description": "生成或分析测试数据主题的图片",
+                "examples": ["生成一张示例数据集 A 主题的图片"]
             },
             "file-query": {
                 "name": "文件处理",
-                "description": "处理上传的法律文档",
-                "examples": ["分析这个法律文档"]
+                "description": "处理上传的测试文档",
+                "examples": ["分析这个测试文档"]
             }
         },
         "auto_routing": "系统会根据您的问题自动选择合适的处理方式"

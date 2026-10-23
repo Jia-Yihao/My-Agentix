@@ -104,8 +104,8 @@ class VectorQueryMatcher:
     ) -> Dict[str, str]:
         """基于正则的兜底参数提取（LLM 不可用时使用）。
 
-        参数名与 ``legal_cypher_dict.py`` 保持一致：
-        ``$法规名`` / ``$条号`` / ``$案由名`` / ``$机关名`` / ``$关键词`` / ``$类别``。
+        参数名与 ``legal_cypher_dict.py`` 中查询模板的中文占位符保持一致
+        （数据集、条目编号、分类、机构、关键词、类别等六类）。
         """
         params: Dict[str, str] = {}
         for name in param_names:

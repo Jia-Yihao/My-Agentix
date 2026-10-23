@@ -176,7 +176,7 @@ def test_api():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="My Agentix 法律法规智能咨询助手管理工具",
+        description="My Agentix 测试数据集智能咨询助手管理工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -213,7 +213,7 @@ def main():
     # 显示欢迎信息
     print("""
     ╔════════════════════════════════════════╗
-    ║       My Agentix 法律法规智能咨询助手        ║
+    ║       My Agentix 测试数据智能咨询助手        ║
     ║                                        ║
     ║  🤖 多智能体架构                      ║
     ║  🔍 自动路由查询                      ║

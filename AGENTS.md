@@ -31,6 +31,35 @@ cd web && npm run lint && npm run test           # 前端 vue-tsc + vitest
    `docs/architecture/configuration.md` §5 表 ⑤
    `tests/test_p41_doc_consistency.py::test_new_settings_are_documented` 手写清单。
 5. **改动前先问**：任何对数据、脚本、测试基线的改动需先征得维护者同意。
+6. **执行边界四条口径**（§24.3 T0/T1 实测得出，非倡议）：
+   ① 任何「先解析再执行」的入口，**语法闸与资源闸必须各自独立存在**——AST 节点
+   白名单挡得住 `__import__`，挡不住 `9**9**9` 把内存吃光；同理**白名单只覆盖它
+   声明过的那个维度**：连接串的 scheme 白名单不覆盖目的地，目的地白名单也不覆盖
+   `?local_infile=1` 这种「让对端读走本机文件」的客户端能力位；
+   ② `asyncio.wait_for` 只能截断**已经把事件循环让出来**的调用，非协程 handler
+   不下放线程则 `timeout_ms` 形同虚设；
+   ③ **承载凭据的字段不要过会回显给调用方的 validator**——pydantic 把被拒输入放进
+   `errors()[].input`，FastAPI 又默认把 `input` 写进 422 响应体，于是校验器自己变成
+   凭据回显器，而且只在错误路径上回显（比不校验更难发现）。校验点放在服务层，
+   错误 detail 自己构造：只说为什么被拒，不回放输入；
+   ④ **诊断口径必须与执行链的判定同源，且只告警不设卡**——`handler_shape` 判的是
+   「调用后能否拿到可 await 的结果」，不是 `iscoroutinefunction` 的字面返回值（类的
+   `async __call__` 对后者为 False，照字面判则每个类形式的工具都吃假告警、告警与实际
+   行为各说一套）；契约类检查不许拒绝注册：仓里最重的几个工具本就是同步 I/O 注册进来的，
+   fail-closed 等于在开 flag 那一刻打断全部功能。
+   口径见 `docs/architecture/runtime-guardrails.md` §15、逐项实测见 `docs/PROJECT_SPEC.md` §24。
+7. **被运维当核对基准的表必须是生成物，不是抄本**：`docs/runbooks/staging-environment.md`
+   的「配置矩阵」由 `scripts/gen_staging_matrix.py` 从 `docker-compose.yml` +
+   `docker/compose.override.staging.yml` 推导（dev 列回落 `Settings` 的**字段默认值**，
+   刻意不实例化 `Settings`——实例化会吃宿主机 `.env`，那正是这张表要避开的污染源）。
+   改 compose / override 的 backend `environment:`，或改这张表，都必须跑
+   `python scripts/gen_staging_matrix.py --check` 且退出 0；想让一个新键进表，只有两条路：
+   让 override 也管它，或在脚本的 `MANUAL_KEYS` 里署名登记理由。
+   **不要用 `docker compose config` 的渲染结果当基准**：它把宿主机 `.env` 整个展开打印
+   （密钥因此进终端与 CI 日志），而渲染值本身就被 `.env` 污染——用它校验文档等于让被校验的
+   对象决定校验基准。`docs/PROJECT_SPEC.md` §24.2 G13 记录的两次案发（矩阵写着 `true`、
+   override 里压根没设；`${K:-${DEBUG:-True}}` 让工作站 `.env` 决定预发是否 `--reload`）
+   都是"人抄的表"这一种形态的产物。
 
 ## 代码风格
 
@@ -41,7 +70,8 @@ cd web && npm run lint && npm run test           # 前端 vue-tsc + vitest
 
 ## 文档同步面（代码行为变更时的强制清单）
 
-`CHANGELOG.md`（[Unreleased]）· `README.md`（§3 架构 / §11 测试真源数）·
+`CHANGELOG.md`（[Unreleased]）· `README.md`（§3 架构 / §7 可靠性 / §11 测试真源数 / §16 已知限制）·
+`SECURITY.md`（安全设计概览 / 部署安全建议 / 已知边界）·
 `docs/PROJECT_SPEC.md` · `docs/architecture/configuration.md` ·
 `docs/architecture/runtime-guardrails.md` · `docs/source-code-study.md` ·
 `.env.example` · `agentix/config/selfcheck.py` · 本文件。

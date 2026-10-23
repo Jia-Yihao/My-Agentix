@@ -17,7 +17,7 @@ class SearchRequest(BaseModel):
     metric: str = Field(default="cosine", description="Similarity metric (cosine or l2).")
     company_filter: Optional[str] = Field(default=None, description="Optional company name filter.")
     source_tables: Optional[list[str]] = Field(default=None, description="Filter by source tables.")
-    effective_on: Optional[date] = Field(None, description="仅返回该日期有效的法律知识。")
+    effective_on: Optional[date] = Field(None, description="仅返回该日期有效的测试数据知识。")
     source_authority_level: Optional[str] = Field(None, description="按来源权威等级过滤。")
 
 
@@ -33,5 +33,5 @@ class HybridSearchRequest(BaseModel):
     )
     metric: str = Field(default="cosine", description="Similarity metric (cosine or l2).")
     source_tables: Optional[list[str]] = Field(default=None, description="Filter by source tables.")
-    effective_on: Optional[date] = Field(None, description="仅返回该日期有效的法律知识。")
+    effective_on: Optional[date] = Field(None, description="仅返回该日期有效的测试数据知识。")
     source_authority_level: Optional[str] = Field(None, description="按来源权威等级过滤。")

@@ -41,7 +41,7 @@ from agentix.tools.definitions import RISK_LEVELS, ToolSpec, registry as tool_re
 
 #: P2（Tool Ranking 层）：查询/描述分词——ASCII 词（含 snake_case 拆分后的
 #: 片段）+ CJK 连续段的 bigram（单字段 run 取单字）。CJK 用 bigram 而非
-#: 单字：单字重叠（"的/了/查"）噪声太高，bigram（"法条/查询"）才是短查询
+#: 单字：单字重叠（"的/了/查"）噪声太高，bigram（"数据条目/查询"）才是短查询
 #: 与中文 description 的有效交集。
 _TOKEN_RE = re.compile(r"[a-z0-9]+|[一-鿿]+")
 

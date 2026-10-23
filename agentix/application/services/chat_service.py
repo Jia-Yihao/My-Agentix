@@ -7,7 +7,7 @@
   规避 P0-1 启动期覆盖的值绑定陷阱
 - P0-3 错误分类链随编排走本层（AgentError→503/4xx、DEGRADABLE→降级 dict、
   LEGACY_ERROR_MODE 回滚、is_retryable 启发式、兜底 500）——这是业务语义
-  （法律场景合规：降级兜底不能被当成法律答复），FastAPI 端点透传 HTTPException
+  （测试数据场景规范：降级兜底不能被当成测试数据答复），FastAPI 端点透传 HTTPException
 - P1-6 兼容锚点：``chat.process_agent_query`` 保留为 ``ChatService.ask`` 的
   模块级别名，P0-3 测试（test_p03_p04_errors_observability.py）零改动
 """
@@ -1047,7 +1047,7 @@ class ChatService:
                 tags=("ask", "agent_error"),
             )
             return {
-                "message": "抱歉，相关法律检索服务暂时不可用，请稍后重试。",
+                "message": "抱歉，相关测试数据检索服务暂时不可用，请稍后重试。",
                 "route": "degraded",
                 "route_logic": f"AgentError: {e.code.value}",
                 "sources": [],

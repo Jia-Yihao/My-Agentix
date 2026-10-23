@@ -15,7 +15,7 @@
 # （pytest tests/test_p104_promptfoo_contract.py），不跑在线 eval——
 # CI 无 LLM，在线 eval 无意义；全量评测在本地/活环境执行。
 
-description: "My-Agentix 法律问答回归（golden 子集；确定性打分口径 = run_eval）"
+description: "My-Agentix 测试数据问答回归（golden 子集；确定性打分口径 = run_eval）"
 
 providers:
   - id: agentix-chat-service

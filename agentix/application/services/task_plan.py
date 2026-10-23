@@ -62,7 +62,7 @@ class TaskSpec:
     def __post_init__(self) -> None:
         if not self.name:
             raise PlanError("TaskSpec.name 不得为空")
-        # 冻结化：允许调用方传 list，但内部统一为 tuple（可哈希、不可变）
+        # 暂停化：允许调用方传 list，但内部统一为 tuple（可哈希、不可变）
         object.__setattr__(self, "depends_on", tuple(self.depends_on))
 
 

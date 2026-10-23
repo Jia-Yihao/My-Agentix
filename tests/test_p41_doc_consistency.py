@@ -73,8 +73,11 @@ ROOT_MD_DOCS = [
 
 #: 路径前缀白名单。`data/` 刻意排除：其内容是运行时产物（embedding_cache、
 #: cron jobs、trajectory dump 等），不入库、不保证存在。
+#: `.github/` 同样排除：CI 配置由 tests/test_ci_gate_contract.py 与
+#: tests/test_p46_toolchain_parity.py 按步骤逐条守（比"路径存在"强得多），
+#: 而 CHANGELOG 里的 `.github/...` 提及多为历史陈述，交给通用路径守卫只会误报。
 _PATH_PREFIX = (
-    r"(?:agentix|tests|evals|scripts|kb_ingest|web|docs|config|\.github|skills)"
+    r"(?:agentix|tests|evals|scripts|kb_ingest|web|docs|config|skills)"
 )
 
 #: 扩展名白名单。`jsonl` 刻意排除：`evals/baseline_predictions.jsonl` 是
@@ -304,6 +307,15 @@ class TestDocumentedConfigKeys:
             "LLM_FALLBACK_MODEL_SPECS",
             "FEEDBACK_ENABLED",
             "FEEDBACK_PII_REDACT",
+            # Phase S（§24.3 T0 执行边界加固）
+            "TOOL_SYNC_OFFLOAD_ENABLED",
+            "TOOL_HANDLER_CONTRACT_ENABLED",
+            "EXECUTION_SANDBOX_ENABLED",
+            "MCP_SUBPROCESS_ENV_SCRUB",
+            "MCP_SUBPROCESS_ENV_EXTRA_KEYS",
+            "DB_ECHO",
+            "UVICORN_RELOAD",
+            "SETTINGS_AUTHZ_ENABLED",
         ):
             assert key in documented, f"{key} 未在配置文档中说明"
 

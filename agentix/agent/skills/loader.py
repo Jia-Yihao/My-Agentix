@@ -8,7 +8,7 @@ frontmatter 格式（扁平 ``key: value``，不依赖 YAML 库）::
 
     ---
     name: legal-citation
-    description: 需要「法规 + 条号」精确引用格式输出时
+    description: 需要「数据集 + 条号」精确引用格式输出时
     anti_when: 语义检索/开放问答（走 graphrag），或只需条文大意时
     ---
     正文 Markdown……

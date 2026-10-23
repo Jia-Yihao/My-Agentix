@@ -152,13 +152,13 @@ class TestWarnFooter:
         footer = build_warn_footer(d, score=0.2, unverified=3, stripped=1)
         assert footer.startswith("证据核验提示：")
         assert "证据锚定分偏低（0.20）" in footer
-        assert "3 条法条引用未通过核验" in footer
+        assert "3 条数据条目引用未通过核验" in footer
         assert "1 条引用无法溯源已移除" in footer
 
     def test_footer_single_trigger(self):
         d = decide_evidence_gate(mode="warn", unverified_citations=2)
         footer = build_warn_footer(d, unverified=2)
-        assert "2 条法条引用未通过核验" in footer
+        assert "2 条数据条目引用未通过核验" in footer
         assert "锚定分" not in footer
 
     def test_footer_empty_without_triggers(self):
@@ -269,7 +269,7 @@ class TestPostProcessWiring:
         )
         assert answer.answer_text.startswith(answer_text)
         assert "证据核验提示：" in answer.answer_text
-        assert "法条引用未通过核验" in answer.answer_text
+        assert "数据条目引用未通过核验" in answer.answer_text
         # 警告必须在正文之后（尾部）
         assert answer.answer_text.index("证据核验提示") > answer.answer_text.index(
             "试用期为六个月"

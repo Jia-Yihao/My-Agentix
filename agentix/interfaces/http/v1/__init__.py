@@ -4,7 +4,7 @@ API v1 router aggregation.
 逐端点鉴权（2026-09-27 审查批次；审计批次 A2 修订）：
 - 用户面 chat / sessions / upload（**含读**）→ ``Depends(require_v1_user)``
   （``V1_REQUIRE_JWT`` 开启时要求 Bearer JWT，默认关保持轻量匿名域）；
-- 机器面 events → ``Depends(verify_api_key)``（``REQUIRE_API_KEY`` 管辖）；
+- 机器面 events → ``Depends(verify_api_key)``（``REQUIRE_API_KEY`` 归属）；
 - Run API runs（A1c 上移）→ router 级严格 Bearer JWT
   （``runs.require_run_bearer``，默认拒绝，不查库）。
 归属校验（审计批次 A1/A2）：``resolve_v1_caller`` + ``session_visible_to``

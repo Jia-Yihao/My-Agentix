@@ -39,7 +39,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 # 文档内容关键词字典（用于 LLM 离线时的规则降级）
 _CLASSIFY_KEYWORDS: dict[str, list[str]] = {
     "问答": ["问", "答", "什么是", "有哪些", "为什么", "如何", "怎么", "区别", "面试"],
-    "合同条款": ["第", "条", "章", "甲方", "乙方", "合同", "协议", "责任", "义务"],
+    "条款协议": ["第", "条", "章", "甲方", "乙方", "协议", "责任", "义务"],
     "技术文档": ["API", "接口", "配置", "部署", "Python", "代码", "函数", "class"],
     "财务报告": ["营收", "利润", "成本", "毛利", "现金流", "资产", "负债", "财报"],
     "学术论文": ["摘要", "引言", "方法", "实验", "结果", "结论", "参考", "文献"],
@@ -99,7 +99,7 @@ def _strategy_to_category(strategy: str) -> str:
     return {
         "qa_image": "问答资料",
         "article": "文章/论文",
-        "clause": "合同/条款",
+        "clause": "条款/协议文档",
         "visual": "图表/扫描件",
         "mineru_structured": "MinerU 解析",
     }.get(strategy, strategy)
@@ -110,7 +110,7 @@ def _llm_tag_document(text: str) -> list[str]:
     from agentix.retrieval.usecases.chat_llm import create_chat_llm
 
     prompt = """分析以下文档内容，提取 3~5 个标签（逗号分隔），用于分类检索。
-标签应简短（2-5 字），如"招聘"、"合同"、"技术方案"、"财报"等。
+标签应简短（2-5 字），如"招聘"、"协议"、"技术方案"、"财报"等。
 只输出标签，不要解释。
 
 文档内容：

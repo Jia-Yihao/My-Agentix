@@ -19,7 +19,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "message": "民法典关于合同违约是怎么规定的？",
+                "message": "示例数据集 A关于示例文档异常是怎么规定的？",
                 "session_id": "session_123",
                 "user_id": "user_456",
             }
@@ -38,7 +38,7 @@ class ChatResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "answer": "根据《民法典》第577条，当事人一方不履行合同义务或者履行合同义务不符合约定的，应当承担继续履行、采取补救措施或者赔偿损失等违约责任……",
+                "answer": "根据《示例数据集 A》第577条，参与方一方不履行示例文档义务或者履行示例文档义务不符合约定的，应当承担继续履行、采取补救措施或者补偿损失等异常责任……",
                 "session_id": "session_123",
                 "type": "knowledge",
                 "metadata": {

@@ -120,7 +120,7 @@ _CHATTER_EXACT = re.compile(
     re.IGNORECASE,
 )
 
-# 法条引用（第X条[之X]）
+# 数据条目引用（第X条[之X]）
 _STATUTE_REF = re.compile(r"第[零一二三四五六七八九十百千万两〇0-9]+条(?:之[零一二三四五六七八九十0-9]+)?")
 
 # 一旦出现即放弃 statute fast-path——需要推理/综合的问题绝不短路
@@ -135,8 +135,8 @@ def _fastpath_router(question: str) -> Optional[Tuple[str, Router]]:
     """高置信确定性规则分类；命中返回 ``(reason, router)``，否则 None（照走 LLM）。
 
     - ``chit_chat``（寒暄/身份/致谢/确认）→ ``general-query``；
-    - ``statute_direct``（短句单条法条直取，无任何推理词）→ ``graphrag-query``
-      （与既有 ``_heuristic_router`` 法条关键词映射同向）。
+    - ``statute_direct``（短句单条数据条目直取，无任何推理词）→ ``graphrag-query``
+      （与既有 ``_heuristic_router`` 数据条目关键词映射同向）。
     """
     if not question:
         return None
@@ -198,7 +198,7 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
         }
 
     # Phase H·W1 复杂度感知 fast-path（ROUTING_FASTPATH_ENABLED，默认关）：
-    # 高置信确定性输入（寒暄 / 单条法条直取）前置短路——零模型构造、零 LLM
+    # 高置信确定性输入（寒暄 / 单条数据条目直取）前置短路——零模型构造、零 LLM
     # 分类调用（_boom 哨兵测试钉死），命中记 llm_calls_saved_total；flag-off
     # 或未命中 ⇒ 下方链路与基线逐位等价（question_text 为纯读，提前无副作用）。
     question_text = state.messages[-1].content if state.messages else ""

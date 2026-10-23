@@ -181,8 +181,8 @@ def create_cypher_query_node(
 
         final_result = await execute_cypher(state)
 
-        # R2-2 收口（指南 §2.2.7①）：KG 记录级效力后过滤——已失效/未生效法条
-        # 不进入下游摘要/答案。无效力字段的记录原样保留（存量图数据零变化，
+        # R2-2 收口（指南 §2.2.7①）：KG 记录级有效性后过滤——已失效/未生效数据条目
+        # 不进入下游摘要/答案。无有效性字段的记录原样保留（存量图数据零变化，
         # 统计/聚合类查询不受影响）；开关复用 EFFECTIVENESS_FILTER_ENABLED。
         raw_records = (
             final_result["cyphers"][0]["records"]

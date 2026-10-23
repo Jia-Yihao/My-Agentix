@@ -63,7 +63,8 @@
       <div class="rag-settings-footer">
         <span v-if="saved" class="saved-hint">已保存</span>
         <span v-if="err" class="error-hint">{{ err }}</span>
-        <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
+        <!-- loadFailed 时禁用：表单里是前端默认值，此时保存会把整份默认值盖掉真实配置 -->
+        <button class="btn-save" :disabled="saving || loadFailed" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
       </div>
     </div>
   </div>
@@ -72,6 +73,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
 import { fetchKbSettings, updateKbSettings } from '../api/settings'
+import { getApiErrorHint, getApiErrorPayload } from '../utils/errors'
 
 const props = defineProps<{ open: boolean; kbId: string; kbName: string }>()
 // close 事件由模板里的 $emit('close') 触发（父组件 PersonalKbView.vue 监听 @close），
@@ -89,25 +91,41 @@ const form = reactive({
 const saved = ref(false)
 const saving = ref(false)
 const err = ref('')
+const loadFailed = ref(false)
+
+/**
+ * 这块面板的读者是「正在配模型的人」，他需要知道差的是哪一层权限：
+ * user_hint 对所有 FORBIDDEN 都是同一句「你没有访问该资源的权限」，分不开
+ * 「不在你的租户」和「缺 admin」，所以这里取服务端的具体 message，取不到再退回通用 hint。
+ */
+function serverError(raw: unknown, fallback: string): string {
+  return getApiErrorPayload(raw)?.message || getApiErrorHint(raw, fallback)
+}
 
 watch(() => props.open, async (v) => {
   if (!v || !props.kbId) return
-  saved.value = false; err.value = ''
+  saved.value = false; err.value = ''; loadFailed.value = false
   try {
     const cfg = await fetchKbSettings(props.kbId)
     Object.assign(form, cfg)
-  } catch { /* use defaults */ }
+  } catch (e) {
+    // 后端 403/404 的具体原因要能被看见，否则用户只看到一堆默认值，
+    // 以为「这个 kb 还没配过」而不是「我无权看它的配置」。
+    err.value = serverError(e, '配置加载失败，当前显示的是默认值')
+    loadFailed.value = true
+  }
 })
 
 async function save() {
-  if (!props.kbId) return
+  if (!props.kbId || loadFailed.value) return
   saving.value = true; err.value = ''
   try {
     await updateKbSettings(props.kbId, { ...form })
     saved.value = true
   } catch (e) {
-    const message = e instanceof Error ? e.message : ''
-    err.value = message || '保存失败'
+    // axios 的 Error.message 只有「Request failed with status code 403」；
+    // 服务端的原因在 response.data 里，不取出来用户无从知道差什么权限。
+    err.value = serverError(e, '保存失败')
   } finally {
     saving.value = false
   }

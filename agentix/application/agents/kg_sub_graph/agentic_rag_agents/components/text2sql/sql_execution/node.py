@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from agentix.config import settings
+from agentix.domain.policies.sql_read_only import check_read_only
 from agentix.infrastructure.core.logger import get_logger
 from agentix.infrastructure.text2sql.wren_adapter import (
     WrenNotAvailable,
@@ -170,31 +171,14 @@ def _run_query_sync(
 
 def _is_read_only_query(sql: str) -> bool:
     """
-    检查 SQL 是否为只读查询（SELECT、WITH、EXPLAIN）
+    检查 SQL 是否为只读查询（SELECT、WITH、EXPLAIN、SHOW）
+
+    G5：判定收敛到 :func:`agentix.domain.policies.sql_read_only.check_read_only`，
+    与 sql_validation 闸共用同一份词法——两闸各持一份黑名单时，
+    同一句 SQL 会一闸过一闸拦，等于没有闸。
 
     Returns:
         True if query is read-only, False otherwise
     """
-    statement = sql.strip()
-    if not statement:
-        return False
-
-    # 检查是否包含多条语句（;分隔）
-    if ";" in statement.rstrip(";"):
-        return False
-
-    upper = statement.upper()
-
-    # 允许的只读关键词
-    readonly_keywords = ['SELECT ', 'WITH ', 'EXPLAIN ', 'SHOW ']
-    starts_with_readonly = any(upper.startswith(kw) for kw in readonly_keywords)
-
-    # 危险关键词（即使在SELECT中也不允许）
-    dangerous_keywords = [
-        'INSERT ', 'UPDATE ', 'DELETE ', 'DROP ', 'CREATE ', 'ALTER ',
-        'TRUNCATE ', 'REPLACE ', 'MERGE ', 'GRANT ', 'REVOKE ', 'EXEC ',
-        'EXECUTE ', 'CALL '
-    ]
-    contains_dangerous = any(kw in upper for kw in dangerous_keywords)
-
-    return starts_with_readonly and not contains_dangerous
+    ok, _ = check_read_only(sql)
+    return ok

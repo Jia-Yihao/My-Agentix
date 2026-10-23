@@ -5,7 +5,7 @@
 1. PII 脱敏：手机号、身份证、银行卡、邮箱等
 2. 有害内容检测：暴力、色情、政治敏感等
 3. 幻觉检测：检查回答是否基于检索上下文
-4. 合规过滤：敏感词、违禁词过滤
+4. 规范过滤：敏感词、违禁词过滤
 
 使用方式：
     from agentix.security.output_filter import OutputFilter, HallucinationDetector

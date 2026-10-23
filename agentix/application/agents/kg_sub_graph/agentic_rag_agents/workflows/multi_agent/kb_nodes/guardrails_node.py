@@ -38,7 +38,7 @@ def create_guardrails_node(llm: BaseChatModel, *, scope_text: str):
         question = state.get("question", "")
         decision = await guardrails_chain.ainvoke({"question": question})
         summary = decision.summary or (
-            "抱歉，该问题不在法律法规知识库的支持范围内，请询问法条释义、立法背景或相关法律规定等内容。"
+            "抱歉，该问题不在测试数据集知识库的支持范围内，请询问数据条目释义、数据来源背景或相关测试数据规定等内容。"
             if decision.decision == "end"
             else ""
         )

@@ -59,7 +59,7 @@ _CACHE_LOCK = threading.Lock()
 
 
 def _article_number(value: str) -> int | None:
-    """将常见阿拉伯或中文法条号解析为整数；无法解析时不添加规范词项。"""
+    """将常见阿拉伯或中文数据条目号解析为整数；无法解析时不添加规范词项。"""
     normalized = "".join(str(int(char)) if char.isdecimal() else char for char in value)
     if len(normalized) > 12:
         return None
@@ -89,10 +89,10 @@ def _article_number(value: str) -> int | None:
 
 
 def tokenize(text: str) -> List[str]:
-    """零依赖分词：ASCII/数字词、CJK 一元/二元及规范化法条号。
+    """零依赖分词：ASCII/数字词、CJK 一元/二元及规范化数据条目号。
 
     CJK 用 unigram+bigram 是无词典场景下的标准近似：bigram 承载词组区分度，
-    unigram 兜底单字命中；ASCII 词保留原词。同一法条的中/阿拉伯数字形式
+    unigram 兜底单字命中；ASCII 词保留原词。同一数据条目的中/阿拉伯数字形式
     增加相同的 article:<number> 词项，避免编号格式差异导致词法通道漏召。
     """
     if not text:

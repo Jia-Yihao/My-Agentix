@@ -6,7 +6,7 @@
 - ``refuse``：触发时降级拒答——答案替换为拒答文案、citations 清空；
 - 触发信号（任一即触发）：
   1. grounding 低分——报告未跳过且 ``score < warn_threshold``（``0`` = 关闭该信号）；
-  2. 法条引用未通过核验（R1-2 ``unverified_refs`` 非空）；
+  2. 数据条目引用未通过核验（R1-2 ``unverified_refs`` 非空）；
   3. 引用无法溯源被剥离（``verify_citations_traceable`` stripped 非空）；
 - 纯函数零 I/O：判定与文案均可离线单测；未知模式 fail-safe 回 ``observe``。
 """
@@ -118,7 +118,7 @@ def build_warn_footer(
     if TRIGGER_GROUNDING_LOW in decision.triggers and score is not None:
         parts.append(f"证据锚定分偏低（{score:.2f}）")
     if TRIGGER_CITATION_UNVERIFIED in decision.triggers:
-        parts.append(f"{unverified} 条法条引用未通过核验")
+        parts.append(f"{unverified} 条数据条目引用未通过核验")
     if TRIGGER_CITATION_UNTRACEABLE in decision.triggers:
         parts.append(f"{stripped} 条引用无法溯源已移除")
     if not parts:

@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
-# 「第X条」（X = 阿拉伯数字或中文数字）——法条直取类问题
+# 「第X条」（X = 阿拉伯数字或中文数字）——数据条目直取类问题
 _STATUTE_RE = re.compile(r"第\s*[0-9一二三四五六七八九十百千]+\s*条")
 # 多跳/对比类问题（与 graph 多实体关系推导对应）
 _MULTI_HOP_MARKERS: Tuple[str, ...] = (

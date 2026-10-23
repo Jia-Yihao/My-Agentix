@@ -7,6 +7,13 @@
 
 from agentix.domain.tool.permission import PermissionMode
 from agentix.domain.tool.risk import RiskLevel
+from agentix.domain.tool.sandbox import (
+    SANDBOX_DEFAULT,
+    SANDBOX_LADDER,
+    ExecutionSandbox,
+    Handler,
+    SandboxUnavailable,
+)
 from agentix.domain.tool.spec import (
     CONTROL_REQUIRED_FROM,
     FORBIDDEN_RISK_LEVEL,
@@ -21,4 +28,9 @@ __all__ = [
     "CONTROL_REQUIRED_FROM",
     "RiskLevel",
     "PermissionMode",
+    "ExecutionSandbox",
+    "SandboxUnavailable",
+    "SANDBOX_LADDER",
+    "SANDBOX_DEFAULT",
+    "Handler",
 ]

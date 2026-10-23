@@ -60,6 +60,12 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         # （kb_ingest 未开启鉴权时本应用不带 X-API-Key 头即可）。
         "KB_API_KEY",
         "KB_REQUIRE_API_KEY",
+        # 2026-10-23（§24.2 G12）：kb_ingest 的 MySQL 连接串闸门。默认关，
+        # 本地 .env 不设即与加固前逐位等价；容器侧的缺省由 docker-compose.yml 给。
+        "KB_MYSQL_URL_GUARD",
+        "KB_MYSQL_ALLOWED_HOSTS",
+        # 2026-10-23（§24.3 T1 ⑫）：同服务的 WHERE 参数化闸门。同样不是本应用的字段。
+        "KB_MYSQL_WHERE_PARAMETRIZED",
         # 2026-10-09（P1-1）：跨端点 fallback 规格——可选能力，本地通常不配
         "LLM_FALLBACK_MODEL_SPECS",
         # 2026-10-09（P2-1）：反馈闭环 flag——默认关，本地不配即基线等价
@@ -93,6 +99,17 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         # 企业化 P0-4：OTel 为可选导出配置，不设 = 不上送 OTLP / 不打印 console
         "OTEL_EXPORTER_OTLP_ENDPOINT",
         "OTEL_CONSOLE_EXPORT",
+        # §24.3 T0（沙箱加固）：全部默认关 / 默认沿用旧推断，不设 = 与加固前逐位等价
+        "TOOL_SYNC_OFFLOAD_ENABLED",
+        "TOOL_HANDLER_CONTRACT_ENABLED",
+        # §24.3 T2 ⑭：执行位置端口。不设 = 默认关 = 不查 `ToolSpec.sandbox`
+        "EXECUTION_SANDBOX_ENABLED",
+        "MCP_SUBPROCESS_ENV_SCRUB",
+        "MCP_SUBPROCESS_ENV_EXTRA_KEYS",
+        "DB_ECHO",
+        "UVICORN_RELOAD",
+        # §24.3 T1 ⑪：设置接口授权收紧，默认关 = 与加固前逐位等价
+        "SETTINGS_AUTHZ_ENABLED",
         # 企业化 P1-5.3：LLM 并发上限不设 = 不限额（0）+ 默认排队超时
         "LLM_MAX_CONCURRENCY",
         "LLM_CONCURRENCY_QUEUE_TIMEOUT",
@@ -101,7 +118,7 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "PROMPT_INJECTION_INGEST_BLOCK",
         # 企业化 P2-4.5：输入长度上限不设 = 默认 5000 字符
         "QUERY_MAX_LENGTH",
-        # R2-2（技术变更指南 §2.2.7①）：效力过滤默认开、检索截至标注默认开
+        # R2-2（技术变更指南 §2.2.7①）：有效性过滤默认开、检索截至标注默认开
         "EFFECTIVENESS_FILTER_ENABLED",
         "EFFECTIVENESS_ASOF_ANNOTATION",
         # R3-5（架构文档 §24-28）：authority 排序默认开；Budget/隔离默认关（行为不变）

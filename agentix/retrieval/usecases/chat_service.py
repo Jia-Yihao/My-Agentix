@@ -265,7 +265,7 @@ def docs_from_scored_pairs(pairs: list[tuple], *, limit: int) -> list:
 
 
 def hit_chunks_from_docs(docs: list) -> list[dict]:
-    # R2-2 法条效力过滤（指南 §2.2.7①）：sources/hit_chunks 携带效力状态（缺失 → in_force）
+    # R2-2 数据条目有效性过滤（指南 §2.2.7①）：sources/hit_chunks 携带有效性状态（缺失 → in_force）
     from agentix.domain.policies.legal_effectiveness import attach_effective_status
 
     return [
@@ -273,7 +273,7 @@ def hit_chunks_from_docs(docs: list) -> list[dict]:
             {
                 "chunk_id": (d.metadata or {}).get("chunk_id"),
                 "score": float((d.metadata or {}).get("_retrieval_score", 0)),
-                # R1-2 引用验证器 v1：内容预览与来源（供答案文本法条引用交叉核验）
+                # R1-2 引用验证器 v1：内容预览与来源（供答案文本数据条目引用交叉核验）
                 "content": (d.page_content or "")[:600],
                 "source": str((d.metadata or {}).get("source", "")),
             },
@@ -311,8 +311,8 @@ def _as_page_content_doc(doc):
 def _similarity_search_with_fetch(vectorstore, question, *, search_k, metadata_filter, fetch_k) -> list:
     """统一封装带 fetch_k 的向量检索，返回已按距离阈值过滤、截断到 search_k 的文档列表。
 
-    R2-2（指南 §2.2.7①）：距离阈值过滤后、截断前应用法条效力后过滤
-    （已失效/未生效条文不进入召回；缺失效力字段的存量数据默认有效）。
+    R2-2（指南 §2.2.7①）：距离阈值过滤后、截断前应用数据条目有效性后过滤
+    （已失效/未生效条文不进入召回；缺失有效性字段的存量数据默认有效）。
     """
     if hasattr(vectorstore, "similarity_search_with_score"):
         pairs = vectorstore.similarity_search_with_score(
@@ -347,7 +347,7 @@ def _resolve_retrieval_fetch_k(vectorstore, search_k: int, metadata_filter, *, p
     """有界 fetch_k：带 filter 时不再全库扫描，取 ``min(ntotal, search_k*M, MIN)`` 与 base 的较大者。
 
     - ``metadata_filter is None`` 且无后过滤时检索整库，返回 base（``search_k*4`` 与 20 的较大者）。
-    - 带 filter 或开启效力后过滤（R2-2 ``post_filtered``）时：
+    - 带 filter 或开启有效性后过滤（R2-2 ``post_filtered``）时：
       ``bounded = max(search_k*MULTIPLIER, MIN)``，再 ``min(ntotal, bounded)``；
       ``MAX_FETCH_K>0`` 时进一步封顶。最终 ``max(base, bounded)`` 保证至少有 base 余量。
     """
@@ -377,7 +377,7 @@ def retrieve_docs_with_retry(
     ``search_k`` 且仍有扩大空间，按 4× 升级重试至多 ``RETRIEVAL_FETCH_K_MAX_ESCALATIONS``
     次，作为召回不降的保险（开关 ``RETRIEVAL_FETCH_K_ESCALATE``）。
     """
-    # R2-2：效力后过滤会缩减候选集，fetch_k 按"有过滤"口径取有界值补偿召回
+    # R2-2：有效性后过滤会缩减候选集，fetch_k 按"有过滤"口径取有界值补偿召回
     post_filtered = bool(settings.EFFECTIVENESS_FILTER_ENABLED)
     fetch_k = _resolve_retrieval_fetch_k(vectorstore, search_k, metadata_filter, post_filtered=post_filtered)
     ntotal = int(getattr(getattr(vectorstore, "index", None), "ntotal", 0) or 0)
@@ -717,7 +717,7 @@ def get_citations_from_docs(docs, session: Session) -> list[dict]:
 
         snippet = doc.page_content[:200] + ("..." if len(doc.page_content) > 200 else "")
 
-        # R2-2（指南 §2.2.7①）：sources 带 status（缺失 → in_force，供引用卡展示效力状态）
+        # R2-2（指南 §2.2.7①）：sources 带 status（缺失 → in_force，供引用卡展示有效性状态）
         from agentix.domain.policies.legal_effectiveness import effective_status_of
 
         replaced = (doc.metadata or {}).get("replaced_by")
@@ -1289,7 +1289,7 @@ async def _post_process_and_persist(
     if stripped:
         logger.warning("stripped %d untraceable citations", len(stripped))
 
-    # R1-2 引用验证器 v1（指南 §2.1.5⑥）：答案文本法条引用 ↔ 检索证据交叉核验，
+    # R1-2 引用验证器 v1（指南 §2.1.5⑥）：答案文本数据条目引用 ↔ 检索证据交叉核验，
     # 未核验通过的引用显式标注在答案尾部（核验失败绝不抛错、绝不阻断落库）。
     unverified_refs: list = []
     try:
@@ -1305,7 +1305,7 @@ async def _post_process_and_persist(
     except Exception:  # noqa: BLE001 - 验证器故障不得影响答案交付
         logger.warning("citation verifier failed (non-fatal)", exc_info=True)
 
-    # R2-2 法条效力过滤（指南 §2.2.7①）：有检索命中时答案尾部标注"检索截至日期"
+    # R2-2 数据条目有效性过滤（指南 §2.2.7①）：有检索命中时答案尾部标注"检索截至日期"
     if tool_ctx.last_hit_chunks and settings.EFFECTIVENESS_ASOF_ANNOTATION:
         try:
             from agentix.domain.policies.legal_effectiveness import append_retrieved_asof

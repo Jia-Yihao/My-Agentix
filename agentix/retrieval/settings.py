@@ -48,11 +48,34 @@ class _RetrievalSettingsCompat:
 
     @property
     def ENVIRONMENT(self) -> str:
-        return os.getenv("ENVIRONMENT", "development" if _unified_settings.DEBUG else "production").lower()
+        # 优先级：显式 APP_ENV > legacy ENVIRONMENT > 由 DEBUG 推断（旧行为，仅为兼容保留）。
+        # G6：生产身份不该由一个 debug 开关反推——忘设 DEBUG=False 会让下面的
+        # validate_app_settings() 整段静默不生效。
+        explicit = (_unified_settings.APP_ENV or "").strip().lower()
+        if explicit:
+            return explicit
+        legacy = os.getenv("ENVIRONMENT", "").strip().lower()
+        if legacy:
+            return legacy
+        return "development" if _unified_settings.DEBUG else "production"
 
     @property
     def PRODUCTION(self) -> bool:
         return self.ENVIRONMENT in ("prod", "production")
+
+    @property
+    def STRICT_VALIDATION(self) -> bool:
+        """配置校验的**硬失败面**——比 PRODUCTION 多一个 staging。
+
+        口径与 `config/settings.py::resolved_secret_key` 保持一致（prod/production/staging
+        一律严格）。staging 的价值是「用生产的失败语义提前跑一遍」；把它降级成观察环境
+        等于把这道校验从发布链路上摘掉。
+
+        这条不是理论担心：`docker/compose.override.staging.yml` 显式写了 `APP_ENV: staging`，
+        而 G6 之前 staging 是靠 `DEBUG=false` 反推出 "production" 才拿到 raise 的——
+        只改 ENVIRONMENT 优先级而不同步这里，staging 的拒绝启动会**静默消失**。
+        """
+        return self.ENVIRONMENT in ("prod", "production", "staging")
 
     @property
     def database_url(self) -> str:
@@ -90,7 +113,7 @@ class _RetrievalSettingsCompat:
     OUTPUT_FILTER_PII_ENABLED = _bool_env("OUTPUT_FILTER_PII_ENABLED", "true")
     OUTPUT_FILTER_HARM_ENABLED = _bool_env("OUTPUT_FILTER_HARM_ENABLED", "false")
 
-    # R2-2 法条效力过滤（指南 §2.2.7①）：默认开启后过滤；存量无字段数据视为现行有效
+    # R2-2 数据条目有效性过滤（指南 §2.2.7①）：默认开启后过滤；存量无字段数据视为现行有效
     EFFECTIVENESS_FILTER_ENABLED = _bool_env("EFFECTIVENESS_FILTER_ENABLED", "true")
     # 答案尾部"检索截至日期"标注
     EFFECTIVENESS_ASOF_ANNOTATION = _bool_env("EFFECTIVENESS_ASOF_ANNOTATION", "true")
@@ -256,7 +279,7 @@ def validate_app_settings() -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
 
-    if settings.PRODUCTION:
+    if settings.STRICT_VALIDATION:
         if not settings.RATE_LIMIT_ENABLED:
             errors.append("生产环境必须开启 RATE_LIMIT_ENABLED=true")
         if not settings.OUTPUT_FILTER_ENABLED or not settings.OUTPUT_FILTER_PII_ENABLED:

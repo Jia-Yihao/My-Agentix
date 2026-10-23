@@ -422,6 +422,11 @@ def _infrastructure_interfaces_offenders(root=None):
         （进程中断会残留文件，进而毒化 ``test_no_infrastructure_file_imports_interfaces``）。
     """
     root = Path(root) if root is not None else INFRA_DIR
+    # 报告基准按"是不是真实源码树"决定，而不是按 relative_to 会不会抛：
+    # 用 try/except 时，只要 pytest 的 basetemp 落在仓库内（例如 --basetemp=.tmp/...），
+    # 临时探针目录就能相对仓库根解析成功，键名变成一长串 basetemp 路径，
+    # test_probe_import_would_trip_the_guard 随即 KeyError——换台机器就红的那种红。
+    base = PROJECT_ROOT if root == INFRA_DIR else root
     offenders = {}
     for path in sorted(root.rglob("*.py")):
         hits = [
@@ -431,12 +436,7 @@ def _infrastructure_interfaces_offenders(root=None):
             or m.startswith(INTERFACES_MODULE_PREFIX + ".")
         ]
         if hits:
-            # 真实源码树：报仓库相对路径（便于定位）；临时目录：报目录相对路径
-            try:
-                key = path.relative_to(PROJECT_ROOT).as_posix()
-            except ValueError:
-                key = path.relative_to(root).as_posix()
-            offenders[key] = hits
+            offenders[path.relative_to(base).as_posix()] = hits
     return offenders
 
 

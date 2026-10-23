@@ -48,7 +48,7 @@ async def query_lightrag(request: LightRAGQueryRequest):
     curl -X POST "http://localhost:8000/api/v1/lightrag/query" \\
       -H "Content-Type: application/json" \\
       -d '{
-        "query": "民法典第577条关于违约责任是怎么规定的？",
+        "query": "示例数据集 A第577条关于异常责任是怎么规定的？",
         "mode": "hybrid",
         "top_k": 10,
         "stream": false
@@ -100,7 +100,7 @@ async def query_lightrag_stream(request: LightRAGQueryRequest):
     curl -X POST "http://localhost:8000/api/v1/lightrag/query-stream" \\
       -H "Content-Type: application/json" \\
       -d '{
-        "query": "民法典第577条关于违约责任是怎么规定的？",
+        "query": "示例数据集 A第577条关于异常责任是怎么规定的？",
         "mode": "hybrid",
         "top_k": 10
       }'
@@ -172,8 +172,8 @@ async def insert_documents(request: LightRAGInsertRequest):
       -H "Content-Type: application/json" \\
       -d '{
         "documents": [
-          "《民法典》第577条规定的违约责任承担方式包括继续履行、采取补救措施或者赔偿损失等...",
-          "《刑法》关于正当防卫的构成要件包括存在不法侵害、防卫时间适时、针对侵害者本人等..."
+          "《示例数据集 A》第577条规定的异常责任承担方式包括继续履行、采取补救措施或者补偿损失等...",
+          "《示例数据集 B》关于正当防卫的构成要件包括存在不法侵害、防卫时间适时、针对侵害者本人等..."
         ]
       }'
     ```
@@ -257,7 +257,7 @@ async def get_index_stats():
 
 
 @router.post("/test-modes")
-async def test_all_modes(query: str = "民法典第577条关于违约责任是怎么规定的？"):
+async def test_all_modes(query: str = "示例数据集 A第577条关于异常责任是怎么规定的？"):
     """
     测试所有检索模式并返回对比结果
 
@@ -274,7 +274,7 @@ async def test_all_modes(query: str = "民法典第577条关于违约责任是�
     Examples
     --------
     ```bash
-    curl -X POST "http://localhost:8000/api/v1/lightrag/test-modes?query=民法典第577条关于违约责任是怎么规定的？"
+    curl -X POST "http://localhost:8000/api/v1/lightrag/test-modes?query=示例数据集 A第577条关于异常责任是怎么规定的？"
     ```
     """
     try:

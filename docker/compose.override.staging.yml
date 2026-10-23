@@ -13,6 +13,15 @@ services:
     environment:
       APP_ENV: staging
       DEBUG: "false"
+      # ⚠️ 这两个必须显式钉住，不能靠 DEBUG 推导：compose 的 `${VAR:-${DEBUG:-True}}`
+      # 是在**宿主机**求值的（读 .env / shell 环境），跟本文件给容器设的 DEBUG 无关。
+      # 实测：宿主机 .env 写着 DEBUG=true 时，staging 渲染出的容器环境是
+      # `UVICORN_RELOAD: "true"` ⇒ 预发以 `--reload` 起（文件监听 + 单 worker），
+      # 与配置矩阵声明的 staging=false 相反；`DB_ECHO` 空值则回落到「由 DEBUG 推断」，
+      # 恰好也是 false——但那是巧合，不是声明。两个都写死，让 staging 的取值不再
+      # 取决于谁的工作站 .env 里有什么。
+      UVICORN_RELOAD: "false"
+      DB_ECHO: "false"
       REQUIRE_API_KEY: "true"
       # staging 与 prod 同口径开启的企业级开关
       RATE_LIMIT_ENABLED: "true"
@@ -20,12 +29,36 @@ services:
       PROMPT_INJECTION_DETECTION_ENABLED: "true"
       PROMPT_INJECTION_INGEST_BLOCK: "false"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://prometheus:9090"
+      # §24.3 T1 ⑧：注册期点名非协程 handler。staging 开一次，把 `TOOL HANDLER
+      # CONTRACT:` 点名的工具清单抄进部署记录——只打日志，不改执行语义。
+      TOOL_HANDLER_CONTRACT_ENABLED: "true"
+      # §24.3 T0·G2：MCP stdio 子进程只拿 OS 关键白名单环境，不再继承主进程全部密钥。
+      # 第三方 server 需要自己的凭据时用 MCP_SUBPROCESS_ENV_EXTRA_KEYS 显式加名。
+      MCP_SUBPROCESS_ENV_SCRUB: "true"
+      # §24.3 T0·G1：线程下放会改变 handler 的循环亲和语义，staging 里也保持默认关；
+      # 必须先逐个确认 handler 不依赖原事件循环，再由运维显式打开（配置矩阵同口径）。
+      TOOL_SYNC_OFFLOAD_ENABLED: "false"
+      # §24.3 T1 ⑪：设置接口的租户归属 + admin 校验。这里显式钉 false，两个原因：
+      # ① 和 UVICORN_RELOAD 一样，基线 compose 的 `${SETTINGS_AUTHZ_ENABLED:-False}`
+      #    在宿主机插值，谁的工作站 .env 里写了 true 就让预发提前收紧（见 runbook §15.7 口径）；
+      # ② 当前没有「自助升 admin」的接口，注册只会得到 member，直接打开会让整面设置页 403。
+      #    开启前置（admin 账号 + kb.tenant_id 回填）见 docs/runbooks/staging-environment.md。
+      SETTINGS_AUTHZ_ENABLED: "false"
+      # §24.3 T2 ⑭（ADR-0007）：执行位置端口在 staging **打开**。这不是"预发已经有隔离"
+      # ——两档能跑的（in_process / thread）都不隔离。打开它只买到一件事：让"按声明选执行
+      # 位置"这条新缝在预发被持续走一遍，而默认档 in_process 与关着逐位等价（由
+      # tests/test_p114_execution_sandbox.py 钉住）。顺序也因此是对的：将来有工具声明
+      # subprocess/container 时，先在 staging 拿到"拒绝执行"，而不是先在生产拿到。
+      EXECUTION_SANDBOX_ENABLED: "true"
     restart: unless-stopped
 
   retrieval-worker:
     environment:
       APP_ENV: staging
       DEBUG: "false"
+      # worker 不起 uvicorn，但同样会把 SQL 打进标准库 logging；显式钉住，
+      # 不让「预发的日志详略」依赖某天有人把 DEBUG 改回 true。
+      DB_ECHO: "false"
     restart: unless-stopped
 
   prometheus:

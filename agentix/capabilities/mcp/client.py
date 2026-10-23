@@ -23,9 +23,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional
 
+from agentix.config import settings
 from agentix.tools.definitions import ToolSpec
 from agentix.tools.gateway.executor import ToolExecutor
 from agentix.capabilities.mcp.protocol import (
@@ -34,9 +37,51 @@ from agentix.capabilities.mcp.protocol import (
     MCPError,
 )
 
-__all__ = ["MCPStdioClient", "MCPTimeoutError"]
+__all__ = ["MCPStdioClient", "MCPTimeoutError", "scrub_subprocess_env"]
 
 DEFAULT_REQUEST_TIMEOUT_S = 15.0
+
+#: G2：MCP server 是**任意第三方命令**，默认继承父进程全环境等于把 LLM/SERPAPI/DB 密钥
+#: 交给它。这里只保留「起进程 + 找到本包 + 正确编码」所需的最小集合。
+OS_ENV_ALLOWLIST = frozenset(
+    {
+        # 进程与解释器本身
+        "PATH", "PATHEXT", "COMSPEC", "SYSTEMROOT", "WINDIR", "TEMP", "TMP",
+        "PYTHONPATH", "PYTHONHOME", "PYTHONIOENCODING", "PYTHONUTF8", "VIRTUAL_ENV",
+        # POSIX 运行时
+        "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TZ", "TERM", "LD_LIBRARY_PATH",
+        # 证书与代理（TLS 出网必需，但不含凭据）
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    }
+)
+
+
+def scrub_subprocess_env(
+    source: Optional[Mapping[str, str]] = None,
+    *,
+    project_root: Optional[str] = None,
+) -> Dict[str, str]:
+    """把要交给子进程的环境裁到白名单；白名单外的键（含一切密钥）不进子进程。"""
+    base = dict(os.environ if source is None else source)
+    extra = {
+        key.strip().upper()
+        for key in (settings.MCP_SUBPROCESS_ENV_EXTRA_KEYS or "").split(",")
+        if key.strip()
+    }
+    keep = OS_ENV_ALLOWLIST | extra
+    scrubbed = {k: v for k, v in base.items() if k.upper() in keep}
+    if "PATH" not in scrubbed and "PATH" in base:
+        scrubbed["PATH"] = base["PATH"]
+    # 白名单裁掉 PYTHONPATH 后 `python -m agentix...` 会找不到包，显式补回仓库根。
+    if "PYTHONPATH" not in scrubbed:
+        root = project_root or str(Path(agentix_package_root()).parent)
+        scrubbed["PYTHONPATH"] = root
+    return scrubbed
+
+
+def agentix_package_root() -> str:
+    return str(Path(__file__).resolve().parents[2])
 
 
 class MCPTimeoutError(MCPError):
@@ -71,12 +116,16 @@ class MCPStdioClient:
         """启动子进程并完成 initialize 握手，返回 serverInfo。"""
         if self._proc is not None:
             raise RuntimeError("client already started")
+        child_env: Optional[Dict[str, str]] = None
+        if settings.MCP_SUBPROCESS_ENV_SCRUB:
+            child_env = scrub_subprocess_env(project_root=self._cwd)
         self._proc = await asyncio.create_subprocess_exec(
             *self._command,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             cwd=self._cwd,
+            env=child_env,
         )
         result = await self._request(
             "initialize",

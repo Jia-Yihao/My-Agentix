@@ -81,7 +81,7 @@ async def _generate_image(user_query: str, state: AgentState) -> Dict[str, List[
 
         logger.info("Image generated successfully: %s", image_url)
 
-        subject = "法律主题"
+        subject = "测试数据主题"
         for keyword in ["民法典", "刑法", "劳动合同法", "道路交通安全法", "行政处罚法"]:
             if keyword in user_query:
                 subject = keyword
@@ -186,7 +186,7 @@ async def create_image_query(state: AgentState, *, config: RunnableConfig) -> Di
             "messages": [
                 {
                     "role": "system",
-                    "content": "你是一个专业的法律文档与证据材料图像分析助手。请仔细分析图片中的内容，特别关注文书类型、关键文字信息、印章与签署、当事人信息等细节，并说明其与法律问题的关联。",
+                    "content": "你是一个专业的测试文档与证据材料图像分析助手。请仔细分析图片中的内容，特别关注文档类型、关键文字信息、签章与签署、参与方信息等细节，并说明其与测试数据集问题的关联。",
                 },
                 {
                     "role": "user",

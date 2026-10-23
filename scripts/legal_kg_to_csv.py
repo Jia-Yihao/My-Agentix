@@ -2,7 +2,7 @@
 """Convert legal ontology seed JSON into Neo4j-admin compatible CSV files.
 
 It reads a self-described legal seed file (``data/legal/legal_seed.json``) that
-models the 法律法规本体 (法规 / 法条 / 章节 / 案由 / 司法解释 / 机关) and emits one CSV
+models the 测试数据集本体 (数据集 / 数据条目 / 章节 / 数据分类 / 示例说明 / 机构) and emits one CSV
 per node label and one CSV per relationship type, ready for
 ``neo4j-admin database import full``.
 
@@ -207,7 +207,7 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
             },
         )
 
-        # 制定机关 (法规 -> 机关)
+        # 数据来源 (数据集 -> 机构)
         issuing = reg.get("制定机关")
         if issuing:
             _ensure_node(
@@ -217,7 +217,7 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
                 {"start": reg_node["id"], "end": _authority_id(issuing)}
             )
 
-        # 上位法 (下位法 -> 上位法)
+        # 上级数据集 (下级数据集 -> 上级数据集)
         upper = reg.get("上位法")
         if upper and upper != reg_name:
             _ensure_node(
@@ -244,7 +244,7 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
                     "所属法": reg_name,
                 },
             )
-            # 章节 -> 法规
+            # 章节 -> 数据集
             rel_chapter_belongs_regulation.append(
                 {"start": chap_node["id"], "end": reg_node["id"]}
             )
@@ -265,12 +265,12 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
                         "关键词": "；".join(_as_list(article.get("关键词"))),
                     },
                 )
-                # 法条 -> 章节
+                # 数据条目 -> 章节
                 rel_article_belongs_chapter.append(
                     {"start": art_node["id"], "end": chap_node["id"]}
                 )
 
-                # 引用 (法条 -> 法条)，条号限定在同一法规内
+                # 引用 (数据条目 -> 数据条目)，条号限定在同一数据集内
                 for cited in _as_list(article.get("引用")):
                     cited_id = _article_id(reg_name, cited) if cited in article_registry or True else cited
                     if cited_id in article_registry:
@@ -278,7 +278,7 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
                             {"start": art_node["id"], "end": cited_id}
                         )
 
-                # 对应案由 (法条 -> 案由)
+                # 对应数据分类 (数据条目 -> 数据分类)
                 for cause_name in _as_list(article.get("案由")):
                     cause_node = _ensure_node(
                         cause_registry, cause_name, "cause", causes,
@@ -288,7 +288,7 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
                         {"start": art_node["id"], "end": cause_node["id"]}
                     )
 
-                # 有司法解释 (法条 -> 司法解释)
+                # 有示例说明 (数据条目 -> 示例说明)
                 for interp_name in _as_list(article.get("司法解释")):
                     interp_node = _ensure_node(
                         interpretation_registry, interp_name, "interp", interpretations,

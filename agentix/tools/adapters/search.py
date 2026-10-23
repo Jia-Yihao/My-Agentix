@@ -1,10 +1,34 @@
 from typing import Dict, List, Optional
+import re
+
 import httpx
 from agentix.config import settings
 from agentix.infrastructure.core import get_logger
 from agentix.tools.gateway.result_limiter import limit_value
 
 logger = get_logger(service="tool.search")
+
+#: httpx 的异常文本会原样带出请求 URL（含 query string），SerpAPI 的密钥就在里面。
+#: \b 是必要的：少了它，``monkey=1`` 会被当成 ``key=1`` 一起打掉。
+_SECRET_QUERY_RE = re.compile(
+    r"(?i)(\b(?:api_key|apikey|access_token|secret_key|secret|token|password|key)=)"
+    r"[^&\s'\"]+"
+)
+_SECRET_HEADER_RE = re.compile(
+    r"(?i)((?:api[_-]?key|secret|token|password)\s*[:=]\s*)([^\s,;'\"]{3,})"
+)
+_SECRET_BEARER_RE = re.compile(r"(?i)(\bbearer\s+)[^\s,;'\"]{3,}")
+
+
+def redact_secrets(text: str) -> str:
+    """把日志文本里的凭据值替换成 ``***``，保留键名以便定位是哪个参数出问题。"""
+    masked = _SECRET_BEARER_RE.sub(lambda m: m.group(1) + "***", text)
+    masked = _SECRET_QUERY_RE.sub(lambda m: m.group(1) + "***", masked)
+    masked = _SECRET_HEADER_RE.sub(lambda m: m.group(1) + "***", masked)
+    own_key = getattr(settings, "SERPAPI_KEY", "")
+    if isinstance(own_key, str) and len(own_key) >= 4:
+        masked = masked.replace(own_key, "***")
+    return masked
 
 
 class SearchTool:
@@ -54,13 +78,13 @@ class SearchTool:
                 response = client.get(self.endpoint, params=params)
                 response.raise_for_status()
         except httpx.HTTPError as exc:
-            logger.error("Search request failed: {}", exc)
+            logger.error("Search request failed: {}", redact_secrets(str(exc)))
             return []
 
         try:
             payload = response.json()
         except ValueError as exc:
-            logger.error("Failed to decode search response: {}", exc)
+            logger.error("Failed to decode search response: {}", redact_secrets(str(exc)))
             return []
 
         return self._bounded(self._parse_results(payload, limit=result_count))

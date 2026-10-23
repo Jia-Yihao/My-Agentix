@@ -1,0 +1,106 @@
+name: Perf baseline
+
+# 每天 UTC 18:00 与手动触发跑一次 p95 延迟基线：起后端 → 压 /liveness →
+# 与上一版基线比对（劣化 >20% 阻断）。基线靠 actions/cache 跨运行持久化，
+# 否则每次都是"首跑建档"，门禁永远不生效。
+# 口径与阈值语义见 evals/quality_gate.py；本地复现见 scripts/load_test.py。
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-baseline
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.10"
+
+jobs:
+  p95:
+    name: p95 latency vs previous baseline
+    runs-on: ubuntu-latest
+    env:
+      # 基线只需要进程活着能路由，不需要外部中间件 ⇒ SQLite。
+      DATABASE_URL: sqlite:///./perf_baseline.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      # 主键每次唯一 ⇒ 一定 restore 到最近一版（restore-keys），且一定把本次
+      # 结果写回缓存（actions/cache 只在主键 miss 时保存）。
+      - name: Restore previous baseline
+        uses: actions/cache@v4
+        with:
+          path: perf-cache
+          key: perf-baseline-${{ github.run_id }}
+          restore-keys: |
+            perf-baseline-
+      - name: Start backend
+        run: |
+          set -eu
+          mkdir -p data perf-cache
+          python -m uvicorn agentix.main:application --host 127.0.0.1 --port 8000 \
+            > uvicorn.log 2>&1 &
+          echo $! > uvicorn.pid
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/liveness > /dev/null 2>&1; then
+              echo "[perf] backend live after ${attempt}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error title=perf-baseline::backend never became live within 60s（见 uvicorn.log）"
+          tail -n 50 uvicorn.log || true
+          exit 1
+      # pipefail 是被 tests/test_ci_gate_contract.py 钉死的：没有它，tee 会把
+      # load_test 的退出码换成自己的 0，压测全失败照样放行。
+      - name: Run load test
+        run: |
+          set -eu
+          set -o pipefail
+          python scripts/load_test.py \
+            --url http://127.0.0.1:8000/liveness \
+            --requests 200 --workers 10 --warmup 20 \
+            | tee perf-cache/baseline.json
+      - name: Extract p95
+        id: p95
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          with open("perf-cache/baseline.json", encoding="utf-8") as handle:
+              report = json.load(handle)
+          p95 = report.get("p95_seconds")
+          # 零成功样本时 p95 是 null，语义是"没有数据"，不是"0 秒很快"。
+          # 当成 0 会把"服务打不通"记成一次巨大的性能改善并写进下一版基线。
+          if p95 is None:
+              print("::error title=perf-baseline::p95_seconds is None (no successful samples)")
+              sys.exit(1)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"p95={p95}\n")
+          PY
+      # 这一步必须是真阻断：任何 `|| ...` 吞退出码的写法都会让"劣化"变成噪声。
+      - name: Compare with previous baseline
+        run: |
+          set -eu
+          python evals/quality_gate.py \
+            --baseline-file perf-cache/perf-baseline.json \
+            --metric p95_seconds \
+            --current "${{ steps.p95.outputs.p95 }}" \
+            --max-regression 0.20 \
+            --direction lower_is_better
+      - name: Publish new baseline
+        run: cp perf-cache/baseline.json perf-cache/perf-baseline.json
+      - name: Stop backend
+        if: always()
+        run: kill "$(cat uvicorn.pid)" 2>/dev/null || true

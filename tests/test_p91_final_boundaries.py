@@ -51,6 +51,20 @@ def _mysql_request(**overrides) -> MySQLIngestRequest:
     return MySQLIngestRequest(**payload)
 
 
+def _ingestor(where_parametrized: bool = False) -> MySQLIngestor:
+    """`_build_query` 自 ⑫ 起要读 `self.config.mysql_where_parametrized`，原先
+    `MySQLIngestor._build_query(None, request)` 的裸调用会 `AttributeError`。这里给一个
+    真 `Config`（默认 false = 加固前口径），形状断言继续跑在真实调用形状上；参数化分支的
+    逐字节对照在 p113 里另有一整套，不在这里重复。"""
+    from kb_service.core.config import Config
+
+    ingestor = MySQLIngestor.__new__(MySQLIngestor)
+    config = Config()
+    config.mysql_where_parametrized = where_parametrized
+    ingestor.config = config
+    return ingestor
+
+
 # ============================================================
 # 1. MySQL ingest SQL 注入护栏
 # ============================================================
@@ -98,11 +112,11 @@ class TestMySQLIngestSQLGuard:
 
     def test_build_query_shape_after_validation(self):
         request = _mysql_request(where="source = 'npc'", limit=5)
-        sql = str(MySQLIngestor._build_query(None, request))
+        sql = str(_ingestor()._build_query(request))
         assert sql == "SELECT * FROM `laws` WHERE source = 'npc' LIMIT 5"
 
     def test_build_query_without_where_or_limit(self):
-        sql = str(MySQLIngestor._build_query(None, _mysql_request()))
+        sql = str(_ingestor()._build_query(_mysql_request()))
         assert sql == "SELECT * FROM `laws`"
 
     def test_legal_date_fields_still_accepted(self):

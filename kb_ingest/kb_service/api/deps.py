@@ -45,7 +45,7 @@ async def require_api_key(x_api_key: Optional[str] = Security(_api_key_header)) 
       * 启动命令是 ``uvicorn ... --host 0.0.0.0`` —— 监听**所有网卡**；
       * 端点是**写入**语义（Excel / MySQL 入库，直接改 Milvus 集合）；
       * 同服务的 ``vector_search`` / ``hybrid_search`` 还会把知识库内容读出去。
-      四者叠加 = 同一网段内任何人可无凭证改写知识库、读取全部法条语料。
+      四者叠加 = 同一网段内任何人可无凭证改写知识库、读取全部数据条目语料。
 
     ``KB_REQUIRE_API_KEY`` 默认为 **false**，以保持既有部署行为；但启动期会
     **大声告警**（见 ``main._report_auth_mode``），不至于像此前那样完全无声。

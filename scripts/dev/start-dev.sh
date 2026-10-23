@@ -2,7 +2,7 @@
 
 # My Agentix 开发环境启动脚本
 
-echo "⚖️ My Agentix 智能法律助手"
+echo "🤖 My Agentix 智能测试数据助手"
 echo "=========================="
 echo ""
 

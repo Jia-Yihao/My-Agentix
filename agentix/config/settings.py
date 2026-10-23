@@ -401,7 +401,7 @@ class Settings(BaseSettings):
     )
 
     # Stage F2b-d（R-P2-3 Graph 动态化·schema 感知生成）：text2cypher 生成
-    # 提示的 {schema} 改用与校验同源的「法律域文档摘要 + 发现态 graph.schema」
+    # 提示的 {schema} 改用与校验同源的「测试数据域文档摘要 + 发现态 graph.schema」
     # 渲染（替代裸格式/静态中文标签描述为权威源）；关闭（默认）= 基线裸
     # graph.schema 逐位等价；渲染/读取异常 fail-open 回裸 graph.schema。
     KG_SCHEMA_AWARE_GENERATION_ENABLED: bool = Field(
@@ -788,7 +788,7 @@ class Settings(BaseSettings):
     # Milvus vector database
     MILVUS_HOST: str = "localhost"
     MILVUS_PORT: int = 19530
-    # 法律法规领域：向量集合默认改为 legal（旧集合遗留，本期不使用）
+    # 测试数据集领域：向量集合默认改为 legal（旧集合遗留，本期不使用）
     MILVUS_COLLECTION: str = "legal"
     MILVUS_INDEX_TYPE: str = "IVF_FLAT"
     MILVUS_METRIC_TYPE: str = "IP"
@@ -947,9 +947,9 @@ class Settings(BaseSettings):
     # RETURN */无界变长/OPTIONAL MATCH 堆叠 → 拒绝；简单单 RETURN 尾追加
     # LIMIT；默认关 = 零预检零改写，与基线逐位等价）
     NEO4J_COST_GUARD_ENABLED: bool = False
-    # 法律法规领域种子（Neo4j 法律本体），由 scripts/legal_kg_to_csv.py 转换灌库
+    # 测试数据集领域种子（Neo4j 测试数据本体），由 scripts/legal_kg_to_csv.py 转换灌库
     NEO4J_LEGAL_JSON_PATH: str = "data/legal/legal_seed.json"
-    # 法律法规 LightRAG 语料（法条全文 + 司法解释全文），供 scripts/init_lightrag.py --source json 读取
+    # 测试数据集 LightRAG 语料（数据条目全文 + 示例说明全文），供 scripts/init_lightrag.py --source json 读取
     LEGAL_LIGHTRAG_JSON_PATH: str = "data/legal/legal_lightrag_corpus.json"
 
     # Agent behaviour
@@ -1158,6 +1158,64 @@ class Settings(BaseSettings):
     # Phase 21（Hooks 生命周期）：on_tool_before/after、on_step_end、on_run_end、
     # on_error 五类旁路钩子。默认 False = 组合根零接线（executor/loop 零调用）。
     HOOKS_ENABLED: bool = False
+    # ------------------------------------------------------------------
+    # Phase S（沙箱与执行边界加固，§24.3 T0）——全部默认关，flag-off 与基线逐位等价。
+    # ------------------------------------------------------------------
+    # G1：同步（非协程）工具 handler 会占住事件循环，asyncio.wait_for 对它无效。
+    # 打开后 executor 用 asyncio.to_thread 下放，使 timeout_ms 真正可截断。
+    TOOL_SYNC_OFFLOAD_ENABLED: bool = Field(
+        default=False,
+        description="Offload non-coroutine tool handlers to a worker thread so timeout_ms can actually truncate them (default off)",
+    )
+    # §24.3 T1 ⑧：handler 类型契约。注册期就点名「非协程 handler」，而不是等到
+    # 一次超时不生效才在人肉排障里发现。默认关 = 不告警（逐位等价）。
+    TOOL_HANDLER_CONTRACT_ENABLED: bool = Field(
+        default=False,
+        description="Warn at registration time when a tool handler is not a coroutine function (its timeout_ms binds only with TOOL_SYNC_OFFLOAD_ENABLED)",
+    )
+    # §24.3 T2 ⑭（ADR-0007）：执行位置端口。打开后 ToolExecutor 按 `ToolSpec.sandbox`
+    # 选执行位置（默认 in_process = 与现状逐位相同；thread = 下放线程；
+    # subprocess/container 尚未实现 ⇒ 执行点**拒绝**，不静默退回进程内）。
+    # 关 = 完全不查 `sandbox` 字段，等价于加固前。
+    EXECUTION_SANDBOX_ENABLED: bool = Field(
+        default=False,
+        description="Honour the per-tool `ToolSpec.sandbox` declaration when picking where a handler runs (default off = in-process, byte-equal to pre-T2)",
+    )
+    # G2：MCP stdio 子进程默认继承主进程全部环境变量，其中含 LLM/SERPAPI 等密钥。
+    MCP_SUBPROCESS_ENV_SCRUB: bool = Field(
+        default=False,
+        description="Scrub MCP stdio subprocess environment down to an OS-critical allowlist (default off = inherit everything)",
+    )
+    # 额外允许透传给 MCP 子进程的环境变量名（逗号分隔），与内置白名单取并集。
+    MCP_SUBPROCESS_ENV_EXTRA_KEYS: str = Field(
+        default="",
+        description="Comma-separated extra environment variable names additionally allowed into MCP stdio subprocesses when scrub is on",
+    )
+    # G11：SQLAlchemy echo 会把完整 SQL 连同参数打进标准库 logging，绕过 loguru 结构出口。
+    # None = 沿用旧行为（由 DEBUG 推断）；显式设值即覆盖。
+    DB_ECHO: Optional[bool] = Field(
+        default=None,
+        description="Override SQLAlchemy engine echo; None keeps the legacy DEBUG-derived behaviour",
+    )
+    # G6：「生产身份」不该由 debug 开关反推。空 = 沿用旧推断逻辑，部署应显式声明。
+    APP_ENV: str = Field(
+        default="",
+        description="Explicit application environment (development|staging|production); empty keeps the legacy DEBUG-derived value",
+    )
+    # G6：热重载与 DEBUG 解耦。None = 旧行为（reload=DEBUG）。
+    UVICORN_RELOAD: Optional[bool] = Field(
+        default=None,
+        description="Override uvicorn reload; None keeps the legacy DEBUG-derived value",
+    )
+    # §24.3 T1 ⑪：`/settings/{kb_id}` 的读写此前只要求「已登录」，任何认证用户都能
+    # 读改任意 kb（含跨租户）。G9 把响应里的密钥掩成 ***，但掩码不是授权：
+    # `llm_base_url` / `embedding_base_url` 仍是可写字段，改指攻击者的端点就等于把
+    # 目标租户的提问内容整批外送。打开后：读要求 kb 与调用者同租户，写在此基础上再要求 admin。
+    # 前置条件（缺一会把设置页变成 403）：迁移已回填 kb.tenant_id，且该租户内确有 admin 账号。
+    SETTINGS_AUTHZ_ENABLED: bool = Field(
+        default=False,
+        description="Enforce tenant ownership on GET /settings/{kb_id} and admin role on PUT (default off = any authenticated user)",
+    )
     # P0-2(c)：agent 图执行的进程内并发上限（防 LLM 上游雪崩），在 chat.process_agent_query 施加
     AGENT_MAX_CONCURRENCY: int = Field(
         default=16,
@@ -1211,7 +1269,7 @@ class Settings(BaseSettings):
         default=False,
         description="Enable agentic RAG query-rewrite retries (<=2) on empty knowledge retrieval; default off",
     )
-    # Phase H·W1：复杂度感知 fast-path——高置信确定性输入（寒暄、单条法条
+    # Phase H·W1：复杂度感知 fast-path——高置信确定性输入（寒暄、单条数据条目
     # 直取）前置短路，跳过 LLM 意图分类器（零模型构造、零分类调用）。
     # 关（默认）⇒ 路由链与基线逐位等价；命中记 llm_calls_saved_total。
     ROUTING_FASTPATH_ENABLED: bool = Field(
@@ -1272,7 +1330,7 @@ class Settings(BaseSettings):
         default=80,
         description="Chunk overlap used when splitting documents",
     )
-    # 法律法规领域知识库语料文件（供 kb_ingest 导入）
+    # 测试数据集领域知识库语料文件（供 kb_ingest 导入）
     KB_DATA_FILE: str = "data/kb/legal_corpus.txt"
     KB_LLM_PROVIDER: str = Field(default="openai", description="LLM provider used by kb_ingest")
     KB_LLM_MODEL: Optional[str] = Field(default=None, description="LLM model used by kb_ingest")
@@ -1541,10 +1599,10 @@ settings = Settings()
 #: 两处得出的"今天"相差 8 小时。表现：
 #:
 #: - 会话标题（``chat_service``）：北京时间 07:00 创建会话显示成"前一天 23:00"；
-#: - 法规效力判定（``legal_effectiveness``）：``date.today()`` 少一天，
+#: - 数据集有效性判定（``legal_effectiveness``）：``date.today()`` 少一天，
 #:   导致"失效当天仍有效"的边界判定错位，"检索截至"标注日期也错。
 #:
-#: 为什么不做成 ``Settings`` 字段：这是**产品常量**（本服务面向中文法律场景），
+#: 为什么不做成 ``Settings`` 字段：这是**产品常量**（本服务面向中文测试数据场景），
 #: 不是部署旋钮。放进 env 只会多出一个能被配错、且错了只表现为"日期诡异"的开关。
 #:
 #: 用法::

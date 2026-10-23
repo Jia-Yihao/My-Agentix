@@ -1,7 +1,7 @@
 <template>
   <AppShell @toggle-sidebar="toggleSidebar">
     <template #nav-left>
-      <span class="workspace-title">法律知识工作台</span>
+      <span class="workspace-title">测试数据工作台</span>
     </template>
     <div class="main-container">
       <ChatSidebar

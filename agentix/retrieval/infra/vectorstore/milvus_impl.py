@@ -4,7 +4,7 @@ Milvus 向量库实现
 使用 pymilvus 官方客户端，支持分布式向量库操作。
 
 R3.4 统一口径：
-- 集合命名：`retrieval_kb`（知识库数据）；法条向量集合 `legal` 由 kb_ingest 侧
+- 集合命名：`retrieval_kb`（知识库数据）；数据条目向量集合 `legal` 由 kb_ingest 侧
   使用（MILVUS_COLLECTION 配置），两集合共存互不污染。
 - 租户隔离：schema 携带 tenant_id 字段（partition_key），检索强制租户过滤，
   禁止跨租户复用同一分区。

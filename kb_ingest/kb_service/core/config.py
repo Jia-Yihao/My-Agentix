@@ -115,6 +115,29 @@ class Config:
     )
     api_key: str = field(default_factory=lambda: os.getenv("KB_API_KEY", ""))
 
+    # MySQL 连接串闸门（§24.2 G12 / §24.3 T1 ⑫）。
+    #
+    # 默认 false = 既有部署行为逐位不变。开启后 `MySQLIngestRequest.connection_url`
+    # 必须是 mysql[+driver] scheme，且（配置了白名单时）主机在 `KB_MYSQL_ALLOWED_HOSTS` 内。
+    # 理由：本服务的输入是「一整条带凭据的连接串」，它让持 key 者把服务端当网络代理使
+    # ——`sqlite:////path` 能读任意本地文件，`mysql://attacker` 能把服务端拉去外连。
+    mysql_url_guard: bool = field(
+        default_factory=lambda: os.getenv("KB_MYSQL_URL_GUARD", "false").lower() in ("1", "true", "yes")
+    )
+    # 逗号分隔；条目可为 `host`、`host:port`、`.sub.dom`（含子域、不含 apex）。
+    # 留空 + guard on = 只校验 scheme（过渡态，启动日志会点名这个状态）。
+    mysql_allowed_hosts: str = field(default_factory=lambda: os.getenv("KB_MYSQL_ALLOWED_HOSTS", ""))
+
+    # WHERE 参数化闸门（§24.2 G12「仍未收口」的那半 / §24.3 T1 ⑫）。
+    #
+    # 默认 false = 既有部署行为逐位不变（原始 `where` 片段照旧拼接、`filters` 被拒）。
+    # 开启后两者互换：`where` 一律 400，过滤只能走 `filters`（列名过标识符白名单、
+    # 运算符取封闭枚举、值全部 bindparams）。见 core/sql_filters.py。
+    mysql_where_parametrized: bool = field(
+        default_factory=lambda: os.getenv("KB_MYSQL_WHERE_PARAMETRIZED", "false").lower()
+        in ("1", "true", "yes")
+    )
+
     def __post_init__(self) -> None:
         if self.embedding_provider.lower() == "openai" and not self.embedding_api_key:
             self.embedding_api_key = self.llm_api_key

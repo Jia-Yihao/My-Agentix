@@ -1,6 +1,6 @@
-"""法条效力过滤纯函数核心（R2-2，指南 v2.0 §2.2.7①）。
+"""数据条目有效性过滤纯函数核心（R2-2，指南 v2.0 §2.2.7①）。
 
-四字段效力契约（写入 chunk/document metadata）::
+四字段有效性契约（写入 chunk/document metadata）::
 
     effective_status : str  "in_force" | "expired" | "repealed"（缺失 → 按日期推导）
     effective_date   : str  生效日期（ISO 日期；别名 legal_effective_from/生效日期）
@@ -8,10 +8,10 @@
     replaced_by      : str  被何法替代（仅展示用途，不参与过滤判定）
 
 设计约束：
-- **存量数据默认有效**：现有 1953 条法条 metadata 无效力字段 → 一律按 in_force 处理，
+- **存量数据默认有效**：现有 1953 条数据条目 metadata 无有效性字段 → 一律按 in_force 处理，
   无需重建索引。
 - **宁可漏报不误报**（与注入检测同原则）：metadata 日期解析失败 → 视为有效，
-  绝不因脏数据误杀法条。
+  绝不因脏数据误杀数据条目。
 - **后过滤而非谓词下推**：milvus/qdrant 后端 filter 仅支持 dict 等值匹配，
   无法表达"缺失字段视为有效"；故统一在检索结果上做纯函数后过滤，
   faiss/milvus/qdrant 三后端行为一致。
@@ -73,7 +73,7 @@ def _as_date(now: date | datetime | None) -> date:
         # 北京时间 00:00–08:00 之间"今天"会算成昨天，使下面判定顺序 2 的
         # 两处边界（effective_date 未到 → pending、expire_date 已过 → expired）
         # 整体错位一天，且 ``format_retrieved_asof`` 输出的"检索截至"日期也错。
-        # 法规效力判定属法律语义，不能容忍这种偏差。见模块顶部 _LEGAL_TZ 说明。
+        # 数据集有效性判定属测试数据语义，不能容忍这种偏差。见模块顶部 _LEGAL_TZ 说明。
         return datetime.now(_LEGAL_TZ).date()
     if isinstance(now, datetime):
         return now.date()
@@ -81,7 +81,7 @@ def _as_date(now: date | datetime | None) -> date:
 
 
 def effective_status_of(meta: Mapping[str, Any] | None, *, now: date | datetime | None = None) -> str:
-    """判定单条 metadata 的效力状态（纯函数）。
+    """判定单条 metadata 的有效性状态（纯函数）。
 
     判定顺序：
     1. 显式 ``effective_status``：in_force 别名 → in_force；expired/repealed 别名 → 对应状态；
@@ -145,7 +145,7 @@ def format_retrieved_asof(now: date | datetime | None = None) -> str:
 
 def append_retrieved_asof(answer_text: str, *, now: date | datetime | None = None) -> str:
     """在答案尾部追加检索截至标注（引用核验标注之前保留原答案主体）。"""
-    return f"{answer_text}\n\n---\n> 📅 {format_retrieved_asof(now)}，法律法规如有更新请以最新发布文本为准。"
+    return f"{answer_text}\n\n---\n> 📅 {format_retrieved_asof(now)}，测试数据集如有更新请以最新发布文本为准。"
 
 
 def attach_effective_status(hit: dict, meta: Mapping[str, Any] | None) -> dict:
@@ -159,7 +159,7 @@ def attach_effective_status(hit: dict, meta: Mapping[str, Any] | None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# R2-2 收口：KG/Cypher 记录级效力后过滤（Neo4j 路径）
+# R2-2 收口：KG/Cypher 记录级有效性后过滤（Neo4j 路径）
 # ---------------------------------------------------------------------------
 
 def filter_records_in_force(
@@ -173,11 +173,11 @@ def filter_records_in_force(
     与 :func:`filter_in_force` 同语义，但作用于**任意 dict 记录**
     （Cypher 查询返回结构不定，无法假定 (doc, score) 形态）：
 
-    - 记录**无任何效力字段** → 原样保留且不注入任何字段
-      （统计/聚合类查询结果字节级零变化——存量图数据无效力字段，
+    - 记录**无任何有效性字段** → 原样保留且不注入任何字段
+      （统计/聚合类查询结果字节级零变化——存量图数据无有效性字段，
       本函数对它们是 no-op）；
-    - 记录携带效力字段且已失效/未生效 → 剔除；
-    - 记录携带效力字段且现行有效 → 保留并回写 ``effective_status``（展示用）；
+    - 记录携带有效性字段且已失效/未生效 → 剔除；
+    - 记录携带有效性字段且现行有效 → 保留并回写 ``effective_status``（展示用）；
     - 非 dict 记录原样保留；单条判定异常不阻断整批（fail-open）。
 
     ``enabled=False`` 原样返回（开关复用 EFFECTIVENESS_FILTER_ENABLED）。
