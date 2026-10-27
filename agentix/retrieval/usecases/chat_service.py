@@ -31,6 +31,11 @@ from agentix.retrieval.infra.repos.document_repo import get_chunk_by_id, get_doc
 from agentix.retrieval.infra.repos.index_repo import get_active_index_artifact
 from agentix.retrieval.settings import settings
 from agentix.observability.spans import span
+from agentix.observability.metrics import (
+    record_retry_attempt,
+    record_retry_exhausted,
+    record_retry_sleep,
+)
 from agentix.retrieval.infra.repos.conversation_repo import (
     get_conversation_by_id,
     create_conversation,
@@ -383,6 +388,7 @@ def retrieve_docs_with_retry(
     ntotal = int(getattr(getattr(vectorstore, "index", None), "ntotal", 0) or 0)
     escalations = settings.RETRIEVAL_FETCH_K_MAX_ESCALATIONS if settings.RETRIEVAL_FETCH_K_ESCALATE else 0
     last_error = None
+    gave_up_non_retryable = False
     for attempt in range(max_retries + 1):
         try:
             docs = _similarity_search_with_fetch(
@@ -420,13 +426,22 @@ def retrieve_docs_with_retry(
                             "similarity search not retryable (%s): giving up",
                             type(e).__name__,
                         )
+                        gave_up_non_retryable = True
                         break
                     if not ensure_retry_budget().try_consume(layer="retrieval"):
                         logger.warning(
                             "retry budget exhausted (retrieval): giving up"
                         )
                         break
-                time.sleep(0.5 * (attempt + 1))
+                # LG-3-3：只有真的退避了才落账（预算拒批的路径上一行就 break 了）。
+                sleep_s = 0.5 * (attempt + 1)
+                record_retry_attempt("retrieval")
+                record_retry_sleep("retrieval", sleep_s)
+                time.sleep(sleep_s)
+    if max_retries > 0 and not gave_up_non_retryable:
+        # 重试链以失败收场：尝试用尽或被预算拒批。首次即不可重试的错误不算
+        # 「重试耗尽」——它从没进入重试。
+        record_retry_exhausted("retrieval")
     raise last_error
 
 

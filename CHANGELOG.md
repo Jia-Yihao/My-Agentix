@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-3-3 四个业务指标（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P3 第 3 条：三层的重试与四个恢复入口此前只有日志，没有可聚合的读数——「哪一层在重试、退避睡了多久、重试链什么时候被判耗尽、图是怎么被续起来的」都只能翻日志。
+
+- **[四个指标] `retry_attempts_total{layer}` / `retry_sleep_seconds_total{layer}` / `retry_exhausted_total{layer}` / `graph_resume_total{kind}`**：定义在 `agentix/observability/metrics.py`（含 `_NoopMetric` 降级桩）；便捷函数 `record_retry_attempt` / `record_retry_sleep` / `record_retry_exhausted` / `record_graph_resume`。
+- **[label 封闭] `layer` / `kind` 都是枚举**：`RETRY_LAYER_VALUES = {tool, task, retrieval}`（与 `RetryBudget.try_consume(layer=...)` 同源）、`GRAPH_RESUME_KIND_VALUES = {startup, ops, retry_task, hitl_in_loop}`（四个生产入口各占一个值）。枚举外的值一律落 `"other"`，**不引入 thread_id / user_id 等高基数 label**。
+- **[三层接线]** 检索 `retrieve_docs_with_retry`（同步循环）、task `run_task`、工具 `ToolExecutor`：只在**真的重试/真的退避**时落账（预算拒批/期限截断的路径不记 attempts 与 sleep）；`retry_exhausted` 只数「不会再有下一次尝试」的失败——首次即判不可重试的错误从未进入重试，不算耗尽。
+- **[四个续跑入口]** `CheckpointRecovery.resume_thread(kind=)` 新增关键字：启动恢复 `startup`、`/ops/threads/resume` `ops`、`/ops/threads/retry-task` `retry_task`；进环 HITL 的 `lg_builder.resume_in_loop` 记 `hitl_in_loop`。计数点是**向图发起续跑**（含随后抛错的），无 checkpoint 直接返回的路径不计数——指标不在成功路径上自夸。
+- **[新增守卫] `tests/test_p161_retry_resume_metrics.py`（22 条）**：指标名/label 名逐项、不越 p100 白名单与禁用集、越界值落 `other` 且不新开时间序列、生产调用点字面量与两个枚举**双向相等**（AST）、三层各自真实重试的增量（attempts/sleep/exhausted）、不可重试与预算拒批两种边界、四个续跑入口各自的增量、无 checkpoint 不计数。
+- **[白名单]** `test_p100_genai_observability.py::ALLOWED_METRIC_LABELS` 登记 `layer` / `kind` 并注明有界理由。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十六段读数；`docs/项目实现手册.md` 补四个业务指标一段（并入 §15.6 指标族清单）。
+
 ### LangGraph 原生对齐 · LG-3-2 主图节点的原生超时（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P3 第 2 条：原方案的「`asyncio.wait_for` 壳」换成框架原生`add_node(timeout=TimeoutPolicy(...))`——超时由图执行器按**每次节点尝试**计时，超时点抛`NodeTimeoutError`，不再由调用方在节点外面再包一层。

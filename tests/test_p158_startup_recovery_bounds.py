@@ -61,7 +61,9 @@ class _FakeRecovery:
         self.graphs.append(graph)
         return list(self.thread_ids)
 
-    async def resume_thread(self, thread_id: str, graph):
+    async def resume_thread(self, thread_id: str, graph, *, kind: str = "ops"):
+        # LG-3-3：生产调用点按入口传 kind（启动恢复 = "startup"）；并发边界用例
+        # 不关心入口分型，接住该关键字即可。
         self.started.append(thread_id)
         self.graphs.append(graph)
         self.active += 1

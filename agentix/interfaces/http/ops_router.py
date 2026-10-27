@@ -196,7 +196,7 @@ async def resume_thread(request: ResumeRequest) -> Dict[str, Any]:
         )
 
     try:
-        result = await recovery.resume_thread(request.thread_id, graph)
+        result = await recovery.resume_thread(request.thread_id, graph, kind="ops")
     except ThreadInterruptedError as exc:
         # LG-2-2：等人工裁决的线程不是崩溃受害者。硬续只会「200 但图又挂回去」，
         # 409（与当前资源状态冲突、重试无意义）是这里唯一正确的状态码。

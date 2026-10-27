@@ -221,6 +221,7 @@ def test_llm_factory_ainvoke_wires_genai_span():
 #   身份/枚举类：method status scope stage reason action decision state mode
 #              role type from_state to_state engine provider step_type
 #              target_type agent_type error_code component cache_type
+#              见下方 kind / layer（LG-3-3：恢复入口与重试层，均封闭枚举）
 #   配置态有界串：model primary_model fallback_model builder name tool_name
 #   资源/归一化：endpoint（main._ENDPOINT_SEGMENT_RE 归一化 + 段数封顶，p92 钉死）
 #               kb_id（租户 KB，业务主键非用户输入自由串）
@@ -238,6 +239,8 @@ ALLOWED_METRIC_LABELS = frozenset(
         "fallback_model",
         "from_state",
         "kb_id",
+        "kind",     # LG-3-3 graph_resume_total{kind}：四个恢复入口的封闭枚举
+        "layer",    # LG-3-3 retry_*_total{layer}：tool|task|retrieval 封闭枚举
         "method",
         "mode",
         "model",

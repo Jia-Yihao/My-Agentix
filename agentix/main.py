@@ -540,7 +540,7 @@ async def _recover_one_thread(
     async with semaphore:
         try:
             result = await asyncio.wait_for(
-                recovery.resume_thread(thread_id, lg_builder.graph),
+                recovery.resume_thread(thread_id, lg_builder.graph, kind="startup"),
                 timeout=settings.AGENT_TIMEOUT,
             )
         except ThreadInterruptedError as exc:

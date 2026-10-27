@@ -41,6 +41,11 @@ from agentix.domain.policies.retry import (
     remaining_seconds,
 )
 from agentix.domain.runtime.lifecycle import ExitReason, ExitStatus
+from agentix.observability.metrics import (
+    record_retry_attempt,
+    record_retry_exhausted,
+    record_retry_sleep,
+)
 
 __all__ = [
     "TaskOutcome",
@@ -298,6 +303,9 @@ async def run_task(
                         spec.name,
                     )
                     break
+            # LG-3-3：退避停等被预算截断时上面已 break，走到这里的重试才会发生。
+            record_retry_attempt("task")
+            record_retry_sleep("task", pause)
             await asyncio.sleep(pause)
         else:
             return TaskOutcome(
@@ -322,13 +330,18 @@ async def run_task(
         advice = get_tool_guardrails().advice_for(guardrail_tool)
         if advice:
             error_text = f"{error_text}；恢复建议：{advice}"
+    last_retryable = bool(retry_predicate(last_error))
+    if last_retryable and int(max_attempts) > 1:
+        # LG-3-3：可重试错误最终仍失败 = 重试链（含预算/期限截断）耗尽。
+        # 不可重试的失败从未进入重试，不落这一账。
+        record_retry_exhausted("task")
     return TaskOutcome(
         name=spec.name,
         ok=False,
         error=error_text,
         error_type=type(last_error).__name__,
         attempts=attempts,
-        retryable=bool(retry_predicate(last_error)),
+        retryable=last_retryable,
         duration_ms=(time.perf_counter() - started) * 1000.0,
         truncated=truncated_by_budget,
     )
