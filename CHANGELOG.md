@@ -12,6 +12,17 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-2-7 启动期崩溃恢复的并发与总预算（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P2 第 7 条：启动期的崩溃恢复此前是**串行 for 循环**——N 个待恢复线程逐个 `ainvoke`，单个卡死就把启动拖到天荒地老，恢复总耗时随 N 线性增长。
+
+- **[并发上限] `RECOVERY_MAX_CONCURRENCY = 2`**：恢复用 `asyncio.Semaphore(2)` 限流，线程多时分批推进，不把所有线程同时压进图执行（每个恢复是一个完整图跑，同时起 N 个等于把启动期 CPU/Redis 连接打满）。
+- **[总预算] `RECOVERY_TOTAL_BUDGET_S = 30.0`**：整段「扫待恢复清单 + 逐个恢复」包在 `asyncio.wait_for` 里；超预算即告警收口，剩余线程留给下次启动或 `POST /ops/threads/resume`——**启动不因恢复慢而失败**。
+- **[单线程预算] `settings.AGENT_TIMEOUT`**：每个线程的 `resume_thread` 单独 `wait_for`，一个卡死只丢它自己（`logger.warning` 留痕），不拖住同批其他线程；`ThreadInterruptedError` 仍按 LG-2-2 口径跳过（等人工裁决的线程不硬续）。
+- **[保留原有口径]** 待恢复清单仍由 `get_active_threads(lg_builder.graph, min_idle_seconds=60)` 派生（LG-2-1），图仍**动态读** `lg_builder.graph` 属性（P0-1：值绑定会在 Redis 图覆盖前固化旧图）；恢复失败/扫描异常仍只告警不阻断启动。
+- **[新增守卫] `tests/test_p158_startup_recovery_bounds.py`（11 条）**：3 线程 2 并发分批（峰值并发恰为 2、总耗时显著小于串行）、耗时随批次而非线程数增长、单线程卡死不拖累其他、总预算封顶整段恢复且未完成线程留给下次、被中断线程与「无产出」不计入 recovered、扫描异常不破启动、恢复读到的是模块属性而非导入期快照、常量数值与文档一致、`_startup` 确实调用恢复入口（AST）、三个 helper 必须是模块级（AST，供 p47/p153 的静态守卫口径复用）。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十三段读数；`docs/项目实现手册.md` 补启动恢复限界一段。
+
 ### LangGraph 原生对齐 · LG-2-6 `durability` 参数化（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P2 第 6 条：checkpoint 何时落盘此前由框架默认档决定（`async`：每步后台写、下一步不等），运维无法要求「每步强制等落盘」。

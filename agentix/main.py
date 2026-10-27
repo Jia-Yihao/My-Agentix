@@ -10,6 +10,7 @@ import time
 import uvicorn
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, List, Optional
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -517,6 +518,99 @@ async def _embedding_prewarm_worker() -> None:
         logger.warning("embedding cache prewarm task failed: {}", exc)
 
 
+#: 启动恢复的总墙钟预算（秒）。恢复是「尽力而为」：没恢复完的线程仍是未完成状态，
+#: 下一次启动或 /ops/threads/resume 还能接手；但它不能无限拖住服务可用性。
+RECOVERY_TOTAL_BUDGET_S = 30.0
+#: 同时恢复的线程数上限：串行 = 启动耗时随待恢复线程数线性增长（LG-2-7 的起点）；
+#: 无上限 = 启动瞬间打满 LLM / Redis 上游。2 = 两条流水 + 不打爆上游。
+RECOVERY_MAX_CONCURRENCY = 2
+
+
+async def _recover_one_thread(
+    recovery: Any, thread_id: str, semaphore: asyncio.Semaphore
+) -> Optional[str]:
+    """恢复单个线程；成功返回 thread_id，跳过 / 超时 / 失败返回 None。
+
+    单个线程的墙钟上限取 ``AGENT_TIMEOUT``（与该线程在请求路径上的执行上限同源，
+    不另立一个超时口径）：卡死的线程只吃掉自己的槽位与这段时间，其余线程照跑。
+    """
+    from agentix.application.services.breakpoint_resume import ThreadInterruptedError
+    from agentix.orchestration.langgraph import lg_builder
+
+    async with semaphore:
+        try:
+            result = await asyncio.wait_for(
+                recovery.resume_thread(thread_id, lg_builder.graph),
+                timeout=settings.AGENT_TIMEOUT,
+            )
+        except ThreadInterruptedError as exc:
+            # LG-2-2：等人工裁决的线程不硬续（会 200 但又挂回去）；留在
+            # active 清单里由 ops 面处理，启动流程继续走下一个。
+            logger.info(
+                "Skipped interrupted thread {} ({} pending): use /ops/hitl/in-loop",
+                thread_id,
+                exc.pending,
+            )
+            return None
+        except asyncio.TimeoutError:
+            # 取消掉的那次续跑不写终态：checkpoint 仍停在未完成步，下一次启动
+            # 会再次列到它（恢复可重试，副作用由任务层幂等兜底）。
+            logger.warning(
+                "Recovery of thread {} exceeded AGENT_TIMEOUT ({}s); left unfinished",
+                thread_id,
+                settings.AGENT_TIMEOUT,
+            )
+            return None
+    return thread_id if result else None
+
+
+async def _recover_threads(recovery: Any, thread_ids: List[str]) -> List[str]:
+    """按 ``RECOVERY_MAX_CONCURRENCY`` 并发恢复，返回成功恢复的线程 id。"""
+    semaphore = asyncio.Semaphore(RECOVERY_MAX_CONCURRENCY)
+    results = await asyncio.gather(
+        *(_recover_one_thread(recovery, thread_id, semaphore) for thread_id in thread_ids)
+    )
+    return [thread_id for thread_id in results if thread_id]
+
+
+async def _startup_crash_recovery() -> None:
+    """启动期崩溃恢复：扫描 + 有界并发恢复，整体受 ``RECOVERY_TOTAL_BUDGET_S`` 约束。
+
+    预算耗尽时 ``wait_for`` 取消仍在跑的续跑协程：它们停在未完成步、不写终态，
+    下一次启动或 ops 面还能接手。恢复失败一律只留痕，不阻断启动（纪律 2）。
+    """
+    from agentix.application.services.breakpoint_resume import get_checkpoint_recovery
+    from agentix.orchestration.langgraph import lg_builder
+
+    recovery = get_checkpoint_recovery()
+
+    async def _run() -> None:
+        # LG-2-1：线程清单来自 checkpointer.alist() 枚举（不再读 Redis 集合），
+        # 「未完成」由图状态快照判定；60 秒空闲闸的口径也从 Redis 元数据
+        # （updated_at，无生产写入点）换成 checkpoint 自带的 created_at。
+        active_threads = await recovery.get_active_threads(
+            lg_builder.graph, min_idle_seconds=60
+        )
+        if not active_threads:
+            return
+        logger.info("Found {} active threads, attempting recovery...", len(active_threads))
+        # P0-1 约定（方案 10.4.1）：不得 `from ...lg_builder import graph`——值绑定
+        # 会在启动期 Redis 图覆盖前固化旧图。这里动态读取 lg_builder.graph 属性。
+        recovered = await _recover_threads(recovery, active_threads)
+        logger.info("Recovered {} threads: {}", len(recovered), recovered)
+
+    try:
+        await asyncio.wait_for(_run(), timeout=RECOVERY_TOTAL_BUDGET_S)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Crash recovery exceeded total budget ({}s); unfinished threads stay "
+            "for next start / /ops/threads/resume",
+            RECOVERY_TOTAL_BUDGET_S,
+        )
+    except Exception as exc:
+        logger.warning("Crash recovery check failed: {}", exc)
+
+
 async def _startup() -> None:
     """应用启动逻辑（企业化 P2-1.1：由 lifespan 协议驱动，替代 on_event("startup")）。"""
     logger.info("Starting {} v{}", settings.APP_NAME, settings.APP_VERSION)
@@ -833,41 +927,7 @@ async def _startup() -> None:
         logger.debug("tool registry audit skipped: {}", exc)
 
     # Crash recovery: resume any interrupted threads
-    try:
-        from agentix.application.services.breakpoint_resume import (
-            ThreadInterruptedError,
-            get_checkpoint_recovery,
-        )
-        recovery = get_checkpoint_recovery()
-        # LG-2-1：线程清单来自 checkpointer.alist() 枚举（不再读 Redis 集合），
-        # 「未完成」由图状态快照判定；60 秒空闲闸的口径也从 Redis 元数据
-        # （updated_at，无生产写入点）换成 checkpoint 自带的 created_at。
-        active_threads = await recovery.get_active_threads(
-            lg_builder.graph, min_idle_seconds=60
-        )
-        if active_threads:
-            logger.info("Found {} active threads, attempting recovery...", len(active_threads))
-            # P0-1 约定（方案 10.4.1）：不得 `from ...lg_builder import graph`——值绑定
-            # 会在启动期 Redis 图覆盖前固化旧图（导致扫 active_threads 后恢复用错图）。
-            # 这里动态读取 lg_builder.graph 属性，始终拿到当前编译图。
-            recovered = []
-            for thread_id in active_threads:
-                try:
-                    result = await recovery.resume_thread(thread_id, lg_builder.graph)
-                except ThreadInterruptedError as exc:
-                    # LG-2-2：等人工裁决的线程不硬续（会 200 但又挂回去）；留在
-                    # active 清单里由 ops 面处理，启动流程继续走下一个。
-                    logger.info(
-                        "Skipped interrupted thread {} ({} pending): use /ops/hitl/in-loop",
-                        thread_id,
-                        exc.pending,
-                    )
-                    continue
-                if result:
-                    recovered.append(thread_id)
-            logger.info("Recovered {} threads: {}", len(recovered), recovered)
-    except Exception as exc:
-        logger.warning("Crash recovery check failed: {}", exc)
+    await _startup_crash_recovery()
 
 
 async def _shutdown() -> None:
