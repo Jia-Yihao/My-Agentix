@@ -24,6 +24,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -203,6 +205,42 @@ def _normalize_steps(
     return decls
 
 
+def _assign_step_keys(decls: Sequence[TaskStepDecl]) -> Dict[str, str]:
+    """步骤身份 → ``decl.id`` 的映射（LG-3-4 恢复期幂等）。
+
+    身份**不取**模型自拟的 ``id``：恢复会重新拆解，id 与顺序都不保证复现，
+    按 id 记完成清单等于让清单在恢复后全部失配。改取 (tool, 规范化 args) 的
+    指纹；同一计划里完全相同的步骤按出现序号区分，不把两次合法调用并成一次。
+    """
+    seen: Dict[str, int] = {}
+    keys: Dict[str, str] = {}
+    for decl in decls:
+        payload = json.dumps(
+            {"tool": decl.tool, "args": decl.args},
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        )
+        fingerprint = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+        occurrence = seen.get(fingerprint, 0)
+        seen[fingerprint] = occurrence + 1
+        keys[decl.id] = f"{fingerprint}:{occurrence}"
+    return keys
+
+
+def _open_step_ledger(session_id: str, step_scope: str) -> Optional[Any]:
+    """LG-3-4：开关 + 键齐备才开清单；store 构造不连库（惰性 engine）。"""
+    if not bool(getattr(settings, "RECOVERY_STEP_LEDGER_ENABLED", False)):
+        return None
+    if not session_id or not step_scope:
+        return None
+    from agentix.infrastructure.persistence.step_ledger_store import (
+        get_step_ledger_store,
+    )
+
+    return get_step_ledger_store()
+
+
 def _content_text(value: Any, *, tool: str) -> str:
     """工具返回值 → 观测正文（保证 ≥ MIN_ANSWER_CHARS，防空答案误判 INCOMPLETE）。"""
     if isinstance(value, str):
@@ -308,6 +346,7 @@ async def run_task_execution(
     task_steps: Optional[Sequence[Any]] = None,
     route: str = "task-query",
     review_interrupt: Optional[Any] = None,
+    step_scope: str = "",
 ) -> LoopResult:
     """执行一次任务：拆解 → 波次 → ToolExecutor 治理执行 → LayeredVerifier。
 
@@ -318,6 +357,9 @@ async def run_task_execution(
     :param review_interrupt: F1e·A-P1-4 进环中断回调（lg_builder 注入壳经
         ``execute_task`` 透传；``None`` = 现行为 review_required 快速失败）。
         挂起/恢复语义见下方 ``_unit`` 与波循环注释。
+    :param step_scope: LG-3-4 节点执行作用域（``execute_task`` 取 LangGraph
+        ``checkpoint_ns``）。与 ``RECOVERY_STEP_LEDGER_ENABLED`` 同时具备时，
+        已完成步骤落 ``run_step_ledger`` 并在同作用域重入时跳过；缺一 = 不开清单。
     """
     if not settings.TASK_EXEC_ENABLED:
         task = build_task_spec(message, session_id=session_id)
@@ -358,6 +400,23 @@ async def run_task_execution(
             terminal="failed",
             steps_used=0,
         )
+
+    # ---- 1.5 恢复期幂等：读本作用域已完成步骤（LG-3-4）-------------------
+    ledger = _open_step_ledger(session_id, step_scope)
+    step_keys: Dict[str, str] = {}
+    done_steps: Dict[str, Dict[str, Any]] = {}
+    if ledger is not None:
+        step_keys = _assign_step_keys(decls)
+        try:
+            done_steps = await asyncio.to_thread(
+                ledger.load_scope, session_id, step_scope
+            )
+        except Exception as exc:  # noqa: BLE001 - 辅助子系统故障只降级（纪律 2）
+            logger.warning(
+                "step ledger load failed; running without replay protection: {}", exc
+            )
+            ledger = None
+            done_steps = {}
 
     # ---- 2. 计划（拓扑波次 + 领域 Plan）----------------------------------
     wave_specs = [
@@ -458,12 +517,37 @@ async def run_task_execution(
         if remaining <= 0:
             return _budget_result()
         run_specs = wave if len(wave) <= remaining else wave[:remaining]
+        # LG-3-4：本作用域里已完成的步骤直接复用落账结果，不再执行（副作用只发生一次）。
+        skipped: Dict[str, TaskOutcome] = {}
+        pending_specs: List[WaveTask] = []
+        for spec in run_specs:
+            record = done_steps.get(step_keys.get(spec.name, ""))
+            if record is None:
+                pending_specs.append(spec)
+                continue
+            skipped[spec.name] = TaskOutcome(
+                name=spec.name,
+                ok=True,
+                value=record.get("value"),
+                attempts=int(record.get("attempts") or 1),
+            )
+        if skipped:
+            logger.info(
+                "step ledger: skipped {} completed step(s) in wave {}",
+                len(skipped),
+                executed_waves,
+            )
         batch: BatchOutcome = await run_batch(
-            run_specs,
+            pending_specs,
             _unit,
             max_concurrency=int(settings.AGENT_MAX_CONCURRENCY or 0) or None,
             max_attempts=DEFAULT_MAX_ATTEMPTS,
         )
+        executed = {outcome.name: outcome for outcome in batch.outcomes}
+        merged: List[TaskOutcome] = [
+            executed[spec.name] if spec.name in executed else skipped[spec.name]
+            for spec in run_specs
+        ]
         # F1e·A-P1-4①：进环挂起/恢复。必须在 run_batch 之外、本节点
         # （run_task_execution）之内调 interrupt——GraphInterrupt 向上传到
         # 图运行时挂起并写 checkpointer（thread_id），run_task 会吞掉它。
@@ -472,7 +556,9 @@ async def run_task_execution(
         # 未知值/批准失败/重试仍失败 ⇒ fail-closed 快速失败：终止后续波次、
         # 本波照常落账（被拦步留失败观测）后直接回 failed 终态（保持本函数
         # 「只返回 LoopResult 不抛」的契约）。已知边界（LangGraph 节点重入）：
-        # 挂起点之前的步骤在恢复后会重执行，非幂等写步骤须调用方幂等化。
+        # 挂起点之前的步骤在恢复后会重执行——`RECOVERY_STEP_LEDGER_ENABLED`
+        # 开时由本函数上方的作用域清单跳过（LG-3-4）；关时非幂等写步骤仍须
+        # 调用方自行幂等化。
         abort_reason: Optional[str] = None
         if pending is not None:
             payload = pending
@@ -492,9 +578,9 @@ async def run_task_execution(
                         str(payload["tool"]), dict(payload["args"])
                     )
                     if retried.success:
-                        for idx, outcome in enumerate(batch.outcomes):
+                        for idx, outcome in enumerate(merged):
                             if outcome.name == blocked_spec.name:
-                                batch.outcomes[idx] = TaskOutcome(
+                                merged[idx] = TaskOutcome(
                                     name=blocked_spec.name,
                                     ok=True,
                                     value=retried.data,
@@ -526,7 +612,29 @@ async def run_task_execution(
                     f"in_loop_review_failed: {payload['tool']}: "
                     f"bad resume decision {decision!r}"
                 )
-        for spec, outcome in zip(run_specs, batch.outcomes):
+        if ledger is not None and pending_specs:
+            outcomes_by_name = {outcome.name: outcome for outcome in merged}
+            entries = [
+                {
+                    "step_key": step_keys[spec.name],
+                    "tool": str(spec.payload.get("tool") or ""),
+                    "value": outcomes_by_name[spec.name].value,
+                    "attempts": outcomes_by_name[spec.name].attempts,
+                }
+                for spec in pending_specs
+                if outcomes_by_name[spec.name].ok
+            ]
+            if entries:
+                try:
+                    await asyncio.to_thread(
+                        ledger.mark_many, session_id, step_scope, entries
+                    )
+                except Exception as exc:  # noqa: BLE001 - 辅助子系统故障只降级（纪律 2）
+                    logger.warning(
+                        "step ledger mark failed; a later resume may replay these steps: {}",
+                        exc,
+                    )
+        for spec, outcome in zip(run_specs, merged):
             steps_used += 1
             observations.append(_to_observation(spec, outcome, wave=executed_waves))
         if abort_reason is not None:

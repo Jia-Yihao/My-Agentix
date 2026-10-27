@@ -12,6 +12,20 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-3-4 恢复期幂等（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P3 第 4 条：`execute_task` 是节点重入语义——in-loop HITL 挂起后恢复会**重跑挂起点之前已经成功过的步骤**，非幂等写工具的副作用因此发生两次。checkpoint 记得「图走到哪」，不记得「哪一步的业务副作用已经发生过」；这一轮把后者落成显式清单。
+
+- **[新增开关] `RECOVERY_STEP_LEDGER_ENABLED`**（默认 `false`）：开 = `execute_task` 收到的 `step_scope` 与 `thread_id` 齐备时，已完成步骤落 `run_step_ledger`，同一作用域恢复时跳过并复用落账返回值重建观测；默认关 = 连表都不建、零读写，与基线逐位等价（纪律 1）。
+- **[新增表] `run_step_ledger`**（`agentix/infrastructure/persistence/db/models/run_step_ledger.py`）：主键 `(thread_id, scope, step_key)`，另有 `tool` / `value_json` / `attempts` / `created_at`。建表走 `create(checkfirst=True)`（本仓无 alembic，与 `hitl_pending` 同款）；模型**不**进 `db/models/__init__` 聚合，避免 flag-off 时 `create_all` 顺带建表。回滚：`DROP TABLE run_step_ledger`。
+- **[身份不取模型 id] `step_key = sha256({"tool", 规范化 args})[:24] + ":" + 同指纹序号`**：恢复会重新拆解，id 与顺序都不保证复现，按 id 记清单等于恢复后全部失配；同一计划里完全相同的步骤按出现序号区分，不把两次合法调用并成一次。
+- **[作用域取 `checkpoint_ns`]**：同一次挂起的续跑拿到同一个 ns、新一轮对话换新 ns（langgraph 1.2.18 实测，`tests/test_p162` 用 MemorySaver 钉住这条事实）。用它区分「同一轮的重入」与「下一轮」，避免把上一轮的成绩当新任务的清单。
+- **[接线] `task_execution.run_task_execution(step_scope=)`**：拆解后读本作用域清单、波内已完成的步骤直接复用（`logger.info` 记跳过数）、执行后把**成功**步骤 upsert 进清单；失败步骤不落账（下次仍重试）。HITL 批准重试成功的那一路，落账取替换后的 outcome。
+- **[失败姿态]** store 只显式抛错、不吞；降级只在调用方一处：读失败按「本次无恢复保护」继续跑，写失败只告警（后续恢复可能重放这几步），均 `logger.warning` 留痕（纪律 2）。
+- **[新增守卫] `tests/test_p162_recovery_step_ledger.py`（26 条）**：store roundtrip / `merge` 幂等 / 坏载荷按未命中 / 空入参 no-op / 建表幂等 / `attempts` 下限 / scope 隔离；步骤身份跨构建稳定、不认 id、重复步骤按序号区分、args 键序无关；flag-off 零接触 store 且两次真实执行；**计数桩证明恢复后副作用只发生一次**（全完成 / 部分完成 / 换 scope / 换会话 / 换 id / 重复步骤 / 缺作用域）；读写故障降级并留 warning；`execute_task` 透传 `checkpoint_ns`；langgraph 续跑 ns 语义。
+- **[配置五处同步]** `settings.py` / `selfcheck.py::DEFAULT_IGNORED_MISSING` / `.env.example` / `docs/architecture/配置管理.md` §5 / `test_p41_doc_consistency.py` 手写清单。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十七段读数；`docs/项目实现手册.md` 补恢复期幂等一段。
+
 ### LangGraph 原生对齐 · LG-3-3 四个业务指标（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P3 第 3 条：三层的重试与四个恢复入口此前只有日志，没有可聚合的读数——「哪一层在重试、退避睡了多久、重试链什么时候被判耗尽、图是怎么被续起来的」都只能翻日志。

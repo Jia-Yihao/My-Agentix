@@ -344,6 +344,8 @@ class TestDocumentedConfigKeys:
             "NODE_RETRY_ENABLED",
             # LG-3-2：主图节点原生超时（0 = 不传 timeout 形参）
             "NODE_TIMEOUT_SECONDS",
+            # LG-3-4：恢复期步骤清单（默认关 = 不建表、零读写）
+            "RECOVERY_STEP_LEDGER_ENABLED",
             "ADAPTIVE_TOOL_TIMEOUT_ENABLED",
             "LOAD_SHEDDING_ENABLED",
             "BULKHEAD_RETRIEVAL_SIZE",
