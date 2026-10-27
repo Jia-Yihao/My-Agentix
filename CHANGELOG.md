@@ -12,6 +12,19 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-2-4 按 task 的定点查看与重跑（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P2 第 4 条：失败超级步此前只能整步续跑，运维看不到「哪条 task 失败、能不能只重跑它」。
+
+- **[列表] `GET /ops/threads/{tid}/tasks`**：从图快照 `snapshot.tasks` 投影 task 摘要（`task_id` / `name` / `path` / `error` / `interrupts` 计数 / `has_result`），不携带 interrupt 载荷（避免 PII 下发）；线程无 checkpoint ⇒ 404，已完成线程 ⇒ 空表。
+- **[定点重跑] `POST /ops/threads/{tid}/retry-task`**（body `{"task_id": ...}`）：目标 task 必须是当前待执行项；已完成（有结果且无 error）⇒ **409 `task_not_retryable`**；未知线程/未知 task ⇒ **404 `pending_task_not_found`**；挂起中断 ⇒ **409 `thread_interrupted`** 并指向 `/ops/hitl/in-loop`；成功 ⇒ 200 `{"status": "retried", ...}`。
+- **[只重跑失败的那条] 机制取自 checkpointer 自己的台账**：同一超级步里已完成兄弟 task 的写入已落盘（`pending_writes`），`ainvoke(None)` 只重跑没有落盘写入的 task ⇒ 兄弟不重放。计数桩用例实测：首次失败跑 `good, bad`，重跑后为 `good, bad, bad`，`good` 只执行 1 次。
+- **[与指导文档的偏差，附实测]** 文档建议用 `update_state(task_id=...)` 做这件事。实测 1.2.18 对失败超级步调 `aupdate_state(..., task_id=<失败 task>)` 会把整步收敛成这一条 update：兄弟 task 已落盘结果连同 `next` 一起被丢弃（`done` 从 `["good"]` 变空、`next` 变 `()`）。拿它做「重试」会损坏状态，因此实现走原生 resume，并把偏差与证据写进服务层 docstring。
+- **[服务层] `breakpoint_resume`**：新增 `list_pending_tasks` / `retry_task` 与两个异常 `PendingTaskNotFoundError` / `TaskNotRetryableError`；重跑复用 `resume_thread`（沿用 LG-2-2 的挂起 409 与 LG-2-3 的统一 config）。
+- **[新增守卫] `tests/test_p155_task_point_retry.py`（9 条）**：快照投影、未知线程、重跑只重跑失败 task（计数桩）、已完成 task 拒绝重放且状态不变、未知 task/线程 404、路由注册、端点列表→409→200→404 全链、挂起线程 409 指向 hitl。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十段读数；`docs/项目实现手册.md` 补定点重跑一段。
+- **[验证]** 定向 `test_p155 + p152 + p153 + p37 + p64` → **48 passed**；守卫批 `p81/p136/p66/p101/p22/p147/p154` → **149 passed**；`ruff check agentix tests` → `All checks passed!`；`mypy agentix/domain` → `Success: no issues found in 38 source files`；全量 `.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **5344 passed / 40 skipped / 4 deselected / 0 failed**（415.72s；相对 LG-2-3 的 5335 恰好 **+9**，即本条新用例数，既有 5335 条零翻转）。
+
 ### LangGraph 原生对齐 · LG-2-3 `recursion_limit` 统一（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P2 第 3 条：`recursion_limit` 是 LangGraph 的**顶层** config 键，此前只有 `chat_service` 两条入口显式写出；恢复路径（`lg_builder.resume_in_loop` / `breakpoint_resume.resume_thread`）只带 `configurable.thread_id` ⇒ 落到框架默认 **25**。同一张图，主链路按 `MAX_ITERATIONS`（默认 10）截断，恢复请求却能多跑一倍多——两条路径的轮数预算各说一套。

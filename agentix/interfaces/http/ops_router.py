@@ -12,7 +12,9 @@ from agentix.application.services.observability import context_report, get_obser
 from agentix.application.services.breakpoint_resume import (
     get_breakpoint_manager,
     get_checkpoint_recovery,
+    PendingTaskNotFoundError,
     ResumeAction,
+    TaskNotRetryableError,
     ThreadInterruptedError,
 )
 from agentix.infrastructure.core.security import verify_api_key
@@ -222,6 +224,90 @@ async def resume_thread(request: ResumeRequest) -> Dict[str, Any]:
         "message_count": len(messages),
         "last_message": messages[-1].content if messages else "",
     }
+
+
+# ── LG-2-4：按 task 的定点查看与重跑 ────────────────────────────────────
+
+
+class RetryTaskRequest(BaseModel):
+    """请求体：要重跑的待执行 task。"""
+
+    task_id: str = Field(..., description="Pending task ID（见 GET /ops/threads/{tid}/tasks）")
+
+
+@router.get("/threads/{thread_id}/tasks")
+async def list_thread_tasks(thread_id: str) -> Dict[str, Any]:
+    """列出线程当前待执行的 task（快照 ``tasks``：id / name / error / 中断数）。
+
+    状态码：200 = 线程存在（全部完成时 ``tasks`` 为空表）；404 = 无该线程的
+    checkpoint。
+    """
+    recovery = get_checkpoint_recovery()
+
+    # 同 /threads/resume：函数体内 import 每次重读模块属性，跟随启动期 Redis
+    # checkpointer 覆盖（模块级值绑定会固化旧图）。
+    from agentix.orchestration.langgraph.lg_builder import graph
+
+    tasks = await recovery.list_pending_tasks(thread_id, graph)
+    if tasks is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No checkpoint found for thread: {thread_id}",
+        )
+    return {"thread_id": thread_id, "tasks": tasks}
+
+
+@router.post("/threads/{thread_id}/retry-task")
+async def retry_thread_task(thread_id: str, request: RetryTaskRequest) -> Dict[str, Any]:
+    """重跑线程里失败的某个 task；同节点已完成的兄弟 task 不重放。
+
+    状态码：200 = 已续跑；404 = 线程或 task 不存在；409 = task 已完成（拒绝
+    重放）或线程挂着未决中断（改走 ``/ops/hitl/in-loop``）；500 = 续跑时图抛错。
+    """
+    recovery = get_checkpoint_recovery()
+
+    from agentix.orchestration.langgraph.lg_builder import graph
+
+    try:
+        result = await recovery.retry_task(thread_id, request.task_id, graph)
+    except PendingTaskNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "pending_task_not_found",
+                "message": str(exc),
+                "thread_id": thread_id,
+                "task_id": request.task_id,
+            },
+        ) from exc
+    except TaskNotRetryableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "task_not_retryable",
+                "message": str(exc),
+                "thread_id": thread_id,
+                "task_id": request.task_id,
+            },
+        ) from exc
+    except ThreadInterruptedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "thread_interrupted",
+                "message": "线程挂着未决中断，请先经 /ops/hitl/in-loop 裁决后再重跑",
+                "thread_id": thread_id,
+                "pending_interrupts": exc.pending,
+                "resume_endpoint": "/ops/hitl/in-loop",
+            },
+        ) from exc
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retry task",
+        )
+    return result
 
 
 # ── HITL approval endpoints（A4：生产审批决策面）────────────────────────
