@@ -583,6 +583,18 @@ class Settings(BaseSettings):
         default=False,
         description="Attach LangGraph native retry_policy to the 6 read-only graph nodes; default off",
     )
+    # LG-3-2：主图节点的原生超时（langgraph 1.x 的 `add_node(timeout=)`），单位秒，
+    # 作用在**每次节点尝试**上。`0`（默认）= 关 ⇒ 注册处**完全不传** `timeout`
+    # 形参，与基线逐位等价（纪律 1）；策略对象由
+    # `orchestration/langgraph/policies.py::node_timeout` 集中构造（LG-0-3）。
+    # 边界（AGENTS.md 纪律 6 ②）：超时依赖 asyncio 协作式取消，只在节点**让出
+    # 事件循环**的时刻生效——同步阻塞/整段不让出的节点杀不掉；同步节点更是
+    # 编不过（`compile().validate()` 直接抛 ValueError）。
+    NODE_TIMEOUT_SECONDS: float = Field(
+        default=0.0,
+        ge=0,
+        description="Per-attempt wall-clock cap for main-graph nodes (seconds); 0 = off (timeout kwarg not passed)",
+    )
     # RETRY_BUDGET_ENABLED：run 级共享重试预算桶（task/tool/retrieval 三层
     # 共用 token，防 3×3×3 放大）+ 工具/检索层可重试性分类审计闸；
     # 默认关 = 各层现行为逐位等价。LG-1-4 只在部署面写推荐值 true
