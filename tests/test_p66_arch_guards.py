@@ -114,6 +114,11 @@ LANGGRAPH_SCAN_ROOTS = ("agentix", "scripts", "evals", "kb_ingest", "archive")
 #: 刷新本集合（lg_prompts 无 langgraph 导入，业务 prompt 留 application）；
 #: M5（2026-10-03）剥离 retrieval 执行链 → chat_agent_runner 去 langgraph，11 → 10；
 #: 禁止在未评审的改动里直接增行（§7 只减不增）。
+#: LG-0-3（2026-10-27）例外增行 1 条：`orchestration/langgraph/policies.py` 是指导文档
+#: §4.1 LG-0-3 点名的**策略集中点**（LangGraph 的 RetryPolicy/TimeoutPolicy 只许在这里
+#: 构造，见 tests/test_p147_policy_centralization.py）。它天然落在 langgraph 适配层目录内，
+#: 与 lg_builder / lg_states / lg_supervisor 同族 ⇒ 属该守卫注释里「随批刷新本集合」的
+#: 已评审路径；equality 棘轮本身**未放宽**（多一个文件就要多一行，仍需署名理由）。
 LANGGRAPH_ALLOWED: frozenset = frozenset(
     {
         "agentix/application/agents/kg_sub_graph/agentic_rag_agents/components/tool_selection/node.py",
@@ -126,6 +131,7 @@ LANGGRAPH_ALLOWED: frozenset = frozenset(
         "agentix/orchestration/langgraph/lg_builder.py",
         "agentix/orchestration/langgraph/lg_states.py",
         "agentix/orchestration/langgraph/lg_supervisor.py",
+        "agentix/orchestration/langgraph/policies.py",
     }
 )
 
