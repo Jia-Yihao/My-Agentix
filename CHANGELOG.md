@@ -12,6 +12,20 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-2-1 待恢复线程改由 `alist()` 派生（2026-10-27）
+
+《LangGraph 原生对齐与恢复链优化》P2 第 1 条：断点续跑此前**恒为空转**——`active_threads` 这个 Redis 集合在生产上没有写入点（唯一写方 `save_checkpoint_metadata` 只在恢复路径被调用，自举不成立），于是启动恢复与 `/ops/active-threads` 一直返回空。本轮把「哪些线程未完成」交回 checkpointer 自己回答。
+
+- **[换源头] `agentix/application/services/breakpoint_resume.py`**：`get_active_threads()` 改为 `async def get_active_threads(graph, *, min_idle_seconds: float = 0.0)`，线程清单由 `checkpointer.alist(None, before=..., limit=THREAD_SCAN_PAGE_SIZE)` **有界翻页**枚举（200 条/页 × 5 页上限），「未完成」由图自己的快照 `next` / `interrupts` 判定——判据与执行链同源（纪律 6 ④）。**不读 checkpoint 元数据的 `writes`**：2026-10-27 实测「跑完」与「断在中途」两类线程的最新 checkpoint 都是 `pending_writes=[]`，用它判会把两类全判成完成。
+- **[删除死代码] `active_threads` 集合**：`save_checkpoint_metadata` 里的 `sadd` / `srem` 与旧 `get_active_threads` 里的 `smembers` 删除；Redis 元数据写入保留（仅簿记，供 `resume_thread` 日志补 `last_node`）。
+- **[续跑判据] `resume_thread` 不再要求 Redis 元数据**：前置检查换成新增的 `get_thread_snapshot()`（无 checkpoint / 空状态 ⇒ `None`；读失败降级为 `None` 并 warning）；`/ops/threads/resume` 的 404 同步改由快照判定——原先按元数据判 404 会把 alist 派生出的**所有**线程挡在门外。元数据读失败降级为空字典，只影响日志里的 node 名（纪律 2）。
+- **[启动恢复] `agentix/main.py`**：改为 `get_active_threads(lg_builder.graph, min_idle_seconds=60)`；60 秒空闲闸的时间轴从 Redis 元数据 `updated_at`（无生产写入点）换成 checkpoint 快照自带的 `created_at`，意图不变（不打断此刻仍在跑的线程）。
+- **[fail-open] `alist` 与单线程快照失败**：`alist` 异常捕获后 `logger.warning` 并返回已扫到的部分（首页失败即空列表 + 告警），**不静默返空**（验收③）；单线程快照读失败只跳过该线程；checkpointer 未装配（`init_checkpointer` 未调用）同样告警后降级为空。
+- **[新增守卫] `tests/test_p152_pending_threads.py`（11 条）**：①②④ 用真 `MemorySaver` + `interrupt_before` 造「1 个已跑完 + 1 个停在中途」，断言只列后者、续跑完成后不再列出；③ 桩 saver 的 `alist` 抛错 ⇒ 空列表 + warning；⑤ 450 条 checkpoint ⇒ 恰好 3 页且每次 `limit=THREAD_SCAN_PAGE_SIZE`、第 2/3 页 `before` 指向上一页末条，翻页到 `THREAD_SCAN_MAX_PAGES` 即停；⑥ AST 守卫：模块里不再有 `sadd` / `srem` / `smembers` 调用、不再拼 `active_threads` 键（解释性注释不算犯例）；⑦ `min_idle_seconds=60` 过滤刚写过的线程；另钉「无元数据可续跑」「未知线程返回 None」「单线程快照失败不影响其余」「元数据写入保留」。
+- **[行为变化与回滚]** 变化是**恢复面从「恒空」变为「有候选」**：`/ops/active-threads` 开始返回真实线程，启动恢复开始真正尝试续跑（受 60 秒空闲闸约束）。无新开关——这是把死代码接回执行链，不是可选能力；回滚为 `git revert` 本条提交。
+- **[文档同步]** `docs/项目实现手册.md` 补恢复链来源一段；`README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第七段读数。
+- **[验证]** 定向 `test_p152 + test_p133` → **24 passed**（11 + 13）；端点/启动/架构批 `p37/p64/p81/p136/p126 + app_error_handler + v1_endpoint_auth + phase23 + p52/p82 + p66` → **242 passed / 10 skipped**；`ruff check agentix tests` → `All checks passed!`；`mypy agentix/domain` → `Success: no issues found in 38 source files`；全量 `.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **5320 passed / 40 skipped / 4 deselected / 0 failed**（459.53s；相对 LG-1-4 的 5309 恰好 **+11**，即本条新用例数，既有 5309 条零翻转）。
+
 ### LangGraph 原生对齐 · LG-1-4 打开预算桶（部署面）（2026-10-27）
 
 《LangGraph 原生对齐与恢复链优化》P1 第 4 条：把 Phase H·W3 已有的 run 级重试预算桶推进到部署面。**代码零行为变更**——`RETRY_BUDGET_ENABLED` 的 Settings 默认仍是 `False`（纪律 1），本轮只让 `.env.example` 与 staging override 说出推荐值。

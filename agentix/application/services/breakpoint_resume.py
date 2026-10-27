@@ -22,6 +22,7 @@ Usage patterns:
 import json
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +30,7 @@ from loguru import logger
 from redis.asyncio import Redis
 
 from agentix.config import settings
+from agentix.observability.spans import record_resume_from_checkpoint
 
 
 class InterruptReason(str, Enum):
@@ -212,16 +214,73 @@ class BreakpointManager:
         return record
 
 
-class CheckpointRecovery:
-    """Crash recovery using LangGraph checkpointer + Redis state backup.
+# ---------------------------------------------------------------------------
+# LG-2-1：待恢复线程由 checkpointer.alist() 派生（不再读 Redis 集合）
+# ---------------------------------------------------------------------------
+#
+# 换源头的理由：`active_threads` 这个 Redis 集合在生产上**没有写入点**——唯一的
+# 写方是本模块的 save_checkpoint_metadata，而它只在恢复路径被调用，恢复的前提
+# 又是集合里已经有线程（自举不成立）。于是启动恢复与 /ops/active-threads 长期
+# 恒返回空，断点续跑等于没接线。checkpoint 本身每一步都落，是唯一可靠的
+# 「哪些线程被跑到一半」的痕迹。
+#
+# 「未完成」判据只从图状态快照取（next / interrupts），不读 checkpoint 元数据里的
+# writes：2026-10-27 实测，「跑完」与「断在中途」两类线程各自的最新 checkpoint 都是
+# pending_writes=[]，用它判会把两类全判成完成。
 
-    On each graph step:
-    1. LangGraph checkpointer saves state (MemorySaver/Redis)
-    2. This module backs up the checkpoint metadata to Redis
+#: 单页扫描量：alist(None) 是跨线程全量列举，线程数增长后必须带 limit。
+THREAD_SCAN_PAGE_SIZE = 200
+#: 总翻页上限：恢复只关心「最近一段」未完成线程，不做穷举（5 × 200 条 checkpoint）。
+#: 到顶即停并打 debug 日志，不是静默截断。
+THREAD_SCAN_MAX_PAGES = 5
+
+
+async def _state_snapshot(graph: Any, config: Dict[str, Any]) -> Any:
+    """读线程最新状态快照：优先原生异步接口，退回同步接口。
+
+    编译图两者都有，优先 aget_state 以免阻塞事件循环；测试桩只实现同步
+    get_state（tests/test_p133_decision_span_attributes.py），走回退分支。
+    """
+    aget_state = getattr(graph, "aget_state", None)
+    if aget_state is not None:
+        return await aget_state(config)
+    return graph.get_state(config)
+
+
+def _snapshot_is_unfinished(snapshot: Any) -> bool:
+    """「未完成」唯一判据：还有待执行节点，或挂着未决中断。
+
+    next 覆盖静态 interrupt_before 与节点内 interrupt() 两种暂停；interrupts 兜住
+    next 为空但确有中断待处理的情形。
+    """
+    return bool(getattr(snapshot, "next", ()) or getattr(snapshot, "interrupts", ()))
+
+
+def _idle_seconds(snapshot: Any) -> Optional[float]:
+    """最新快照距今秒数；取不到（无 created_at / 解析失败）返回 None。"""
+    raw = getattr(snapshot, "created_at", None)
+    if not raw:
+        return None
+    try:
+        created = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - created).total_seconds()
+
+
+class CheckpointRecovery:
+    """Crash recovery driven by the LangGraph checkpointer itself.
+
+    On each graph step the checkpointer saves state (MemorySaver / Redis). The
+    Redis metadata written by this module is bookkeeping only — since LG-2-1 it
+    is no longer the source of "which threads are unfinished".
 
     On restart:
-    1. Check Redis for incomplete threads
-    2. Resume from last checkpoint using graph.invoke(None, config)
+    1. Enumerate thread ids from checkpointer.alist (bounded, paged)
+    2. Judge "unfinished" from the graph's own snapshot (next / interrupts)
+    3. Resume with graph.ainvoke(None, config)
     """
 
     def __init__(
@@ -229,13 +288,135 @@ class CheckpointRecovery:
         *,
         redis_client: Optional[Redis] = None,
         redis_url: Optional[str] = None,
+        checkpointer: Any = None,
         prefix: str = "checkpoint_recovery",
     ):
         self._redis = redis_client or Redis.from_url(
             redis_url or settings.REDIS_URL,
             decode_responses=True,
         )
+        self._checkpointer = checkpointer
         self.prefix = prefix
+
+    def _resolve_checkpointer(self) -> Any:
+        """取 checkpointer：显式注入优先，否则读装配层单例。
+
+        每次调用现读模块属性（不在 import 期绑定值）：单例由 init_checkpointer()
+        在启动期才赋值，import 期取到的会是 None。
+        """
+        if self._checkpointer is not None:
+            return self._checkpointer
+        try:
+            from agentix.infrastructure.persistence.checkpointer import get_checkpointer
+
+            return get_checkpointer()
+        except Exception as exc:  # noqa: BLE001 - 取不到与「未初始化」同义：降级并留痕（纪律 2）
+            logger.warning("checkpointer lookup failed: {}", exc)
+            return None
+
+    async def _iter_checkpoint_thread_ids(self) -> List[str]:
+        """按 checkpoint 时间倒序枚举线程 id（去重、翻页有界）。
+
+        只读 alist 元组的 config——这里回答的是「哪些线程有 checkpoint」；线程是否
+        未完成由调用方用图状态判定（纪律 6 ④：判据与执行链同源）。
+        """
+        checkpointer = self._resolve_checkpointer()
+        if checkpointer is None:
+            logger.warning(
+                "thread scan skipped: checkpointer unavailable "
+                "(init_checkpointer not called / assembly not ready)"
+            )
+            return []
+
+        thread_ids: List[str] = []
+        seen: set = set()
+        before: Optional[Dict[str, Any]] = None
+        exhausted = False
+        for page in range(THREAD_SCAN_MAX_PAGES):
+            batch = []
+            try:
+                async for tup in checkpointer.alist(
+                    None, before=before, limit=THREAD_SCAN_PAGE_SIZE
+                ):
+                    batch.append(tup)
+            except Exception as exc:  # noqa: BLE001 - 降级必须留痕，不许静默返空（LG-2-1 验收③）
+                logger.warning(
+                    "checkpointer.alist failed on page {} (threads found so far: {}): {}",
+                    page,
+                    len(thread_ids),
+                    exc,
+                )
+                break
+            for tup in batch:
+                thread_id = tup.config["configurable"]["thread_id"]
+                if thread_id not in seen:
+                    seen.add(thread_id)
+                    thread_ids.append(thread_id)
+            if len(batch) < THREAD_SCAN_PAGE_SIZE:
+                exhausted = True
+                break
+            before = batch[-1].config
+
+        if not exhausted:
+            logger.debug(
+                "thread scan hit page cap ({} x {}), older checkpoints not scanned",
+                THREAD_SCAN_MAX_PAGES,
+                THREAD_SCAN_PAGE_SIZE,
+            )
+        return thread_ids
+
+    async def get_thread_snapshot(self, thread_id: str, graph: Any) -> Any:
+        """取线程最新快照；无 checkpoint 或状态为空 ⇒ None。
+
+        这是「该线程有没有可续跑状态」的唯一判据：/ops/threads/resume 的 404 与
+        resume_thread 的前置检查都走它（纪律 6 ④，不许两处各判一遍）。
+        """
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            snapshot = await _state_snapshot(graph, config)
+        except Exception as exc:  # noqa: BLE001 - 读不到与「没有」同义：返回 None 由调用方定状态码
+            logger.warning("Failed to read state snapshot for thread {}: {}", thread_id, exc)
+            return None
+        if snapshot is None or not getattr(snapshot, "values", None):
+            return None
+        return snapshot
+
+    async def get_active_threads(
+        self,
+        graph: Any,
+        *,
+        min_idle_seconds: float = 0.0,
+    ) -> List[str]:
+        """列出「跑到一半」的线程（潜在崩溃受害者 / 待人工处理的挂起）。
+
+        Args:
+            graph: 编译图——「未完成」判据取自图自己的状态快照，不另取一份。
+            min_idle_seconds: 只返回最新快照距今至少这么多秒的线程。启动恢复用它
+                避开「此刻仍有进程在跑」的线程；原实现按 Redis 元数据的 updated_at
+                判 60 秒，而该元数据无生产写入点（见文件头），这里换成 checkpoint
+                自带的 created_at——同一意图、同一条时间轴。0 表示不过滤。
+
+        Returns:
+            线程 id 列表（按 checkpoint 时间倒序，已去重）。
+        """
+        active: List[str] = []
+        for thread_id in await self._iter_checkpoint_thread_ids():
+            config = {"configurable": {"thread_id": thread_id}}
+            try:
+                snapshot = await _state_snapshot(graph, config)
+            except Exception as exc:  # noqa: BLE001 - 单线程读失败不拖垮整轮扫描（纪律 2）
+                logger.warning(
+                    "state snapshot unavailable for thread {}: {}", thread_id, exc
+                )
+                continue
+            if not _snapshot_is_unfinished(snapshot):
+                continue
+            if min_idle_seconds > 0:
+                idle = _idle_seconds(snapshot)
+                if idle is None or idle < min_idle_seconds:
+                    continue
+            active.append(thread_id)
+        return active
 
     async def save_checkpoint_metadata(
         self,
@@ -255,16 +436,9 @@ class CheckpointRecovery:
             "updated_at": time.time(),
         }
         await self._redis.set(key, json.dumps(metadata), ex=86400 * 3)
-
-        if status == "in_progress":
-            await self._redis.sadd(f"{self.prefix}:active_threads", thread_id)
-        elif status in ("completed", "failed"):
-            await self._redis.srem(f"{self.prefix}:active_threads", thread_id)
-
-    async def get_active_threads(self) -> List[str]:
-        """Get list of threads with incomplete executions."""
-        members = await self._redis.smembers(f"{self.prefix}:active_threads")
-        return list(members) if members else []
+        # LG-2-1：不再维护 `active_threads` 集合——该集合在生产上没有写入点
+        # （本方法是唯一写方，却只在恢复路径被调用，自举不成立）。待恢复线程
+        # 改由 checkpointer.alist() 派生，见 get_active_threads。
 
     async def get_checkpoint_metadata(self, thread_id: str) -> Optional[Dict[str, Any]]:
         """Get checkpoint metadata for a thread."""
@@ -283,24 +457,34 @@ class CheckpointRecovery:
         Returns:
             The final state after resumption, or None if no checkpoint found.
         """
-        metadata = await self.get_checkpoint_metadata(thread_id)
-        if not metadata:
-            logger.info("No checkpoint found for thread {}", thread_id)
-            return None
-
         config = {"configurable": {"thread_id": thread_id}}
 
         try:
-            state = graph.get_state(config)
-            if not state or not state.values:
-                logger.warning("Empty checkpoint state for thread {}", thread_id)
+            # LG-2-1：前置判据是 checkpoint 快照本身，不是 Redis 元数据——待恢复
+            # 线程由 checkpointer 派生，它们没有（也从来不会有）元数据。
+            snapshot = await self.get_thread_snapshot(thread_id, graph)
+            if snapshot is None:
+                logger.warning("No resumable checkpoint for thread {}", thread_id)
                 return None
+
+            try:
+                metadata = await self.get_checkpoint_metadata(thread_id) or {}
+            except Exception as exc:  # noqa: BLE001 - 元数据只补日志，读不到不影响续跑（纪律 2）
+                logger.warning(
+                    "checkpoint metadata unavailable for thread {}: {}", thread_id, exc
+                )
+                metadata = {}
 
             logger.info(
                 "Resuming thread {} from node {}",
                 thread_id,
                 metadata.get("last_node", "unknown"),
             )
+
+            # PhaseK 任务 6：断点续跑恢复点落 span。thread_id 判据只从 config 取
+            # （唯一真源，纪律 6 ④；thread_id = session_id，见 application/services/
+            # chat_service.py）；fail-open 由 helper 保证，绝不影响恢复主链路（纪律 2）。
+            record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))
 
             result = await graph.ainvoke(None, config=config)
 

@@ -2,6 +2,7 @@
 Observability, breakpoint resume, and HITL approval API endpoints.
 """
 
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -153,27 +154,39 @@ async def resolve_interrupt(request: ResolveRequest) -> Dict[str, Any]:
 
 @router.get("/active-threads")
 async def list_active_threads() -> List[str]:
-    """List threads with incomplete executions (potential crash victims)."""
+    """List threads with incomplete executions (potential crash victims).
+
+    LG-2-1：线程清单来自 checkpointer 的 alist 枚举，「未完成」由图状态快照
+    （next / interrupts）判定——不再读 ``active_threads`` Redis 集合（该集合
+    无生产写入点）。
+    """
     recovery = get_checkpoint_recovery()
-    return await recovery.get_active_threads()
+    # 同 /threads/resume：惰性 import 取「当前」图。模块级 import 会在启动期
+    # checkpointer 覆盖、图重编译之前固化旧图。
+    from agentix.orchestration.langgraph.lg_builder import graph
+
+    return await recovery.get_active_threads(graph)
 
 
 @router.post("/threads/resume")
 async def resume_thread(request: ResumeRequest) -> Dict[str, Any]:
     """Attempt to resume a crashed thread from its last checkpoint."""
     recovery = get_checkpoint_recovery()
-    metadata = await recovery.get_checkpoint_metadata(request.thread_id)
-    if not metadata:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No checkpoint found for thread: {request.thread_id}",
-        )
 
     # 说明（非缺陷）：此处为函数体内（惰性）import，保留原样。函数内 `from X import y`
     # 每次执行都会重新读取模块属性，总能取到当前值，语义等价于 `lg_builder.graph`，
     # 因此不受启动期 Redis checkpointer 覆盖的影响。请勿改为模块级 import——
     # 值绑定会在 import 时固化，反而可能拿到启动期覆盖之前的默认图。
     from agentix.orchestration.langgraph.lg_builder import graph
+
+    # LG-2-1：存在性判据从 Redis 元数据换成 checkpoint 快照本身。待恢复线程由
+    # checkpointer 派生，不再保证有元数据；用元数据判 404 会把所有线程挡在门外。
+    snapshot = await recovery.get_thread_snapshot(request.thread_id, graph)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No checkpoint found for thread: {request.thread_id}",
+        )
 
     result = await recovery.resume_thread(request.thread_id, graph)
     if result is None:
@@ -256,7 +269,13 @@ async def list_hitl_approvals() -> Dict[str, Any]:
     from agentix.policies.hitl.hitl_bridge import get_hitl_bridge
 
     bridge = get_hitl_bridge()
-    return {"pending": bridge.pending(), "stats": bridge.stats()}
+    # T18 返工：flag-on 时 pending() 会并库读（list_unresolved 是同步 SQLAlchemy
+    # 会话），不下放线程会阻塞事件循环——与桥内写/回捞/裁决三路径同口径（纪律：
+    # CPU/IO 阻塞调用经 asyncio.to_thread 下放）。stats() 纯内存不动。
+    return {
+        "pending": await asyncio.to_thread(bridge.pending),
+        "stats": bridge.stats(),
+    }
 
 
 @router.post("/hitl/approvals/{sidecar_request_id}")
@@ -297,7 +316,7 @@ async def decide_hitl_approval(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=decision.error
         )
-    return {
+    body = {
         "gate_request_id": decision.gate_request_id,
         "sidecar_request_id": decision.sidecar_request_id,
         "action": decision.action.value,
@@ -307,6 +326,11 @@ async def decide_hitl_approval(
         "reason": decision.reason,
         "gate_recovered": decision.gate_recovered,
     }
+    # T18 验收⑤：库闭合失败对运维可见（error 日志之外的 API 面标记）。
+    # **只在非空时出现该键** ⇒ flag-off / 无故障响应与基线逐键一致（纪律 1）。
+    if decision.persist_error:
+        body["persist_error"] = decision.persist_error
+    return body
 
 
 # ── F2a·M-P2-4 画像作用域（授权边界 + 一键清除全链路）─────────────────────
@@ -375,3 +399,32 @@ async def clear_user_memory_chain(request: ClearUserMemoryRequest) -> Dict[str, 
             },
         )
     return report
+
+
+# ── E2·schema 缓存主动失效（路线图 §2 P0「改表 → 主动清 → 立即可见」）──────
+
+
+@router.post("/schema-cache/invalidate")
+async def invalidate_schema_cache_endpoint(
+    database_url: Optional[str] = Query(
+        None, description="只清这一个库的 text2sql schema 缓存；省略 = 全清（Neo4j 不受此参数影响）"
+    ),
+) -> Dict[str, Any]:
+    """清掉两套 schema 缓存的旧值，让下一次读取重新去源头取 schema。
+
+    为什么要有这个入口：两套缓存的 TTL 节奏本就不一致（text2sql 默认 0=关、
+    Neo4j 默认 300s），靠等 TTL 生效最长要忍一个窗口期。这里把两侧收成一个
+    口径，且**不看 TTL 开关**——默认部署（TTL 关）也必须有可用的失效入口，
+    否则这个端点只是装饰品。
+
+    与 `/memory/clear-user` 的差别是刻意的：清除用户数据失败要显式 500（结果
+    必须如实可信），而清缓存失败**不改变正确性**（缓存迟早会自己过期或重建），
+    所以按纪律 2 返回 200 + 可读报告，绝不把辅助设施的抖动打成运维事故。
+    """
+    from agentix.application.services import schema_cache
+
+    try:
+        report = schema_cache.invalidate_schema_caches(database_url)
+    except Exception as exc:  # noqa: BLE001 - 兜底：辅助设施绝不打挂运维请求，降级为可读报告
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    return {"ok": not report.get("errors"), **report}
