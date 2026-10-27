@@ -302,6 +302,36 @@ def _task_summary(task: Any) -> Dict[str, Any]:
     }
 
 
+async def _state_history(graph: Any, config: Dict[str, Any], limit: int) -> List[Any]:
+    """读线程的 checkpoint 历史（新→旧）：优先原生异步接口，退回同步接口。
+
+    与 ``_state_snapshot`` 同一取舍：编译图两者都有，优先异步以免阻塞事件循环；
+    测试桩只实现同步 ``get_state_history``，走回退分支。
+    """
+    aget_history = getattr(graph, "aget_state_history", None)
+    if aget_history is not None:
+        return [snapshot async for snapshot in aget_history(config, limit=limit)]
+    return list(graph.get_state_history(config, limit=limit))
+
+
+def _history_summary(snapshot: Any) -> Dict[str, Any]:
+    """把一条历史快照投影成步骤摘要（不带 values / interrupt 载荷）。"""
+    config = getattr(snapshot, "config", None) or {}
+    configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
+    metadata = getattr(snapshot, "metadata", None) or {}
+    return {
+        "checkpoint_id": configurable.get("checkpoint_id"),
+        "step": metadata.get("step"),
+        "source": metadata.get("source"),
+        "created_at": getattr(snapshot, "created_at", None),
+        "next": [str(n) for n in (getattr(snapshot, "next", ()) or ())],
+        "tasks": [
+            str(getattr(t, "name", "")) for t in (getattr(snapshot, "tasks", ()) or ())
+        ],
+        "interrupts": len(getattr(snapshot, "interrupts", ()) or ()),
+    }
+
+
 class PendingTaskNotFoundError(LookupError):
     """线程或待执行 task 不存在（端点转 404）。"""
 
@@ -506,6 +536,31 @@ class CheckpointRecovery:
             "status": "retried",
             "message_count": len(result.get("messages", []) or []),
         }
+
+    async def list_thread_history(
+        self, thread_id: str, graph: Any, *, limit: int = 50
+    ) -> Optional[List[Dict[str, Any]]]:
+        """回看线程的 checkpoint 步骤序列（LG-2-5，**只读**）。
+
+        数据源是 checkpointer 自己的历史（``get_state_history``），不读 Redis
+        元数据、不另造一份轨迹：端点看到的步骤序列与图实际走过的超级步同源
+        （纪律 6 ④）。方法只调读接口，不写任何状态。
+
+        Args:
+            thread_id: 目标线程。
+            graph: 编译图。
+            limit: 最多返回多少步（新→旧）。
+
+        Returns:
+            步骤摘要列表；线程不存在（无 checkpoint）⇒ None（端点 404）。
+            历史读取失败会向上抛出（读失败不能被报成「没有历史」）。
+        """
+        snapshot = await self.get_thread_snapshot(thread_id, graph)
+        if snapshot is None:
+            return None
+        config = thread_config(thread_id)
+        history = await _state_history(graph, config, limit)
+        return [_history_summary(s) for s in history]
 
     async def get_active_threads(
         self,

@@ -12,6 +12,17 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-2-5 历史回看端点（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P2 第 5 条：线程走到哪一步、每步 `next` 是谁，此前只能直接读 checkpoint 或翻日志。
+
+- **[新增] `GET /ops/threads/{tid}/history?limit=50`**（`limit` 1–500）：数据源是 checkpointer 自己的 `get_state_history`，返回步骤序列（新→旧），每步投影为 `checkpoint_id` / `step` / `source` / `created_at` / `next` / `tasks`（节点名）/ `interrupts`（计数）——不携带 `values` 与 interrupt 载荷。
+- **[只读] 不写任何状态**：方法只调读接口；用例断言调用前后 `get_state` 的 `checkpoint_id` 不变、历史首条即当前快照、步骤条数不增。
+- **[口径] 步骤序列与图实际走过的超级步同源**（纪律 6 ④）：不读 Redis 元数据、不另造轨迹；线程无 checkpoint ⇒ 404；历史读取失败向上抛出（500），不把「读失败」报成「没有历史」。
+- **[服务层] `breakpoint_resume`**：新增 `list_thread_history(thread_id, graph, *, limit=50)` 与 `_history_summary` / `_state_history`；后者与 `_state_snapshot` 同一取舍——优先 `aget_state_history`，同步专用桩退回 `get_state_history`。
+- **[新增守卫] `tests/test_p156_thread_history.py`（11 条）**：步骤条数与原始历史逐条对齐（含 input 那条 `step=-1`）、只读性、`limit` 切片、投影字段集合、未知线程 None、同步桩回退分支、路由注册、端点 200/404/limit 上下界 422。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十一段读数；`docs/项目实现手册.md` 补历史回看一段。
+
 ### LangGraph 原生对齐 · LG-2-4 按 task 的定点查看与重跑（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P2 第 4 条：失败超级步此前只能整步续跑，运维看不到「哪条 task 失败、能不能只重跑它」。
