@@ -150,9 +150,10 @@ class TestCriticalSpecsSatisfyConsumers:
         [
             (
                 "langgraph-sdk",
-                "0.1.74",
-                ["langgraph==0.2.60 要求 (>=0.1.42,<0.2.0)"],
-                "原 pyproject 写 >=0.2.0 与 langgraph 0.2.60 自身要求区间互斥（装不上）",
+                "0.4.10",
+                ["langgraph==1.2.18 要求 (>=0.4.6,<0.5.0)"],
+                "LG-0-2 升到 1.2 线：见证版本随约束同步（原 0.1.74 属 0.2.60 的 "
+                ">=0.1.42,<0.2.0 区间，现该区间已不存在）",
             ),
             (
                 "greenlet",
@@ -207,7 +208,7 @@ class TestCriticalSpecsSatisfyConsumers:
         sdk_reqs = [r for r in (requires("langgraph") or []) if r.lower().startswith("langgraph-sdk")]
         assert sdk_reqs, "langgraph 未声明对 langgraph-sdk 的依赖，本测试前提失效"
         constraint = SpecifierSet(Requirement(sdk_reqs[0]).specifier)
-        assert constraint.contains("0.1.74"), (
+        assert constraint.contains("0.4.10"), (
             f"langgraph 的 langgraph-sdk 约束已变化（现为 {sdk_reqs[0]}），"
             "请同步 requirements.txt / pyproject.toml 的 pin 与本测试的见证版本"
         )

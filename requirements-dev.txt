@@ -23,11 +23,23 @@ types-requests
 IPython
 
 # Ragas 忠实度报告（P2-2，observe-only；evals/ragas_report.py）。
-# ⚠️ 版本组合经实测钉死（2026-10-09，numpy<2 约束下的兼容集）：
+# ⚠️ 版本组合经实测钉死（2026-10-09，**历史前提**：当时运行时是 numpy<2.0.0）：
 # ragas 0.4.3 硬依赖 datasets>=4.0.0，其默认解析的 datasets 5.x 要求
 # pyarrow>=24，而 pyarrow 26 起要求 numpy>=2——与运行时 numpy<2.0.0 硬冲突。
 # 本组合（datasets 4.4.0 + pyarrow 21.0.0）在 numpy 1.26.4 下 import 实测通过、
-# pip check 零冲突；升级 numpy 前不得动这三个钉。
+# pip check 零冲突。
+#
+# LG-0-2（2026-10-27）之后：运行时 numpy 已随 neo4j-graphrag 抬到 >=2.0,<3，
+# 上面那条「与 numpy<2 硬冲突」的前提不复存在；但**三个钉照旧不动**（评测不碰），
+# 复测事实：pyarrow 21.0.0 + datasets 4.4.0 在 numpy 2.5.4 下 import 通过。
+# ⚠️ 已知的能力回退：ragas 0.4.3 顶层 `from langchain_community.chat_models.vertexai
+# import ChatVertexAI`，而 langchain-community 0.4.2（LG-0-2 的目标版，也是最后一版）
+# 已移除该模块 ⇒ `import ragas` 现在直接 ModuleNotFoundError。
+# evals/ragas_report.py 的前置检查按 `except Exception` 兜住 ⇒ 诚实降级 exit 2，
+# 不出假分数（守卫用例 tests/test_p106_ragas_report.py 的断言写成
+# `"ragas" in err or "输入缺失" in err`，两种病因都算通过）。
+# 要恢复 ragas 需要动评测链（ragas 版本或 judge LLM 依赖），属本轮明确不做，
+# 已登记为遗留项。
 ragas==0.4.3
 datasets==4.4.0
 pyarrow==21.0.0
