@@ -79,6 +79,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "ENABLE_EXTERNAL_SEARCH",
         "LEGACY_ERROR_MODE",
         "CHECKPOINTER_TYPE",
+        # Phase K 任务 1：fail-closed 开关不设 = 默认 false（维持降级基线），属合法省略
+        "CHECKPOINTER_FAIL_CLOSED",
         # Phase 20：EventPort 后端不设 = 默认 memory（进程内），属合法省略
         "EVENT_PORT_BACKEND",
         "APP_ENV",
@@ -102,8 +104,19 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         # §24.3 T0（沙箱加固）：全部默认关 / 默认沿用旧推断，不设 = 与加固前逐位等价
         "TOOL_SYNC_OFFLOAD_ENABLED",
         "TOOL_HANDLER_CONTRACT_ENABLED",
+        # §24.2 G14：同名重复注册严格模式。不设 = 默认关 = 只告警、仍按首次声明执行
+        "TOOL_DUPLICATE_REGISTRATION_STRICT",
         # §24.3 T2 ⑭：执行位置端口。不设 = 默认关 = 不查 `ToolSpec.sandbox`
         "EXECUTION_SANDBOX_ENABLED",
+        # §24.3 T2 ⑮：阶梯第三档。不设 = 默认关 = `subprocess` 仍在"词汇表−已实现"差集里
+        "TOOL_SANDBOX_SUBPROCESS_ENABLED",
+        "TOOL_SANDBOX_SUBPROCESS_UID",
+        "TOOL_SANDBOX_SUBPROCESS_ENV_EXTRA_KEYS",
+        # code exec（运行时写代码执行任务）：总闸默认关、轮数/超时用默认值，
+        # 不设 = 与基线逐位等价，属合法省略
+        "CODE_EXEC_ENABLED",
+        "CODE_EXEC_MAX_ROUNDS",
+        "CODE_EXEC_TIMEOUT_S",
         "MCP_SUBPROCESS_ENV_SCRUB",
         "MCP_SUBPROCESS_ENV_EXTRA_KEYS",
         "DB_ECHO",
@@ -159,6 +172,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "AGENT_TOOL_ROUND_CONCURRENCY",
         # F1e（统一执行链 Stage F）：HITL 进环默认关，属合法省略
         "HITL_IN_LOOP_ENABLED",
+        # T18（审批恢复规划）：HITL pending 落库默认关（纯内存基线），属合法省略
+        "HITL_PENDING_PERSIST_ENABLED",
         # F2a（统一执行链 Stage F2）：PreCompact 重注 / 画像作用域默认关
         "CONTEXT_PRECOMPACT_REINJECT_ENABLED",
         "MEMORY_PROFILE_SCOPE_ENABLED",
@@ -188,6 +203,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "EVIDENCE_POOL_ENABLED",
         "VERIFIER_GROUNDING_ENABLED",
         "TEXT2SQL_BACKEND",
+        # 空 = 回退应用自身 DATABASE_URL（接线前行为），属合法省略
+        "TEXT2SQL_DATABASE_URL",
         "WREN_PROJECT_PATH",
         "WREN_DATA_SOURCE",
         "WREN_CONNECTION_INFO",
@@ -241,6 +258,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "ADMISSION_CONTROL_ENABLED",
         "ADMISSION_MAX_CONCURRENT_RUNS",
         "ADMISSION_MAX_QUEUE",
+        # LG-1-1：只读节点原生重试开关，不设 = 默认 false（不传 retry_policy），属合法省略
+        "NODE_RETRY_ENABLED",
         "RETRY_BUDGET_ENABLED",
         "RETRY_BUDGET_TOKENS",
         "ADAPTIVE_TOOL_TIMEOUT_ENABLED",
@@ -316,6 +335,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "NOTIFY_USER_ENABLED",
         "DISABLED_TOOLS",
         "KB_DATA_FILE",
+        # 空 = 沿用子图内置的测试数据集范围文案，属合法省略
+        "KB_SCOPE_DESCRIPTION",
         "KB_RERANK_MAX_CANDIDATES",
         "KB_RERANK_TOP_N",
         "KB_RERANK_TIMEOUT",

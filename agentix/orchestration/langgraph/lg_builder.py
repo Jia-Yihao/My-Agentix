@@ -8,6 +8,7 @@ have been moved to dedicated modules:
   - image_handler.py: create_image_query, _generate_image
   - file_handler.py: create_file_query
   - general_handler.py: respond_to_general_query, create_kb_query
+  - code_handler.py: create_code_query
   - constants.py: SCOPE_DESCRIPTION, GUARDRAILS_REJECT_MESSAGE, etc.
   - llm_factory.py: get_llm_client
 
@@ -23,7 +24,9 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 
 from agentix.config import ablation, settings
+from agentix.observability.spans import record_resume_from_checkpoint
 from agentix.orchestration.langgraph.lg_states import AgentState, GradeHallucinations
+from agentix.orchestration.langgraph.policies import readonly_retry_policy
 from agentix.application.agents.lg_prompts import (
     CHECK_HALLUCINATIONS,
 )
@@ -38,6 +41,7 @@ from agentix.application.agents.llm_factory import get_llm_client
 from agentix.application.agents.router import _ensure_router
 from agentix.application.agents.constants import SCOPE_DESCRIPTION
 from agentix.application.agents.task_handler import execute_task
+from agentix.application.agents.code_handler import create_code_query
 from agentix.tools.registry_init import get_active_tools
 
 # Re-export all public symbols from new modules for backward compatibility
@@ -191,10 +195,10 @@ async def create_research_plan(
 
 
 # DEAD-CODE(P2-5)｜处置=保留·有意不接线：本函数**有意不接线**（2026-09 审计确认，非"待删除"）。
-# build_graph 的 add_node 块只注册 9 个节点，不含它；全仓除本定义与顶部模块
+# build_graph 的 add_node 块只注册 10 个节点，不含它；全仓除本定义与顶部模块
 # 说明外 0 处引用，连带函数体内 get_llm_client(..., role="hallucination")
 # 亦落在不可达代码中。
-# **为什么不删**：这是**文档化的未接线能力**——`docs/design/orchestration-rationale.md`
+# **为什么不删**：这是**文档化的未接线能力**——`docs/design/编排方案选型论证.md`
 # 的节点清点表把「A6 幻觉校验」列为"现有但未接入任何图"并附了 grep 证据；
 # 它是被刻意保留的后续接线点，不是无人认领的残骸。删掉等于抹掉一处已登记的设计意图。
 # **为什么不接线**：接线会给每次图执行新增一次 hallucination 校验 LLM 调用，
@@ -348,9 +352,13 @@ async def resume_in_loop(thread_id: str, resume_value: Any) -> Any:
     """
     from langgraph.types import Command
 
+    config = {"configurable": {"thread_id": thread_id}}
+    # PhaseK 任务 6：进环恢复点落 span。thread_id 判据只从 config 取（唯一真源，
+    # 纪律 6 ④）；fail-open 由 helper 保证（无 span/异常 ⇒ no-op，纪律 2）。
+    record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))
     return await graph.ainvoke(
         Command(resume=resume_value),
-        config={"configurable": {"thread_id": thread_id}},
+        config=config,
     )
 
 
@@ -361,10 +369,23 @@ def build_graph(checkpointer=None):
     重编译并覆盖下方模块级 `graph`；checkpointer 为 None 时图不持久化。
     """
     builder = StateGraph(AgentState, input=InputState)
-    # 注意：check_hallucinations 故意不在此注册（本块仅注册下列 9 个节点：
+    # LG-1-1：只读节点的原生重试。flag-off ⇒ 下面是**空 dict**，add_node 完全不传
+    # `retry_policy` ⇒ 与基线逐位等价（纪律 1）；策略实参来自 policies.py（LG-0-3 集中点），
+    # 不在本文件内联构造。覆盖面只有 6 个只读节点，`execute_task` / `code_agent` 永不挂
+    # （整节点重跑会重放工具副作用）。
+    readonly_retry_kwargs = (
+        {"retry_policy": readonly_retry_policy()} if settings.NODE_RETRY_ENABLED else {}
+    )
+    # 策略形参口径（LG-0-3）：下面这些 add_node 若要挂 retry_policy / cache_policy /
+    # error_handler / timeout，实参**只能**来自 agentix/orchestration/langgraph/policies.py
+    # 的工厂；在本文件内联 `RetryPolicy(...)` / `TimeoutPolicy(...)` 由
+    # tests/test_p147_policy_centralization.py 判违规（散落的字面量改一处漏一处且不报错）。
+    # 接线进度：LG-1-1 已给 6 个只读节点挂 retry_policy（见上方 readonly_retry_kwargs）；
+    # cache_policy / error_handler / timeout 仍未接线，归 LG-3-2 / LG-3-5。
+    # 注意：check_hallucinations 故意不在此注册（本块仅注册下列 10 个节点：
     # message_window / analyze_and_route_query / respond_to_general_query /
     # get_additional_info / create_research_plan / create_image_query /
-    # create_file_query / create_kb_query / execute_task），
+    # create_file_query / create_kb_query / execute_task / code_agent），
     # 其定义见本模块上方 check_hallucinations(...)，标注为 DEAD-CODE(P2-5)｜保留·有意不接线。
     # 批次 7：入口插入历史窗口化节点（settings.MAX_HISTORY_MESSAGES<=0 时
     # 为 no-op，行为与旧版一致），裁剪 checkpointer 持久化的无界历史。
@@ -377,19 +398,23 @@ def build_graph(checkpointer=None):
             getattr(settings, "LG_TOKEN_HISTORY_BUDGET", 0),
         ),
     )
-    builder.add_node(analyze_and_route_query)
-    builder.add_node(respond_to_general_query)
+    builder.add_node(analyze_and_route_query, **readonly_retry_kwargs)
+    builder.add_node(respond_to_general_query, **readonly_retry_kwargs)
     builder.add_node(get_additional_info)
-    builder.add_node("create_research_plan", create_research_plan)
-    builder.add_node(create_image_query)
-    builder.add_node(create_file_query)
-    builder.add_node(create_kb_query)
+    builder.add_node("create_research_plan", create_research_plan, **readonly_retry_kwargs)
+    builder.add_node(create_image_query, **readonly_retry_kwargs)
+    builder.add_node(create_file_query, **readonly_retry_kwargs)
+    builder.add_node(create_kb_query, **readonly_retry_kwargs)
     # P1（任务执行）：execute_task 无条件注册（route_query 的 Literal/ROUTE_HANDLERS
     # 需与节点集对齐，phase19 绊线断言两者相等）；可达性由 TASK_EXEC_ENABLED 在
     # 路由侧门控——flag-off 时任何路由决策都不会进入本节点，行为与基线等价。
     # F1e·A-P1-4：注册时包一层进环注入壳（节点名不变 = 绊线断言不受影响；
     # flag-off/3.10/未声明进环意图时纯透传）。
     builder.add_node("execute_task", _wrap_execute_task_in_loop(execute_task))
+    # P2（代码执行）：code_agent 无条件注册（route_query 的 Literal / ROUTE_HANDLERS
+    # 需与节点集对齐，phase19 绊线断言两者相等）；可达性由 CODE_EXEC_ENABLED 在
+    # 路由侧门控——flag-off 时任何路由决策都不会进入本节点，行为与基线等价。
+    builder.add_node("code_agent", create_code_query)
 
     builder.add_edge(START, "message_window")
     builder.add_edge("message_window", "analyze_and_route_query")

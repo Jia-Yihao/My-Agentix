@@ -439,6 +439,16 @@ class Settings(BaseSettings):
         default="mysql",
         description="Text2SQL execution backend: mysql (default) | wren",
     )
+    # Text2SQL 的**目标库**。空 = 用应用自身的 ``DATABASE_URL``（接线前的既有行为，
+    # 逐位等价）。之所以要这个键：法律库由 ``data/init_mysql.sql`` 单独建
+    # （compose 里的 ``legal_db`` + ``MYSQL_*``），而会话/产物这些应用元数据在
+    # 另一个库里——两处都读 DATABASE_URL 时，text2sql 只能看见元数据表，
+    # 「民法典有多少条」这类问题结构上就答不对（2026-10-25 录制 evals 基线时实测）。
+    # 单源见 ``components/text2sql/target_db.py``（schema / 执行 / dry-run / 缓存键共用）。
+    TEXT2SQL_DATABASE_URL: str = Field(
+        default="",
+        description="Target DB URL for Text2SQL schema retrieval and execution; empty falls back to DATABASE_URL",
+    )
     WREN_PROJECT_PATH: str = Field(
         default="",
         description="Wren project directory containing wren_project.yml and target/mdl.json",
@@ -564,6 +574,14 @@ class Settings(BaseSettings):
         default=0,
         ge=0,
         description="Admission wait-queue depth; 0 = reject immediately at capacity",
+    )
+    # LG-1-1：只读节点的原生节点级重试（langgraph 1.x 的 `add_node(retry_policy=)`）。
+    # 默认关 ⇒ 注册处**完全不传** `retry_policy`，图执行与基线逐位等价（纪律 1）。
+    # 覆盖面只有 6 个只读节点；`execute_task` / `code_agent` 永不挂——整节点重跑会
+    # 重放工具副作用（指导文档铁律，LG-1-1 验收第 ② 条把它钉成用例）。
+    NODE_RETRY_ENABLED: bool = Field(
+        default=False,
+        description="Attach LangGraph native retry_policy to the 6 read-only graph nodes; default off",
     )
     # RETRY_BUDGET_ENABLED：run 级共享重试预算桶（task/tool/retrieval 三层
     # 共用 token，防 3×3×3 放大）+ 工具/检索层可重试性分类审计闸；
@@ -862,9 +880,13 @@ class Settings(BaseSettings):
         default="redis://localhost:6379/0",
         description="Redis connection URI",
     )
-    # R3.2 单 Redis-Stack 实例 + DB 分片：db0 cache / db1 Celery / db2 checkpoint。
-    # 分片目的：checkpoint（RediSearch 索引）与 Celery（acks_late 队列）各自独立
-    # key 空间，避免与缓存互相 FLUSH/逐出干扰。
+    # R3.2 单 Redis-Stack 实例 + DB 分片：db0 = cache + checkpoint，db1 = Celery。
+    # checkpoint 必须与 cache 同库：RediSearch 只能在 db0 建索引，db!=0 时
+    # `asetup()` 直接报 "Cannot create index on db != 0"，checkpointer 会静默降级
+    # MemorySaver（见 agentix/infrastructure/persistence/checkpointer.py）。
+    # 因此这里牺牲「FLUSH 级别隔离」换「key 前缀隔离」：checkpoint 键统一 `checkpoint:`
+    # 前缀，cache 键是 `semantic:` / `history:`，不重叠。要拿回 FLUSH 隔离只能给
+    # checkpoint 单开一个 Redis 实例（改这个 URL 即可）。
     REDIS_CACHE_URL: str = Field(
         default="redis://localhost:6379/0",
         description="R3.2: cache 分片（db0）",
@@ -874,8 +896,8 @@ class Settings(BaseSettings):
         description="R3.2: Celery broker/backend 分片（db1）",
     )
     REDIS_CHECKPOINT_URL: str = Field(
-        default="redis://localhost:6379/2",
-        description="R3.2: LangGraph checkpoint 分片（db2，需 RediSearch）",
+        default="redis://localhost:6379/0",
+        description="R3.2: LangGraph checkpoint 分片（必须 db0，RediSearch 只能在 db0 建索引）",
     )
     REDIS_CACHE_EXPIRE: int = Field(
         default=60 * 60 * 12,
@@ -1031,6 +1053,20 @@ class Settings(BaseSettings):
         default=False,
         description="F1e A-P1-4 in-loop HITL: suspend review_required in execute_task via langgraph interrupt (approve resumes + one retry) + no-approver REJECT + deny/hook/ask/allow order lock (py3.12+ only, py3.10 degrades; parent HUMAN_REVIEW_ENABLED)",
     )
+    # T18（规划 approval-recovery §4 · Q7 已裁决：Postgres 为真源）：HITL pending
+    # 落库。默认**关**——关 = pending 维持进程内存（FIFO 封顶 200），不建表、不
+    # 读写新表，行为与基线逐位等价（纪律 1）；开 = 挂起写 `hitl_pending_approvals`
+    # （库侧未决同样封顶 200，溢出**显式拒绝**不静默挤行——口径见
+    # `agentix/infrastructure/persistence/hitl_pending_store.py` 模块注释）、
+    # 裁决同库闭合、启动期回捞未决 pending 进内存可裁决、跨实例（本实例内存没有
+    # 该 pending）从库判定不再 404。落库失败显式可观测（error 日志 + 回执
+    # persist_error 标记 + persist_errors 计数），绝不静默降级成纯内存宣称成功。
+    # 治理层拒绝语义不动（fail-closed，`.qoder/rules/code-exec.md` §7）；
+    # 装配判据唯一源 = `agentix/policies/hitl/hitl_bridge.py::_resolve_pending_store`。
+    HITL_PENDING_PERSIST_ENABLED: bool = Field(
+        default=False,
+        description="Persist HITL pending approvals to the database (source of truth per Q7): suspend writes the row, decision closes it, boot-time restore pulls unresolved rows back, cross-instance decide falls back to the store (no more 404); default off = in-process memory only, baseline-equal (parent HUMAN_REVIEW_ENABLED at wiring time)",
+    )
     # P4（岗位对照·异常闭环 4.3）：RollbackPort 生产实现 + 计划态权限切换。
     # 默认 False = 不声明不装配 enter/exit_plan_mode（与基线逐位等价）；True =
     # 注册「计划态」工具：enter 先把 executor.policy 快照进 RollbackStore 再切到
@@ -1173,6 +1209,14 @@ class Settings(BaseSettings):
         default=False,
         description="Warn at registration time when a tool handler is not a coroutine function (its timeout_ms binds only with TOOL_SYNC_OFFLOAD_ENABLED)",
     )
+    # G14（§24.2）：同名工具重复注册。默认 False = **不拒绝注册，但照发点名告警**
+    # （本批目的就是把"后一份 spec 静默丢弃"变成可 grep 的信号；默认语义仍是
+    # 第一次赢 / 最后一次赢，注册结果逐位不变）。True = 在改动 handler 之前抛
+    # ValueError，fail-closed。诊断默认开、行为开关默认关。
+    TOOL_DUPLICATE_REGISTRATION_STRICT: bool = Field(
+        default=False,
+        description="Refuse (ValueError) a same-name tool re-registration whose ToolSpec differs from the first declaration, instead of only warning (default off = warn and keep first-wins)",
+    )
     # §24.3 T2 ⑭（ADR-0007）：执行位置端口。打开后 ToolExecutor 按 `ToolSpec.sandbox`
     # 选执行位置（默认 in_process = 与现状逐位相同；thread = 下放线程；
     # subprocess/container 尚未实现 ⇒ 执行点**拒绝**，不静默退回进程内）。
@@ -1180,6 +1224,54 @@ class Settings(BaseSettings):
     EXECUTION_SANDBOX_ENABLED: bool = Field(
         default=False,
         description="Honour the per-tool `ToolSpec.sandbox` declaration when picking where a handler runs (default off = in-process, byte-equal to pre-T2)",
+    )
+    # §24.3 T2 ⑮（ADR-0007）：阶梯第三档落地。关 = `subprocess` 仍留在
+    # 「词汇表 − 已实现」的差集里，声明它的工具在执行点被拒（与 ⑭ 逐位等价）；
+    # 开 = 这一档有实现并被解析到，但**本机能不能把资源闸落下去另说**——
+    # POSIX 能力探测不过仍然在执行点拒绝，绝不静默退回进程内。
+    TOOL_SANDBOX_SUBPROCESS_ENABLED: bool = Field(
+        default=False,
+        description="Register the `subprocess` execution sandbox tier (default off = the tier stays in the ladder-but-unimplemented gap; enabling it never downgrades a refusal to in-process)",
+    )
+    # 子进程侧降权到的 uid（−1 = 不降权，沿用父进程 uid）。刻意默认不降：
+    # setuid 需要父进程有权限，且降权后连绑定监听端口都可能失败——把它设成非 −1
+    # 是一次显式的部署决定，不是一个可以顺手打开的布尔。
+    TOOL_SANDBOX_SUBPROCESS_UID: int = Field(
+        default=-1,
+        description="uid the subprocess sandbox child drops to before running a handler (-1 = keep the parent uid; only meaningful on POSIX)",
+    )
+    # 额外允许透传给沙箱子进程的环境变量名（逗号分隔），与内置 OS 白名单取并集。
+    # 与 MCP 那一对键**刻意不共用**：判据同源（`domain/tool/exec_env.py`），受众不同——
+    # 让 MCP 的加法自动放宽沙箱的墙，等于两个安全边界互相授权。
+    TOOL_SANDBOX_SUBPROCESS_ENV_EXTRA_KEYS: str = Field(
+        default="",
+        description="Comma-separated extra environment variable names allowed into the subprocess sandbox child, unioned with the OS allowlist (independent of MCP_SUBPROCESS_ENV_EXTRA_KEYS by design)",
+    )
+    # code exec（运行时写代码执行任务）：总闸默认**关**。flag-off 时生产链路与
+    # 基线**逐位等价**——路由不产 `code-query` 意图、图里 `code_agent` 节点不可达、
+    # `code_execute` 工具零注册、提示词与基线逐字节相同。写 Python 意味着执行面
+    # 第一次可能跑用户代码，所以它默认关：开启需要显式声明，而不是随上游开关
+    # 一起被带起来。
+    CODE_EXEC_ENABLED: bool = Field(
+        default=False,
+        description="Enable the code exec path (router intent code-query -> code_agent node -> code_execute tool); default off = byte-equal to baseline",
+    )
+    # 总尝试轮数上限（**含首次执行**）：运行层失败（退出码非零 / 超时）把输出
+    # 喂回下一轮改码，最多尝试这么多轮（含第一次）；轮数用尽 ⇒ 产出失败回执
+    # （含最后一次输出），不假装成功。治理层失败（沙箱不可用 / 风险被拒 /
+    # HITL 未批）是**终局**，不进这个循环。
+    CODE_EXEC_MAX_ROUNDS: int = Field(
+        default=3,
+        description=(
+            "Maximum total attempt rounds for code exec, including the first execution "
+            "(runtime failures feed stdout/stderr back for a rewrite); default 3"
+        ),
+    )
+    # 单次代码执行超时（秒）。这是**一次执行**的上限，不是整轮自修的预算；
+    # 工具契约里 `timeout_s` 的取值域是 1–120 秒。
+    CODE_EXEC_TIMEOUT_S: float = Field(
+        default=20.0,
+        description="Per-execution timeout in seconds for code exec (tool contract clamps timeout_s to 1-120); default 20",
     )
     # G2：MCP stdio 子进程默认继承主进程全部环境变量，其中含 LLM/SERPAPI 等密钥。
     MCP_SUBPROCESS_ENV_SCRUB: bool = Field(
@@ -1227,6 +1319,12 @@ class Settings(BaseSettings):
     CHECKPOINTER_TYPE: str = Field(
         default="redis",
         description="LangGraph checkpointer backend: 'redis' or 'memory'",
+    )
+    # Phase K 任务 1：Redis 路径初始化失败的 fail-closed 判据（默认关 = 维持既有降级基线）。
+    CHECKPOINTER_FAIL_CLOSED: bool = Field(
+        default=False,
+        description="checkpointer 初始化失败时是否拒绝启动（true=fail-closed，绝不落 MemorySaver）；"
+        "显式 `CHECKPOINTER_TYPE=memory` 不受影响",
     )
     # Phase 20: EventPort 生产后端。memory（默认）= 进程内事件总线（现状）；
     # jsonl = 追加式事件日志（events/event_log.jsonl，重启恢复 pending/dedup）；
@@ -1332,6 +1430,16 @@ class Settings(BaseSettings):
     )
     # 测试数据集领域知识库语料文件（供 kb_ingest 导入）
     KB_DATA_FILE: str = "data/kb/legal_corpus.txt"
+    # KB 子图 guardrails 的「本知识库处理什么」说明。空 = 沿用代码内置的
+    # 测试数据集文案（逐位等价）；非空则由部署方声明领域边界——语料换域
+    # （如法律）时必须同步换这句，否则 guardrails 会按旧域拒答。
+    KB_SCOPE_DESCRIPTION: str = Field(
+        default="",
+        description=(
+            "Domain scope text for the KB workflow guardrails; empty keeps the "
+            "built-in test-dataset wording (bitwise legacy behavior)"
+        ),
+    )
     KB_LLM_PROVIDER: str = Field(default="openai", description="LLM provider used by kb_ingest")
     KB_LLM_MODEL: Optional[str] = Field(default=None, description="LLM model used by kb_ingest")
     KB_LLM_API_KEY: Optional[str] = Field(default=None, description="LLM API key for kb_ingest")
