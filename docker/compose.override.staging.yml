@@ -1,6 +1,6 @@
 # 企业化 P1-7.1：staging 环境 override（与 docker-compose.yml 叠加使用）
 # 用法：docker compose -f docker-compose.yml -f docker/compose.override.staging.yml up -d
-# 与生产差异（配置矩阵见 docs/runbooks/staging-environment.md）：
+# 与生产差异（配置矩阵见 docs/runbooks/预发环境与配置矩阵.md）：
 #   - 开启监控栈三服务（生产按需）
 #   - 独立 compose 项目名，避免误伤 dev/prod 容器
 #   - 数据卷独立（staging_ 前缀），可随时 whole-wipe
@@ -32,6 +32,13 @@ services:
       # §24.3 T1 ⑧：注册期点名非协程 handler。staging 开一次，把 `TOOL HANDLER
       # CONTRACT:` 点名的工具清单抄进部署记录——只打日志，不改执行语义。
       TOOL_HANDLER_CONTRACT_ENABLED: "true"
+      # §24.2 G14：同名重复注册的严格模式。**这里显式钉 false**，两个原因：
+      # ① 基线 compose 的 `${…:-False}` 在宿主机插值，谁的工作站 `.env` 里写了 true
+      #    就让预发启动失败（G13 的同一课：预发取值不许由宿主机决定）；
+      # ② 它是一次 fail-closed 决定，要先在预发把 `TOOL DUPLICATE REGISTRATION:` 的
+      #    告警清单跑干净（或确认每条都是无害重绑），再由运维显式改成 true。
+      # 告警本身不随这个键开关，默认就打印。
+      TOOL_DUPLICATE_REGISTRATION_STRICT: "false"
       # §24.3 T0·G2：MCP stdio 子进程只拿 OS 关键白名单环境，不再继承主进程全部密钥。
       # 第三方 server 需要自己的凭据时用 MCP_SUBPROCESS_ENV_EXTRA_KEYS 显式加名。
       MCP_SUBPROCESS_ENV_SCRUB: "true"
@@ -42,7 +49,7 @@ services:
       # ① 和 UVICORN_RELOAD 一样，基线 compose 的 `${SETTINGS_AUTHZ_ENABLED:-False}`
       #    在宿主机插值，谁的工作站 .env 里写了 true 就让预发提前收紧（见 runbook §15.7 口径）；
       # ② 当前没有「自助升 admin」的接口，注册只会得到 member，直接打开会让整面设置页 403。
-      #    开启前置（admin 账号 + kb.tenant_id 回填）见 docs/runbooks/staging-environment.md。
+      #    开启前置（admin 账号 + kb.tenant_id 回填）见 docs/runbooks/预发环境与配置矩阵.md。
       SETTINGS_AUTHZ_ENABLED: "false"
       # §24.3 T2 ⑭（ADR-0007）：执行位置端口在 staging **打开**。这不是"预发已经有隔离"
       # ——两档能跑的（in_process / thread）都不隔离。打开它只买到一件事：让"按声明选执行
@@ -50,6 +57,10 @@ services:
       # tests/test_p114_execution_sandbox.py 钉住）。顺序也因此是对的：将来有工具声明
       # subprocess/container 时，先在 staging 拿到"拒绝执行"，而不是先在生产拿到。
       EXECUTION_SANDBOX_ENABLED: "true"
+      # LG-1-4：预发打开 run 级重试预算桶（代码默认仍 false）。桶让 task/tool/retrieval
+      # 三层共用同一份 token（首 attempt 不占额度），耗尽即停——只收紧 3×3×3 重试放大，
+      # 不新增任何调用。额度走 RETRY_BUDGET_TOKENS（默认 6），这里不另钉，免得两处口径。
+      RETRY_BUDGET_ENABLED: "true"
     restart: unless-stopped
 
   retrieval-worker:
