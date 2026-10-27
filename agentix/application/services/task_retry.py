@@ -34,6 +34,7 @@ from loguru import logger
 from agentix.application.services.task_plan import TaskSpec
 from agentix.config import settings
 from agentix.domain.policies.error_classification import is_retryable
+from agentix.domain.policies.retry import RETRY_MAX_ATTEMPTS, RetryBackoff
 from agentix.domain.runtime.lifecycle import ExitReason, ExitStatus
 
 __all__ = [
@@ -42,10 +43,25 @@ __all__ = [
     "run_task",
     "run_batch",
     "DEFAULT_MAX_ATTEMPTS",
+    "task_retry_backoff",
 ]
 
-#: 默认最大尝试次数（含首次）
-DEFAULT_MAX_ATTEMPTS = 3
+#: 默认最大尝试次数（含首次）；与原生 ``RetryPolicy`` 默认同源（LG-1-3）
+DEFAULT_MAX_ATTEMPTS = RETRY_MAX_ATTEMPTS
+
+#: flag 关时的历史退避上界（LG-1-3 前 task 层的实值）
+_LEGACY_TASK_MAX_INTERVAL = 8.0
+
+
+def task_retry_backoff() -> RetryBackoff:
+    """task 层重试退避形状（``RETRY_BACKOFF_ALIGNED`` 开 ⇒ 与原生默认逐项相同）。
+
+    ``max_attempts`` 只是快照的一部分：``run_task`` 的实际尝试次数仍由调用方
+    的 ``max_attempts`` 形参决定（``run_batch`` 会透传），开关不改调用方语义。
+    """
+    if bool(getattr(settings, "RETRY_BACKOFF_ALIGNED", False)):
+        return RetryBackoff()
+    return RetryBackoff(max_interval=_LEGACY_TASK_MAX_INTERVAL)
 
 #: 任务执行体签名
 TaskRunner = Callable[[TaskSpec], Awaitable[Any]]
@@ -158,9 +174,9 @@ async def run_task(
     runner: TaskRunner,
     *,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-    base_delay: float = 0.5,
-    max_delay: float = 8.0,
-    jitter: bool = True,
+    base_delay: Optional[float] = None,
+    max_delay: Optional[float] = None,
+    jitter: Optional[bool] = None,
     retry_predicate: Callable[[BaseException], bool] = is_retryable,
 ) -> TaskOutcome:
     """执行单个任务：**局部**重试，耗尽后返回失败结果（不抛异常）。
@@ -168,6 +184,10 @@ async def run_task(
     与 :func:`agentix.domain.policies.retry.aretry` 的差别：
     装饰器语义是「重试后仍失败就抛」，本函数是**边界**语义
     「把失败转成 :class:`TaskOutcome`」——让批任务可以继续跑完其余分支。
+
+    退避参数（``base_delay`` / ``max_delay`` / ``jitter``）缺省（``None``）时取
+    :func:`task_retry_backoff`——即 ``RETRY_BACKOFF_ALIGNED`` 开时与原生
+    ``RetryPolicy`` 默认逐项相同的形状，关时是历史实值（LG-1-3）。
 
     ``asyncio.CancelledError`` **一律透传**（取消不是失败，不可被吞掉）。
 
@@ -180,6 +200,14 @@ async def run_task(
        ``error``——在 ``retry_predicate`` 判定**之后**拼接，不参与
        可重试性分类（建议文本本身也刻意避开 ASCII 提示词，双保险）。
     """
+    shape = task_retry_backoff()
+    attempt_backoff = RetryBackoff(
+        initial_interval=shape.initial_interval if base_delay is None else base_delay,
+        backoff_factor=shape.backoff_factor,
+        max_interval=shape.max_interval if max_delay is None else max_delay,
+        max_attempts=int(max_attempts),
+        jitter=shape.jitter if jitter is None else jitter,
+    )
     attempts = 0
     last_error: Optional[BaseException] = None
     started = time.perf_counter()
@@ -224,11 +252,7 @@ async def run_task(
             last_error = exc
             if not retry_predicate(exc) or attempt == max_attempts - 1:
                 break
-            delay = min(base_delay * (2**attempt), max_delay)
-            if jitter:
-                import random
-
-                delay *= 0.5 + random.random() / 2
+            delay = attempt_backoff.delay(attempt)
             logger.info(
                 "task '{}' attempt {}/{} failed ({}), retrying in {:.2f}s",
                 spec.name,

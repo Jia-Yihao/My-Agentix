@@ -28,11 +28,49 @@ from agentix.domain.errors import AgentError, ErrorCode
 # P0-2(a)：重试策略上提到 domain.policies，application 侧可直接使用（不再产生
 # application → infrastructure 的新违例，见 tests/test_p17_domain_layer.py）。
 from agentix.domain.policies import aretry
+from agentix.domain.policies.retry import RetryBackoff
 from agentix.domain.policies.ingest_auth import ingest_auth_headers_for
 from agentix.infrastructure.core.logger import get_logger
 from agentix.application.services.knowledge_gateway import KnowledgeGateway
 
 kb_logger = get_logger(service="kb-retrieval")
+
+#: flag 关时的历史退避上界（LG-1-3 前 `aretry` 的默认值）
+_LEGACY_RETRIEVAL_MAX_INTERVAL = 8.0
+
+
+def retrieval_retry_backoff() -> RetryBackoff:
+    """检索通道的重试退避形状（``RETRY_BACKOFF_ALIGNED`` 开 ⇒ 与原生默认逐项相同）。
+
+    flag 关时保留历史口径：尝试次数/基础延迟取 ``KB_RETRIEVAL_*`` 配置、
+    上界 8s、抖动开（``aretry`` 的旧默认）。开时整组换成原生 ``RetryPolicy``
+    默认——包括 ``max_attempts=3``，此时 ``KB_RETRIEVAL_MAX_ATTEMPTS`` /
+    ``KB_RETRIEVAL_RETRY_BASE_DELAY`` 不再生效（这是"与原生默认逐项相同"的
+    直接后果，已在配置文档写明）。
+    """
+    if bool(getattr(settings, "RETRY_BACKOFF_ALIGNED", False)):
+        return RetryBackoff()
+    return RetryBackoff(
+        initial_interval=settings.KB_RETRIEVAL_RETRY_BASE_DELAY,
+        max_interval=_LEGACY_RETRIEVAL_MAX_INTERVAL,
+        max_attempts=settings.KB_RETRIEVAL_MAX_ATTEMPTS,
+        jitter=True,
+    )
+
+
+def retrieval_retry_params() -> Dict[str, Any]:
+    """把退避形状翻译成 ``@aretry`` 的实参（``aretry`` 的倍率固定为 2.0）。"""
+    shape = retrieval_retry_backoff()
+    return {
+        "max_attempts": shape.max_attempts,
+        "base_delay": shape.initial_interval,
+        "max_delay": shape.max_interval,
+        "jitter": shape.jitter,
+    }
+
+
+#: 装饰期快照：两个通道的 ``@aretry`` 都展开这一份（改口径只改上面那个函数）。
+_RETRIEVAL_RETRY_PARAMS: Dict[str, Any] = retrieval_retry_params()
 
 
 async def _record_rag_retrieval(
@@ -75,10 +113,7 @@ async def _record_rag_retrieval(
         return False
 
 
-@aretry(
-    max_attempts=settings.KB_RETRIEVAL_MAX_ATTEMPTS,
-    base_delay=settings.KB_RETRIEVAL_RETRY_BASE_DELAY,
-)
+@aretry(**_RETRIEVAL_RETRY_PARAMS)
 async def _postgres_search(
     question: str,
     *,
@@ -213,10 +248,7 @@ async def _postgres_search(
     return postgres_results
 
 
-@aretry(
-    max_attempts=settings.KB_RETRIEVAL_MAX_ATTEMPTS,
-    base_delay=settings.KB_RETRIEVAL_RETRY_BASE_DELAY,
-)
+@aretry(**_RETRIEVAL_RETRY_PARAMS)
 async def _milvus_search(
     question: str,
     *,

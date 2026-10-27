@@ -595,6 +595,13 @@ class Settings(BaseSettings):
         ge=1,
         description="Retry tokens per run when RETRY_BUDGET_ENABLED is on",
     )
+    # RETRY_BACKOFF_ALIGNED：三层（tool/task/retrieval）自研退避统一换成
+    # LangGraph ``RetryPolicy`` 的默认形状（0.5 / 2.0 / 128.0 / 3 / jitter=True）；
+    # 默认关 = 各层保留历史数值，flag-off 逐位等价（纪律 1）。
+    RETRY_BACKOFF_ALIGNED: bool = Field(
+        default=False,
+        description="Align task/tool/retrieval retry backoff with LangGraph RetryPolicy defaults; default off",
+    )
     # ADAPTIVE_TOOL_TIMEOUT_ENABLED：工具超时 = min(spec.timeout, 剩余 run
     # 预算)（run deadline 经 RequestScope 传播）；默认关 = spec 原值。
     ADAPTIVE_TOOL_TIMEOUT_ENABLED: bool = Field(
