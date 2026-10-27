@@ -379,6 +379,8 @@ class TestDocumentedConfigKeys:
             "SETTINGS_AUTHZ_ENABLED",
             # Phase K（checkpointer fail-closed 开关）
             "CHECKPOINTER_FAIL_CLOSED",
+            # LG-2-6：图执行 durability（sync / async / exit，默认 async）
+            "GRAPH_DURABILITY",
         ):
             assert key in documented, f"{key} 未在配置文档中说明"
 

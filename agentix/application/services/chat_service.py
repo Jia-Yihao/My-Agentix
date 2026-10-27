@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from agentix.config.settings import DISPLAY_TZ
 
 from agentix.orchestration.langgraph import lg_builder
-from agentix.orchestration.langgraph.graph_config import thread_config
+from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
 from agentix.application.services.budget_notice import record_budget_notice
 from agentix.application.services.request_scope import (
     RequestScope,
@@ -886,7 +886,9 @@ class ChatService:
                             result = await asyncio.wait_for(
                                 _invoke_tracked(
                                     self._graph_getter().ainvoke(
-                                        input_state, config=config
+                                        input_state,
+                                        config=config,
+                                        **durability_kwargs(),
                                     )
                                 ),
                                 timeout=settings.AGENT_TIMEOUT,
@@ -1528,7 +1530,10 @@ class ChatService:
             # 既有墙钟超时共用 error 收口，break 后由循环外 done 兜底 +
             # finally 归还槽位（恰好一次 done 契约不破）。
             stream_iter = self._graph_getter().astream_events(
-                input_state, config=config, version="v2"
+                input_state,
+                config=config,
+                version="v2",
+                **durability_kwargs(),
             ).__aiter__()
             while True:
                 try:

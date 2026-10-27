@@ -81,6 +81,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "CHECKPOINTER_TYPE",
         # Phase K 任务 1：fail-closed 开关不设 = 默认 false（维持降级基线），属合法省略
         "CHECKPOINTER_FAIL_CLOSED",
+        # LG-2-6：图执行 durability 不设 = 框架默认 async（与升级前逐位等价）
+        "GRAPH_DURABILITY",
         # Phase 20：EventPort 后端不设 = 默认 memory（进程内），属合法省略
         "EVENT_PORT_BACKEND",
         "APP_ENV",
