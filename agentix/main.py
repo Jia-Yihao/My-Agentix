@@ -263,6 +263,8 @@ async def root() -> dict:
 @application.get("/health")
 async def health_check() -> dict:
     """Health check endpoint that verifies connectivity to key services."""
+    # 下面三处只回异常类名、不回 str(e)：/health 是公开无鉴权端点，而这些异常文本里
+    # 常带连接串（Redis DSN 的密码位就落在其中）。别按"日志吞原因"的口径把它"修宽"。
     services = {}
 
     # Check Redis
@@ -481,6 +483,40 @@ async def _event_loop_lag_sampler() -> None:
             expected = now + interval
 
 
+# E4：embedding 缓存启动预热任务句柄。句柄必须存模块级——asyncio 只持弱引用，
+# 不存取的 create_task 任务可能被 GC 掉，表现为"预热偶发没跑"这种最难查的形态。
+# flag（EMBEDDING_CACHE_PREWARM_ENABLED）默认关 ⇒ 默认路径不创建任务、不发网络请求。
+_embedding_prewarm_task: asyncio.Task | None = None
+
+
+async def _embedding_prewarm_worker() -> None:
+    """后台首刷 embedding 缓存（一次性，不阻塞启动）。
+
+    两个刻意的实现选择：① 预热本体是**同步**的（sqlite + 同步 http 客户端），必须经
+    ``asyncio.to_thread`` 下放，否则冷启动那段批量请求会把事件循环按住；
+    ② ``run_prewarm_from_settings`` 自己已经 fail-open，这里再兜一层是因为**导入它**这件事
+    也可能炸（依赖缺失、循环导入），而启动路径没有任何理由因为预热失败而中断（纪律 2）。
+    """
+    try:
+        from agentix.retrieval.infra.embedding.prewarm import run_prewarm_from_settings
+
+        report = await asyncio.to_thread(run_prewarm_from_settings)
+        if report.get("skipped"):
+            logger.info("embedding cache prewarm skipped: reason={}", report["skipped"])
+        elif report.get("error"):
+            logger.warning("embedding cache prewarm degraded: {}", report)
+        else:
+            logger.info(
+                "embedding cache prewarm scheduled result: requested={} cached={} embedded={} elapsed_ms={}",
+                report.get("requested"),
+                report.get("cached"),
+                report.get("embedded"),
+                report.get("elapsed_ms"),
+            )
+    except Exception as exc:  # noqa: BLE001 - 预热是加速件：失败只留痕，不影响服务可用性（纪律 2）
+        logger.warning("embedding cache prewarm task failed: {}", exc)
+
+
 async def _startup() -> None:
     """应用启动逻辑（企业化 P2-1.1：由 lifespan 协议驱动，替代 on_event("startup")）。"""
     logger.info("Starting {} v{}", settings.APP_NAME, settings.APP_VERSION)
@@ -542,6 +578,21 @@ async def _startup() -> None:
     # **唯一**拦截点就在这个函数里，误配置的后果不是崩溃，而是**静默的相似度口径错误**
     # （milvus_impl 注释自述"归一化时 IP metric ≡ cosine"）——结果错、无异常、无日志。
     _run_settings_validation()
+
+    # E4：embedding 缓存启动预热（EMBEDDING_CACHE_PREWARM_ENABLED，默认关）。
+    # 放在配置校验之后：预热要读 EMBEDDING_* 端点配置，配置本身非法时先让校验那条日志说话。
+    # flag 关 ⇒ 一个任务都不创建（纪律 1：默认路径与基线逐位等价，包括"没有多余任务"）。
+    from agentix.retrieval.settings import settings as _retrieval_settings
+
+    if _retrieval_settings.EMBEDDING_CACHE_PREWARM_ENABLED:
+        global _embedding_prewarm_task
+        try:
+            _embedding_prewarm_task = asyncio.get_running_loop().create_task(
+                _embedding_prewarm_worker(), name="embedding-cache-prewarm"
+            )
+            logger.info("embedding cache prewarm dispatched (background, non-blocking)")
+        except RuntimeError:  # pragma: no cover - 无运行事件循环时跳过
+            logger.warning("embedding cache prewarm skipped (no running loop)")
 
     # Auto-create database tables on startup
     import agentix.infrastructure.persistence.db.models  # noqa: F401 - Import all models to register them with Base
@@ -647,6 +698,20 @@ async def _startup() -> None:
             logger.info("task write tools installed (TASK_EXEC_ENABLED=true)")
         except Exception as exc:  # noqa: BLE001 - 接线失败不影响启动
             logger.error("task write tools install failed: {}", exc)
+
+    # P2（代码执行）：code_execute 工具只在 CODE_EXEC_ENABLED=true 时注册
+    # （默认关 ⇒ 零注册，与基线逐位等价）。声明的隔离档位是 subprocess（POSIX 专属），
+    # 平台不支持时执行点 fail-closed 拒绝，不静默退回进程内。
+    if bool(getattr(settings, "CODE_EXEC_ENABLED", False)):
+        try:
+            from agentix.application.services.code_exec_bridge import (
+                install_code_execute_tool,
+            )
+
+            install_code_execute_tool()
+            logger.info("code execute tool installed (CODE_EXEC_ENABLED=true)")
+        except Exception as exc:  # noqa: BLE001 - 接线失败不影响启动
+            logger.error("code execute tool install failed: {}", exc)
 
     # F1b2·M-P1-3（MEMORY 索引制）：MEMORY_INDEX 单开（TASK_EXEC 关）时也要
     # 有 obs:// 指针的取回端 ⇒ 单独装 read_artifact handler（幂等，TASK_EXEC
@@ -771,7 +836,12 @@ async def _startup() -> None:
     try:
         from agentix.application.services.breakpoint_resume import get_checkpoint_recovery
         recovery = get_checkpoint_recovery()
-        active_threads = await recovery.get_active_threads()
+        # LG-2-1：线程清单来自 checkpointer.alist() 枚举（不再读 Redis 集合），
+        # 「未完成」由图状态快照判定；60 秒空闲闸的口径也从 Redis 元数据
+        # （updated_at，无生产写入点）换成 checkpoint 自带的 created_at。
+        active_threads = await recovery.get_active_threads(
+            lg_builder.graph, min_idle_seconds=60
+        )
         if active_threads:
             logger.info("Found {} active threads, attempting recovery...", len(active_threads))
             # P0-1 约定（方案 10.4.1）：不得 `from ...lg_builder import graph`——值绑定
@@ -779,11 +849,9 @@ async def _startup() -> None:
             # 这里动态读取 lg_builder.graph 属性，始终拿到当前编译图。
             recovered = []
             for thread_id in active_threads:
-                metadata = await recovery.get_checkpoint_metadata(thread_id)
-                if metadata and (time.time() - metadata.get("updated_at", 0)) > 60:
-                    result = await recovery.resume_thread(thread_id, lg_builder.graph)
-                    if result:
-                        recovered.append(thread_id)
+                result = await recovery.resume_thread(thread_id, lg_builder.graph)
+                if result:
+                    recovered.append(thread_id)
             logger.info("Recovered {} threads: {}", len(recovered), recovered)
     except Exception as exc:
         logger.warning("Crash recovery check failed: {}", exc)
@@ -807,6 +875,13 @@ async def _shutdown() -> None:
     if _lag_sampler_task is not None:
         _lag_sampler_task.cancel()
         _lag_sampler_task = None
+
+    # E4：预热是 fire-and-forget。关停时不取消，正在批量打端点的那条线程就成了
+    # 关停悬挂的一个来源（to_thread 的线程不可强杀，但取消任务至少不再往里等）。
+    global _embedding_prewarm_task
+    if _embedding_prewarm_task is not None:
+        _embedding_prewarm_task.cancel()
+        _embedding_prewarm_task = None
 
     # Phase H · W3：关闭共享 httpx 出口连接池（未构建时零开销）。
     try:
