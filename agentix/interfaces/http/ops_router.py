@@ -310,6 +310,37 @@ async def retry_thread_task(thread_id: str, request: RetryTaskRequest) -> Dict[s
     return result
 
 
+# ── LG-2-5：历史回看（只读）──────────────────────────────────────────────
+
+
+@router.get("/threads/{thread_id}/history")
+async def get_thread_history(
+    thread_id: str,
+    limit: int = Query(50, ge=1, le=500),
+) -> Dict[str, Any]:
+    """回看线程走过的 checkpoint 步骤序列（新→旧），**只读**。
+
+    数据源是 checkpointer 自己的 ``get_state_history``——步骤序列与图实际走过的
+    超级步同源；本端点不写任何状态（调用前后 ``get_state`` 的 checkpoint_id 不变）。
+
+    状态码：200 = 线程存在；404 = 无该线程的 checkpoint；500 = checkpointer
+    读取失败（读失败不会被报成「没有历史」）。
+    """
+    recovery = get_checkpoint_recovery()
+
+    # 同 /threads/resume：函数体内 import 每次重读模块属性，跟随启动期 Redis
+    # checkpointer 覆盖（模块级值绑定会固化旧图）。
+    from agentix.orchestration.langgraph.lg_builder import graph
+
+    history = await recovery.list_thread_history(thread_id, graph, limit=limit)
+    if history is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No checkpoint found for thread: {thread_id}",
+        )
+    return {"thread_id": thread_id, "count": len(history), "history": history}
+
+
 # ── HITL approval endpoints（A4：生产审批决策面）────────────────────────
 
 
