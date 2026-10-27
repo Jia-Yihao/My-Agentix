@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from agentix.config.settings import DISPLAY_TZ
 
 from agentix.orchestration.langgraph import lg_builder
+from agentix.orchestration.langgraph.graph_config import thread_config
 from agentix.application.services.budget_notice import record_budget_notice
 from agentix.application.services.request_scope import (
     RequestScope,
@@ -766,17 +767,14 @@ class ChatService:
             if ingest_incremental is None
             else bool(ingest_incremental)
         )
-        config = {
-            # P0-2(a)：图级最大轮数硬边界（顶层键，LangGraph 约定的 recursion_limit；
-            # 不可塞进 configurable，否则图不识别）。MAX_ITERATIONS 由此真正生效。
-            "recursion_limit": settings.MAX_ITERATIONS,
-            "configurable": {
-                "thread_id": session_id,
-                "image_path": image_path,
-                "file_path": file_path,
-                "incremental": incremental_flag,
-            },
-        }
+        # P0-2(a)：图级最大轮数硬边界——config 形状（顶层 recursion_limit）只从
+        # graph_config 出（LG-2-3）。该键不可塞进 configurable，否则图不识别。
+        config = thread_config(
+            session_id,
+            image_path=image_path,
+            file_path=file_path,
+            incremental=incremental_flag,
+        )
 
         # F1e·A-P1-4：非 stream ask 声明进环意图（lg_builder 注入壳据此决定
         # 是否塞 interrupt 回调）。stream 恒 L2 不进本分支 ⇒ 永不声明、
@@ -1479,16 +1477,13 @@ class ChatService:
                 if ingest_incremental is None
                 else bool(ingest_incremental)
             )
-            config = {
-                # P0-2(a)：图级最大轮数硬边界（顶层键，见 ask() 同处说明）
-                "recursion_limit": settings.MAX_ITERATIONS,
-                "configurable": {
-                    "thread_id": session_id,
-                    "image_path": image_path,
-                    "file_path": file_path,
-                    "incremental": incremental_flag,
-                }
-            }
+            # P0-2(a)：图级最大轮数硬边界（同 ask()，config 形状只从 graph_config 出）
+            config = thread_config(
+                session_id,
+                image_path=image_path,
+                file_path=file_path,
+                incremental=incremental_flag,
+            )
 
             # 批次 7：长期记忆读回（同 _ask_impl；默认关，失败不影响事件流）
             memory_context = await _maybe_memory_context(message)
@@ -1647,18 +1642,17 @@ class ChatService:
                 ):
                     output = data.get("output")
                     router_data = (
-                        output.get("router", {}) if isinstance(output, dict) else {}
+                        output.get("router") if isinstance(output, dict) else None
                     )
-                    route_type = (
-                        router_data.get("type")
-                        if isinstance(router_data, dict)
-                        else None
-                    )
-                    route_logic = (
-                        router_data.get("logic")
-                        if isinstance(router_data, dict)
-                        else None
-                    )
+                    # router 节点真实返回的是 ``Router`` 模型实例（不是 dict），
+                    # dict 与 LangChain BaseModel 都暴露 ``.get``。此前这里用
+                    # ``isinstance(router_data, dict)`` 把关，生产路径恒为 False →
+                    # 这一帧从来没发出去过，wire 上的 route 永远是 null。
+                    if router_data is None:
+                        route_type = route_logic = None
+                    else:
+                        route_type = router_data.get("type")
+                        route_logic = router_data.get("logic")
                     if route_type:
                         route_emitted = True
                         yield {
@@ -1743,7 +1737,7 @@ class ChatService:
             _finish_run("cancelled", "client_disconnected")
             raise
         except Exception as e:
-            logger.error("Stream error: %s", e, exc_info=True)
+            logger.error("Stream error: {}", e, exc_info=True)
             _finish_run("failed", f"{type(e).__name__}: {e}")
             # A5/R5d：异常路径补记首个错误步（与 ask 同口径：AgentError 用
             # 业务错误码，其余记 internal_error；失败路径不记 completion）

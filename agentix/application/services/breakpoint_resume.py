@@ -31,6 +31,7 @@ from redis.asyncio import Redis
 
 from agentix.config import settings
 from agentix.observability.spans import record_resume_from_checkpoint
+from agentix.orchestration.langgraph.graph_config import thread_config
 
 
 class InterruptReason(str, Enum):
@@ -389,7 +390,7 @@ class CheckpointRecovery:
         这是「该线程有没有可续跑状态」的唯一判据：/ops/threads/resume 的 404 与
         resume_thread 的前置检查都走它（纪律 6 ④，不许两处各判一遍）。
         """
-        config = {"configurable": {"thread_id": thread_id}}
+        config = thread_config(thread_id)
         try:
             snapshot = await _state_snapshot(graph, config)
         except Exception as exc:  # noqa: BLE001 - 读不到与「没有」同义：返回 None 由调用方定状态码
@@ -419,7 +420,7 @@ class CheckpointRecovery:
         """
         active: List[str] = []
         for thread_id in await self._iter_checkpoint_thread_ids():
-            config = {"configurable": {"thread_id": thread_id}}
+            config = thread_config(thread_id)
             try:
                 snapshot = await _state_snapshot(graph, config)
             except Exception as exc:  # noqa: BLE001 - 单线程读失败不拖垮整轮扫描（纪律 2）
@@ -479,7 +480,7 @@ class CheckpointRecovery:
             ThreadInterruptedError: 线程挂着未决中断（LG-2-2）。这类线程不能被
                 ``ainvoke(None)`` 续跑，调用方应改走 ``/ops/hitl/in-loop``。
         """
-        config = {"configurable": {"thread_id": thread_id}}
+        config = thread_config(thread_id)
 
         try:
             # LG-2-1：前置判据是 checkpoint 快照本身，不是 Redis 元数据——待恢复
