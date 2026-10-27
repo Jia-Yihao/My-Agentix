@@ -84,11 +84,36 @@ def test_error_tool_selection_node_registered(compiled_workflow):
     )
 
 
+def _compiled_destinations(compiled, node_name: str) -> set:
+    """从**编译后的路由表**读一个节点的真实出边目标（而非 ``get_graph()`` 的画法）。
+
+    LG-0-2（langgraph 0.2.60 → 1.2.18）实测出来的口径变更：1.2 线的 ``get_graph()``
+    **不再画出「静态无入边」节点的出边**。``error_tool_selection`` 恰好是这种节点——
+    它只被 ``tool_selection`` 在运行期以 ``Command(goto="error_tool_selection")``
+    命中，而该目标**没有**写进 ``tool_selection`` 的 ``Command[Literal[...]]`` 注解
+    ⇒ 画法上它的整条链都不出现（0.2 线会画出来）。
+
+    但运行期照走：最小复现（goto 一个注解外的目标，该目标另有 ``add_edge`` 出边）
+    读数 ``{'v': 1011}`` = 1 + 10 + 1000，证明仍沿显式边收敛。所以本用例的不变量
+    （「兜底节点必须有到 summarize 的出边，否则图执行挂起」）**不依赖画法**，
+    直接读路由表：``add_edge(a, b)`` 在编译期落为 a 的
+    ``ChannelWriteEntry(channel="branch:to:b")``。
+    """
+    out: set = set()
+    steps = getattr(compiled.nodes[node_name].node, "steps", []) or []
+    for step in steps:
+        for entry in getattr(step, "writes", ()) or ():
+            channel = getattr(entry, "channel", None)
+            if isinstance(channel, str) and channel.startswith("branch:to:"):
+                out.add(channel[len("branch:to:") :])
+    return out
+
+
 def test_error_tool_selection_has_outgoing_edge_to_summarize(compiled_workflow):
-    g = compiled_workflow.get_graph()
-    edges = {(e.source, e.target) for e in g.edges}
-    assert ("error_tool_selection", "summarize") in edges, (
+    destinations = _compiled_destinations(compiled_workflow, "error_tool_selection")
+    assert "summarize" in destinations, (
         "error_tool_selection 缺少到 summarize 的显式出边：非 Command 节点无出边会导致图执行挂起"
+        f"（实测编译路由表出边目标：{sorted(destinations)}）"
     )
 
 

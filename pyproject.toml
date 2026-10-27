@@ -44,7 +44,7 @@ classifiers = [
 ]
 
 # 依赖声明为单一事实来源（requirements.txt 与其保持同步）。
-# 版本约束策略见 docs/VERSIONING.md：核心框架钉小版本，工具库给上下界。
+# 版本约束策略见 docs/版本管理策略.md：核心框架钉小版本，工具库给上下界。
 #
 # ⚠️ 修正记录：此前本列表与 requirements.txt **实际已漂移**（下面注释声称同步，
 # 但 4 个包的 spec 相冲突，其中 2 个是互斥区间/功能不兼容）。CI 与 Docker 都
@@ -59,7 +59,7 @@ dependencies = [
     "starlette==1.7.0",
     "uvicorn[standard]==0.27.0",
     "pydantic==2.13.5",
-    "pydantic-settings==2.4.0",
+    "pydantic-settings==2.16.1",  # LG-0-2：langchain-community 0.4.2 要求 >=2.10.1
     # 完整性补齐：agentix 内 9 处直连 import，原仅靠 fastapi/pydantic/sqlalchemy 传递
     "typing-extensions==4.16.0",
     "email-validator>=2.0.0",
@@ -67,32 +67,41 @@ dependencies = [
     "gunicorn",
     "aiofiles",
     # ---- LLM 集成 ----
-    "openai>=1.58.1,<2",
+    # LG-0-2：langchain-openai 1.7.3 要 openai>=2.45；刻意不进 3.x——openai 3.39 要
+    # jiter>=0.16，而 dev/评测链的 ragas→instructor 全系锁 jiter<0.15，整表会 ResolutionImpossible
+    "openai>=2.45.0,<3.0.0",
     "anthropic==0.18.1",
-    "langchain==0.3.30",
-    "langchain-community==0.3.27",
-    "langchain-openai==0.2.14",
-    "langchain-neo4j==0.3.0",
-    "langchain-core>=0.3.85,<0.4.0",
+    # LG-0-2：langgraph 1.2 线要求 langchain-core>=1.4.7 ⇒ 家族整族一起走（详见 requirements.txt 注释）
+    "langchain==1.4.7",
+    "langchain-community==0.4.2",
+    "langchain-openai==1.7.3",
+    "langchain-neo4j==0.11.0",
+    "langchain-core==1.7.0",
     # ---- 机器学习 ----
-    "numpy<2.0.0",
+    # LG-0-2：neo4j-graphrag 1.22.0（langchain-neo4j 0.11.0 硬依赖）要 numpy>=2.0,<3
+    "numpy>=2.0.0,<3.0.0",
     "scikit-learn==1.5.0",
     # 完整性补齐：cypher_tools/visualize generate_chart 直连 import
     "pandas==2.3.3",
     # ---- Agent 框架 ----
-    "langgraph==0.2.60",
-    "langgraph-checkpoint==2.0.26",
-    "langgraph-checkpoint-redis==0.0.8",
+    # LG-0-2：1.2 线（节点形参 retry_policy / cache_policy / error_handler / timeout）
+    "langgraph==1.2.18",
+    "langgraph-checkpoint==4.3.1",
+    "langgraph-checkpoint-redis==0.5.2",
     # ---- GraphRAG ----
     "lightrag-hku>=0.0.3,<2.0.0",
+    # LG-0-2：lightrag-hku 的硬依赖（要 google-genai>=1.0,<3）；留在 1.x 线内取最后一个
+    # 允许 websockets<17 的版本，不跨大版本
+    "google-genai>=1.75.0,<2.0.0",
     # ---- 向量数据库与 Embedding ----
     # 需 2.4 的 partition_key API；与服务器 milvus v2.4.17 对齐（实测装 2.4.15）
     "pymilvus>=2.4.0,<2.5",
     # ---- 数据库 ----
     "sqlalchemy==2.0.25",
     "pymysql==1.1.1",
-    "redis==5.0.1",
-    "neo4j==5.27.0",
+    # LG-0-2：saver 0.5.2 只给下限（>=5.2.1），上界必须自己钉，不许交给 pip
+    "redis>=5.2.1,<6.0.0",
+    "neo4j==6.4.1",  # LG-0-2：neo4j-graphrag 1.22.0 要 neo4j>=6.3.1,<7
     # ---- 传递依赖冲突显式钉死（此前未声明，`pip check` 报 2 处不一致）----
     # pymilvus 2.4.x 硬性要求 grpcio<=1.67.1；OTel gRPC exporter 1.44.0 在
     # py<3.13 下要求 grpcio>=1.63.2 —— 交集 [1.63.2, 1.67.1]（原先解析到 1.84.0）
@@ -100,19 +109,20 @@ dependencies = [
     # playwright 1.40.0 精确要求 greenlet==3.0.1（SQLAlchemy 仅要求 !=0.4.17）
     "greenlet==3.0.1",
     # ---- HTTP 客户端 ----
-    "httpx==0.26.0",
+    "httpx==0.28.1",  # LG-0-2：google-genai 1.75.0 要 httpx>=0.28.1（实测元数据；openai 2.54 只要 >=0.25.1，不是驱动方）
     # 完整性补齐：file_handler/image_handler/kb_retrieval/task_handlers 直连 import
     "aiohttp==3.14.3",
     # 完整性补齐：chat.py 直连 import
     "anyio==4.15.1",
     "requests==2.33.0",
-    "websockets==14.2",
+    # LG-0-2：langsmith 0.14.13 要 websockets>=15，google-genai 1.75.0 只放宽到 <17 ⇒ 区间钉死
+    "websockets>=15,<17",
     "bcrypt==4.1.2",
     "PyJWT==2.15.0",
     # ---- 通用工具 ----
     "python-dotenv==1.2.2",
     "python-multipart==0.0.31",
-    "pyyaml==6.0.1",
+    "pyyaml==6.0.3",  # LG-0-2：neo4j-graphrag 1.22 要求 pyyaml>=6.0.2（原 ==6.0.1 会让解析失败）
     "jinja2==3.1.6",
     # R2: 2.0.0 无 cp312 wheel（源码编译需 MSVC），2.1.0 起提供 3.12 wheel
     "pyahocorasick==2.1.0",
@@ -138,11 +148,10 @@ dependencies = [
     "botocore==1.43.99",
     "pymupdf==1.25.3",
     "itsdangerous>=2.1.0",
-    "langchain-text-splitters>=0.3.9,<0.4",
-    "langgraph-prebuilt>=0.2.0",
-    # R2: 必须对齐 langgraph 0.2.60 的约束——原写 >=0.2.0 与 langgraph 0.2.60
-    # 自身要求的 <0.2.0 互斥，会让「按 pyproject 安装」直接解析失败
-    "langgraph-sdk>=0.1.42,<0.2.0",
+    "langchain-text-splitters==1.1.3",
+    "langgraph-prebuilt==1.1.1",
+    # LG-0-2：对齐 langgraph 1.2.18 的约束（实测其元数据要求 langgraph-sdk >=0.4.6,<0.5.0）
+    "langgraph-sdk==0.4.10",
     "faiss-cpu>=1.7.0",
     # image_handler.py 硬依赖 PIL——属运行时，不是 viz 可选
     "pillow",
@@ -172,13 +181,16 @@ viz = [
     "seaborn",
 ]
 
-[project.urls]
-Homepage = "https://github.com/Jia-Yihao/Legelbot"
-Repository = "https://github.com/Jia-Yihao/Legelbot"
-Documentation = "https://github.com/Jia-Yihao/Legelbot/blob/main/docs/architecture/README.md"
-Changelog = "https://github.com/Jia-Yihao/Legelbot/blob/main/CHANGELOG.md"
-"Issue Tracker" = "https://github.com/Jia-Yihao/Legelbot/issues"
-Discussions = "https://github.com/Jia-Yihao/Legelbot/discussions"
+# [project.urls] 已摘除：原先六条全部指向未发布的远端（实测 404），会随 wheel 元数据
+# 分发出去——读不到源码比读到一个假链接更糟。发布到公共远端后按原名回填。
+#
+# [project.urls]
+# Homepage = "https://github.com/<owner>/<repo>"
+# Repository = "https://github.com/<owner>/<repo>"
+# Documentation = "https://github.com/<owner>/<repo>/blob/main/docs/architecture/README.md"
+# Changelog = "https://github.com/<owner>/<repo>/blob/main/CHANGELOG.md"
+# "Issue Tracker" = "https://github.com/<owner>/<repo>/issues"
+# Discussions = "https://github.com/<owner>/<repo>/discussions"
 
 [project.scripts]
 # MCP server 可执行入口：pip install -e . 后任意 MCP 宿主可直接挂载

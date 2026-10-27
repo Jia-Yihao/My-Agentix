@@ -11,7 +11,7 @@
 |---|---|---|
 | `create_validate_final_answer_node` | **删除** | 唯一消费者是自身无法导入的遗留工作流 ⇒ 传递性不可达 |
 | `text2cypher_with_viz_and_follow_ups.py` | **删除** | 0 处 import + 断链 import（永久无法导入） |
-| `lg_builder.check_hallucinations` | **保留** | 是文档化的未接线能力（`docs/design/orchestration-rationale.md` A6），接线会引入每次执行的额外 LLM 调用，属需独立评估的运行期变更 |
+| `lg_builder.check_hallucinations` | **保留** | 是文档化的未接线能力（`docs/design/编排方案选型论证.md` A6），接线会引入每次执行的额外 LLM 调用，属需独立评估的运行期变更 |
 | `ErrorCode.MAX_STEPS_EXCEEDED` | **保留** | 出现在文档化的对外契约（错误码→HTTP 状态映射表），删除属破坏性接口变更 |
 
 因此本文件现在的职责是：**防接线（运行时行为变更）+ 防复活（回滚已删的东西）+
@@ -45,7 +45,7 @@ ERRORS_PATH = SRC_ROOT / "domain" / "errors.py"
 
 DEAD_CODE_TAG = "DEAD-CODE(P2-5)"
 
-# build_graph 当前应注册的 9 个业务节点（不含 __start__）。
+# build_graph 当前应注册的 10 个业务节点（不含框架伪节点，见 FRAMEWORK_PSEUDO_NODES）。
 EXPECTED_NODES = {
     # 批次 7（§10.9.4）：新增入口节点 message_window（历史窗口化，
     # settings.MAX_HISTORY_MESSAGES<=0 时 no-op）——这是**有意接线**，
@@ -62,7 +62,17 @@ EXPECTED_NODES = {
     # ROUTE_HANDLERS 需与节点集一致，phase19 绊线断言三者相等）；
     # 可达性由 TASK_EXEC_ENABLED 在路由侧门控。删节点或再增节点同样触发本绊线。
     "execute_task",
+    # P2（代码执行）：code_agent 无条件注册（同上口径）；
+    # 可达性由 CODE_EXEC_ENABLED 在路由侧门控。
+    "code_agent",
 }
+
+#: ``get_graph()`` 画出来的**框架伪节点**，不算业务注册。
+#: LG-0-2（langgraph 0.2.60→1.2.18）实测：1.2 线的画法除 ``__start__`` 外
+#: 还会画出 ``__end__``（0.2 只画 ``__start__``）。本绊线的判据是「业务节点
+#: 集合恰好等于 EXPECTED_NODES」，伪节点属图的固有产物、与被防的「静默接线/
+#: 误删节点」无关，故与 ``__start__`` 同径剔除——剔除集合随之扩到两个。
+FRAMEWORK_PSEUDO_NODES = {"__start__", "__end__"}
 
 
 def _add_node_first_args(source_path: pathlib.Path) -> set:
@@ -107,7 +117,7 @@ def test_check_hallucinations_absent_from_registered_nodes():
 
 
 def test_build_graph_still_registers_exactly_the_expected_nodes():
-    """编译图节点集合与预期 9 节点一致（既防静默接线，也防误删现有节点）。
+    """编译图节点集合与预期 10 节点一致（既防静默接线，也防误删现有节点）。
 
     批次 7 前为 7 节点；message_window 为历史窗口化（§10.9.4）的有意加入，
     绊线随拓扑变更同步收紧——这正是本守卫的设计意图。
@@ -115,7 +125,7 @@ def test_build_graph_still_registers_exactly_the_expected_nodes():
     from agentix.orchestration.langgraph import lg_builder
 
     registered = set(lg_builder.graph.get_graph().nodes)
-    business_nodes = registered - {"__start__"}
+    business_nodes = registered - FRAMEWORK_PSEUDO_NODES
     assert business_nodes == EXPECTED_NODES
 
 
@@ -129,7 +139,7 @@ def test_add_node_calls_in_build_graph_exclude_check_hallucinations():
 
 
 def test_add_node_calls_match_expected_node_set():
-    """AST 解析出的 add_node 首参集合即预期 9 节点（含 message_window）。"""
+    """AST 解析出的 add_node 首参集合即预期 10 节点（含 message_window）。"""
     assert _add_node_first_args(LG_BUILDER_PATH) == EXPECTED_NODES
 
 
@@ -185,7 +195,7 @@ def test_max_steps_exceeded_carries_dead_code_tag():
     """ErrorCode.MAX_STEPS_EXCEEDED 仍带标注。
 
     它与另两项**不同**：不删除。理由是它出现在文档化的对外契约里
-    （``docs/architecture/interfaces.md`` 的控制流层 → HTTP 500 映射表），
+    （``docs/architecture/接口与契约.md`` 的控制流层 → HTTP 500 映射表），
     错误码属于 API 面，删除是**破坏性接口变更**；而"预留但当前无产生点"
     本身不是缺陷。标注保留，语义从"待删除"改为"预留"。
     """
