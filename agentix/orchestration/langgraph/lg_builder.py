@@ -25,6 +25,7 @@ from loguru import logger
 
 from agentix.config import ablation, settings
 from agentix.observability.spans import record_resume_from_checkpoint
+from agentix.orchestration.langgraph.graph_config import thread_config
 from agentix.orchestration.langgraph.lg_states import AgentState, GradeHallucinations
 from agentix.orchestration.langgraph.policies import readonly_retry_policy
 from agentix.application.agents.lg_prompts import (
@@ -352,7 +353,9 @@ async def resume_in_loop(thread_id: str, resume_value: Any) -> Any:
     """
     from langgraph.types import Command
 
-    config = {"configurable": {"thread_id": thread_id}}
+    # LG-2-3：config 形状（含顶层 recursion_limit）只从 graph_config 出——恢复路径
+    # 此前缺这个键，会落到框架默认 25，与主链路的 MAX_ITERATIONS 各说一套。
+    config = thread_config(thread_id)
     # PhaseK 任务 6：进环恢复点落 span。thread_id 判据只从 config 取（唯一真源，
     # 纪律 6 ④）；fail-open 由 helper 保证（无 span/异常 ⇒ no-op，纪律 2）。
     record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))

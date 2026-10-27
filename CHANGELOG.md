@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-2-3 `recursion_limit` 统一（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P2 第 3 条：`recursion_limit` 是 LangGraph 的**顶层** config 键，此前只有 `chat_service` 两条入口显式写出；恢复路径（`lg_builder.resume_in_loop` / `breakpoint_resume.resume_thread`）只带 `configurable.thread_id` ⇒ 落到框架默认 **25**。同一张图，主链路按 `MAX_ITERATIONS`（默认 10）截断，恢复请求却能多跑一倍多——两条路径的轮数预算各说一套。
+
+- **[单一构造点] 新增 `agentix/orchestration/langgraph/graph_config.py`**：`thread_config(thread_id, **configurable)` 产出 `{"configurable": {"thread_id": ...}, "recursion_limit": int(settings.MAX_ITERATIONS)}`；轮数预算每次调用现读配置（运行期改值即生效），config 形状只在该模块定义。
+- **[三处接入]** `lg_builder.resume_in_loop`、`breakpoint_resume`（`get_thread_snapshot` / `get_active_threads` / `resume_thread` 三处同形状构造一并收口）、`chat_service`（`ask` 与 `stream_events` 两条入口）全部改走 `thread_config()`。`configurable` 里的其余键（`image_path` / `file_path` / `incremental` / `hitl_in_loop` 等）仍由调用方按需追加，行为不变。
+- **[行为变化]** 恢复请求的轮数上限从框架默认 25 回到 `MAX_ITERATIONS`（默认 10）。这不是"恢复变窄"而是与主链路同预算：需要超过 10 步才能完成的恢复，本来在主链路上也跑不完。无挂起/正常恢复路径逐位等价（p152/p153 同批全绿）。
+- **[既有守卫按新口径更新]** `tests/test_p133_decision_span_attributes.py` 原来断言 `resume_in_loop` 的 config **恰好**是 `{"configurable": {"thread_id": "t-1"}}`；config 现在合法地多出顶层 `recursion_limit`，改为断言 `configurable` 恰为 `{"thread_id": "t-1"}` **且** `recursion_limit == settings.MAX_ITERATIONS`（意图不变、判据不弱化）。
+- **[新增守卫] `tests/test_p154_recursion_limit_unified.py`（10 条）**：① 形状与顶层键；② 现读 `MAX_ITERATIONS`（7/3 两次）；③④⑤⑥ 四处调用方下发的 config 均带统一预算；⑦ 真图行为：动态 `interrupt` 恢复后自环，`MAX_ITERATIONS=3` 时抛 `GraphRecursionError` 且 spin 次数远小于 24（证明不是 25）；⑧⑨⑩ AST 守卫：三个调用方都经 `thread_config`、不再有把 `recursion_limit` 当 dict 字面量键的写法。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第九段读数；`docs/项目实现手册.md` 补 config 单点一段。
+- **[验证]** 定向 `test_p154 + test_p133 + test_p02` → **46 passed**；恢复/端点/架构批 `p152/p153/p37/p64/p81/p136/p66/p101/p22/p147` → **178 passed**；`ruff check agentix tests` → `All checks passed!`；`mypy agentix/domain` → `Success: no issues found in 38 source files`；全量 `.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **5335 passed / 40 skipped / 4 deselected / 0 failed**（422.20s；相对 LG-2-2 的 5325 恰好 **+10**，即本条新用例数，既有 5325 条零翻转）。
+
 ### LangGraph 原生对齐 · LG-2-2 续跑前判挂起，命中即 409（2026-10-27）
 
 《LangGraph 原生对齐与恢复链优化》P2 第 2 条：`/ops/threads/resume` 此前对「挂着未决中断」的线程照旧 `ainvoke(None)`，结果是 **200 但图又挂回去**——把「需要人裁决」报成「已恢复」。
