@@ -13,6 +13,7 @@ from agentix.application.services.breakpoint_resume import (
     get_breakpoint_manager,
     get_checkpoint_recovery,
     ResumeAction,
+    ThreadInterruptedError,
 )
 from agentix.infrastructure.core.security import verify_api_key
 
@@ -170,7 +171,11 @@ async def list_active_threads() -> List[str]:
 
 @router.post("/threads/resume")
 async def resume_thread(request: ResumeRequest) -> Dict[str, Any]:
-    """Attempt to resume a crashed thread from its last checkpoint."""
+    """Attempt to resume a crashed thread from its last checkpoint.
+
+    状态码口径（LG-2-2）：404 = 没有可续跑 checkpoint；409 = 线程挂着未决中断
+    （改走 ``/ops/hitl/in-loop``）；500 = 续跑失败。
+    """
     recovery = get_checkpoint_recovery()
 
     # 说明（非缺陷）：此处为函数体内（惰性）import，保留原样。函数内 `from X import y`
@@ -188,7 +193,22 @@ async def resume_thread(request: ResumeRequest) -> Dict[str, Any]:
             detail=f"No checkpoint found for thread: {request.thread_id}",
         )
 
-    result = await recovery.resume_thread(request.thread_id, graph)
+    try:
+        result = await recovery.resume_thread(request.thread_id, graph)
+    except ThreadInterruptedError as exc:
+        # LG-2-2：等人工裁决的线程不是崩溃受害者。硬续只会「200 但图又挂回去」，
+        # 409（与当前资源状态冲突、重试无意义）是这里唯一正确的状态码。
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "thread_interrupted",
+                "message": "线程挂着未决中断，请先经 /ops/hitl/in-loop 裁决后再续跑",
+                "thread_id": request.thread_id,
+                "pending_interrupts": exc.pending,
+                "resume_endpoint": "/ops/hitl/in-loop",
+            },
+        ) from exc
+
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

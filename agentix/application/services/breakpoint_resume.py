@@ -270,6 +270,24 @@ def _idle_seconds(snapshot: Any) -> Optional[float]:
     return (datetime.now(timezone.utc) - created).total_seconds()
 
 
+def _pending_interrupts(snapshot: Any) -> tuple:
+    """快照上挂着的中断；空元组 = 没有待人工处理的中断。"""
+    return tuple(getattr(snapshot, "interrupts", ()) or ())
+
+
+class ThreadInterruptedError(RuntimeError):
+    """线程挂着未决中断：它等的是人工裁决，不是崩溃恢复（LG-2-2）。
+
+    刻意不用 ``ainvoke(None)`` 硬续：实测那样会「200 但图又挂回去」，把「需要人」
+    报成「已恢复」。端点据此回 409 并指向 ``/ops/hitl/in-loop``，启动恢复据此跳过。
+    """
+
+    def __init__(self, thread_id: str, pending: int):
+        super().__init__(f"thread {thread_id} has {pending} pending interrupt(s)")
+        self.thread_id = thread_id
+        self.pending = pending
+
+
 class CheckpointRecovery:
     """Crash recovery driven by the LangGraph checkpointer itself.
 
@@ -456,6 +474,10 @@ class CheckpointRecovery:
 
         Returns:
             The final state after resumption, or None if no checkpoint found.
+
+        Raises:
+            ThreadInterruptedError: 线程挂着未决中断（LG-2-2）。这类线程不能被
+                ``ainvoke(None)`` 续跑，调用方应改走 ``/ops/hitl/in-loop``。
         """
         config = {"configurable": {"thread_id": thread_id}}
 
@@ -466,6 +488,17 @@ class CheckpointRecovery:
             if snapshot is None:
                 logger.warning("No resumable checkpoint for thread {}", thread_id)
                 return None
+
+            # LG-2-2：挂着未决中断的线程等的是人工裁决——治理层等待 ≠ 崩溃。这里抛给
+            # 调用方（端点 409 / 启动跳过），不写 failed 元数据、不动图状态。
+            pending = _pending_interrupts(snapshot)
+            if pending:
+                logger.info(
+                    "Thread {} has {} pending interrupt(s); resume requires /ops/hitl/in-loop",
+                    thread_id,
+                    len(pending),
+                )
+                raise ThreadInterruptedError(thread_id, len(pending))
 
             try:
                 metadata = await self.get_checkpoint_metadata(thread_id) or {}
@@ -497,6 +530,9 @@ class CheckpointRecovery:
 
             return result
 
+        except ThreadInterruptedError:
+            # 上游信号：不写 failed 元数据、不改任何状态（裁决入口是 /ops/hitl/in-loop）
+            raise
         except Exception as exc:
             logger.error("Failed to resume thread {}: {}", thread_id, exc)
             await self.save_checkpoint_metadata(

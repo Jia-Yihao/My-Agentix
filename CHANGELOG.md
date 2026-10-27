@@ -12,6 +12,19 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-2-2 续跑前判挂起，命中即 409（2026-10-27）
+
+《LangGraph 原生对齐与恢复链优化》P2 第 2 条：`/ops/threads/resume` 此前对「挂着未决中断」的线程照旧 `ainvoke(None)`，结果是 **200 但图又挂回去**——把「需要人裁决」报成「已恢复」。
+
+- **[判据] `agentix/application/services/breakpoint_resume.py`**：新增 `ThreadInterruptedError(thread_id, pending)` 与唯一判据 `_pending_interrupts(snapshot)`（`snapshot.interrupts` 非空）。`resume_thread` 在拿到快照后、落 span 与 `ainvoke` 之前抛出该异常；`except ThreadInterruptedError: raise` 先于通用 `except`，**不写 failed 元数据、不动图状态**（治理层等待 ≠ 崩溃）。
+- **[状态码] `agentix/interfaces/http/ops_router.py` 的 `/ops/threads/resume`**：捕获后回 **409**，`detail` 带 `error=thread_interrupted` / `pending_interrupts` / `resume_endpoint=/ops/hitl/in-loop`；404（无 checkpoint）与 500（续跑失败）口径不变。
+- **[启动恢复] `agentix/main.py`**：`_startup` 的恢复循环逐线程捕 `ThreadInterruptedError`，`logger.info` 跳过并继续——否则一条待裁决线程会让整轮恢复中断（该线程仍是 `/ops/active-threads` 里的可见项）。
+- **[不动静态暂停]**：`interrupt_before=[...]` 的暂停 `snapshot.interrupts` 为空、只有 `next` 非空 ⇒ 照旧可续跑（有回归用例钉住，409 不误伤）。
+- **[新增守卫] `tests/test_p153_resume_interrupted_conflict.py`（5 条）**：① 节点内 `interrupt()` 造挂起 ⇒ `resume_thread` 抛异常、`checkpoint_id` 不变、后续节点未执行、Redis 无 failed 元数据；② 端点 409 且指向 `/ops/hitl/in-loop`；③ 静态 `interrupt_before` 线程照旧 200 完成；④ 未知线程仍 404；⑤ `main.py` 的 except 接线有 AST 守卫。
+- **[行为变化]** 唯一变化是「挂着未决中断的线程」从假的 200 变成 409；无挂起路径逐位等价（p152 的真 `MemorySaver` 续跑用例同批全绿）。
+- **[文档同步]** `docs/项目实现手册.md` 补 409 口径一段；`README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第八段读数。
+- **[验证]** 定向 `test_p153 + test_p152 + test_p133` → **29 passed**（5 + 11 + 13）；端点/启动/架构批 `p37/p64/p81/p136/p66/p101` → **109 passed**；`ruff check agentix tests` → `All checks passed!`；`mypy agentix/domain` → `Success: no issues found in 38 source files`；全量 `.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **5325 passed / 40 skipped / 4 deselected / 0 failed**（429.52s；相对 LG-2-1 的 5320 恰好 **+5**，即本条新用例数，既有 5320 条零翻转）。
+
 ### LangGraph 原生对齐 · LG-2-1 待恢复线程改由 `alist()` 派生（2026-10-27）
 
 《LangGraph 原生对齐与恢复链优化》P2 第 1 条：断点续跑此前**恒为空转**——`active_threads` 这个 Redis 集合在生产上没有写入点（唯一写方 `save_checkpoint_metadata` 只在恢复路径被调用，自举不成立），于是启动恢复与 `/ops/active-threads` 一直返回空。本轮把「哪些线程未完成」交回 checkpointer 自己回答。
