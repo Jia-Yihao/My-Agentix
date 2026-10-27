@@ -15,11 +15,25 @@ from .error_classification import (
     RETRYABLE_HINTS,
     is_retryable,
 )
-from .retry import aretry
+from .retry import (
+    RETRY_BACKOFF_FACTOR,
+    RETRY_INITIAL_INTERVAL,
+    RETRY_JITTER,
+    RETRY_MAX_ATTEMPTS,
+    RETRY_MAX_INTERVAL,
+    RetryBackoff,
+    aretry,
+)
 
 __all__ = [
     "NON_RETRYABLE_HINTS",
     "RETRYABLE_HINTS",
     "is_retryable",
     "aretry",
+    "RetryBackoff",
+    "RETRY_INITIAL_INTERVAL",
+    "RETRY_BACKOFF_FACTOR",
+    "RETRY_MAX_INTERVAL",
+    "RETRY_MAX_ATTEMPTS",
+    "RETRY_JITTER",
 ]

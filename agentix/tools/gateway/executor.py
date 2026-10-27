@@ -31,8 +31,16 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
+from agentix.domain.policies.retry import RetryBackoff
 from agentix.domain.tool.sandbox import ExecutionSandbox, Handler, SandboxUnavailable
-from agentix.tools.definitions import RISK_LEVELS, ToolSpec, registry as tool_registry
+from agentix.domain.tool.spec import diff_spec_fields
+from agentix.tools.definitions import (
+    RISK_LEVELS,
+    ToolSpec,
+    duplicate_spec_error_message,
+    duplicate_spec_message,
+    registry as tool_registry,
+)
 from agentix.tools.gateway.human_review import (
     ReviewRequest,
     ReviewRequired,
@@ -45,6 +53,22 @@ from agentix.tools.sandbox import invoke_in_process, resolve_sandbox
 from agentix.config import settings
 
 logger = logging.getLogger(__name__)
+
+#: 工具层的历史退避：0.2s 起步、2 倍增长、无抖动（LG-1-3 前的实值）。
+#: 上限统一取 `RETRY_MAX_INTERVAL`（128s）——`ToolSpec.max_retries` 默认 2，
+#: 可及的等待上界是 0.8s，上限**不会生效**，故 flag 关时与基线逐位等价。
+_LEGACY_TOOL_BACKOFF = RetryBackoff(initial_interval=0.2, jitter=False)
+
+
+def tool_retry_backoff() -> RetryBackoff:
+    """工具层重试退避形状（``RETRY_BACKOFF_ALIGNED`` 开 ⇒ 与原生默认逐项相同）。
+
+    工具层不消费返回值里的 ``max_attempts``：尝试次数由
+    ``ToolSpec.max_retries`` 决定（声明面）。
+    """
+    if bool(getattr(settings, "RETRY_BACKOFF_ALIGNED", False)):
+        return RetryBackoff()
+    return _LEGACY_TOOL_BACKOFF
 
 
 def _run_remaining_ms() -> float | None:
@@ -226,10 +250,43 @@ class ToolExecutor:
 
     # -- 注册 ------------------------------------------------------------
 
-    def register_handler(self, tool_name: str, handler: Handler, *, spec: ToolSpec | None = None) -> None:
-        """登记工具实现；``spec`` 缺省时要求声明式 registry 已有同名 spec。"""
-        if spec is not None and not tool_registry.has_tool(tool_name):
-            tool_registry.register(spec, lambda: None)
+    def register_handler(
+        self, tool_name: str, handler: Handler, *, spec: ToolSpec | None = None
+    ) -> None:
+        """登记工具实现；``spec`` 缺省时要求声明式 registry 已有同名 spec。
+
+        **G14（默认告警、可选严格）**：同名再登记但 ``spec`` 与首次声明不同 ⇒
+        默认响亮告警，并保持基线语义「第一次赢」——执行时 ``execute`` 读到的仍是
+        registry 里那份旧声明（含 ``sandbox``/``risk_level``），handler 照旧被替换。
+        ``TOOL_DUPLICATE_REGISTRATION_STRICT=true`` 才在**改动 handler 之前**抛
+        ``ValueError``：拒绝要么完整、要么不发生，不留半改状态。
+
+        spec 相同（幂等重注册）与不传 ``spec``（只重绑 handler）都不算冲突：
+        前者没有两份声明，后者没有第二份声明可比。
+        """
+        if spec is not None:
+            existing = (
+                tool_registry.get_spec(tool_name) if tool_registry.has_tool(tool_name) else None
+            )
+            if existing is None:
+                tool_registry.register(spec, lambda: None)
+            else:
+                changed = diff_spec_fields(existing, spec)
+                if changed:
+                    if settings.TOOL_DUPLICATE_REGISTRATION_STRICT:
+                        raise ValueError(duplicate_spec_error_message(tool_name, changed))
+                    logger.warning(
+                        duplicate_spec_message(
+                            tool_name,
+                            changed,
+                            consequence=(
+                                "the later spec is DISCARDED — execution keeps reading the first "
+                                f"declaration (sandbox={existing.sandbox!r}, "
+                                f"risk_level={existing.risk_level!r}) — while its handler replaces "
+                                "the previous one"
+                            ),
+                        )
+                    )
         self._handlers[tool_name] = handler
         self._check_handler_contract(tool_name, handler)
 
@@ -419,6 +476,7 @@ class ToolExecutor:
         from agentix.reliability.bulkhead import pool_for_tool, pooled_wait_for
 
         attempts = 1 + (spec.max_retries if spec.retryable else 0)
+        backoff = tool_retry_backoff()
         last_error: str | None = None
         last_exc: BaseException | None = None
         for attempt in range(attempts):
@@ -513,7 +571,7 @@ class ToolExecutor:
                             tool_name,
                         )
                         break
-                await asyncio.sleep(0.2 * (2**attempt))  # 指数退避
+                await asyncio.sleep(backoff.delay(attempt))
 
         latency = int((time.perf_counter() - started) * 1000)
         result = ToolResult(

@@ -338,6 +338,8 @@ class TestDocumentedConfigKeys:
             "ADMISSION_MAX_QUEUE",
             "RETRY_BUDGET_ENABLED",
             "RETRY_BUDGET_TOKENS",
+            # LG-1-3：三层退避与原生默认对齐开关
+            "RETRY_BACKOFF_ALIGNED",
             # LG-1-1：只读节点原生重试开关
             "NODE_RETRY_ENABLED",
             "ADAPTIVE_TOOL_TIMEOUT_ENABLED",

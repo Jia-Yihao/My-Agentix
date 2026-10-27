@@ -21,6 +21,7 @@ application 不得直接依赖 infrastructure 符号（方案 2.2 规则 2/4，�
 
 import asyncio
 import random
+from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Awaitable, Callable, TypeVar
 
@@ -31,14 +32,65 @@ T = TypeVar("T")
 #: ``is_retryable`` 从这里转出，供 ``orchestration/langgraph/policies.py`` 接成
 #: ``RetryPolicy(retry_on=...)``（LG-1-2）——**方向**：编排层依赖领域层，
 #: 领域层不知道 LangGraph 的存在；可重试性的判定只有这一份实现。
-__all__ = ["aretry", "is_retryable"]
+__all__ = [
+    "aretry",
+    "is_retryable",
+    "RetryBackoff",
+    "RETRY_INITIAL_INTERVAL",
+    "RETRY_BACKOFF_FACTOR",
+    "RETRY_MAX_INTERVAL",
+    "RETRY_MAX_ATTEMPTS",
+    "RETRY_JITTER",
+]
+
+# ---------------------------------------------------------------------------
+# LG-1-3：三层（tool / task / retrieval）自研退避的唯一真源
+# ---------------------------------------------------------------------------
+# 数值 = LangGraph ``RetryPolicy`` 的默认值（initial_interval=0.5 /
+# backoff_factor=2.0 / max_interval=128.0 / max_attempts=3 / jitter=True）。
+# 为什么是**抄一份**而不是直接读 RetryPolicy：domain 层零第三方依赖
+# （``tests/test_p17_domain_layer.py`` 守着），而 LangGraph 是编排层的依赖。
+# 抄本的失真由用例钉住——``tests/test_p150_retry_backoff_alignment.py`` 逐项
+# 比对 ``RetryPolicy()`` 的字段，框架改默认值时这里先红。
+RETRY_INITIAL_INTERVAL = 0.5
+RETRY_BACKOFF_FACTOR = 2.0
+RETRY_MAX_INTERVAL = 128.0
+RETRY_MAX_ATTEMPTS = 3
+RETRY_JITTER = True
+
+
+@dataclass(frozen=True)
+class RetryBackoff:
+    """一层重试的退避形状：``delay = min(initial * factor**n, max)``（可选抖动）。
+
+    默认值即 LangGraph 原生默认（见上方常量）。三层的差异只在"用哪一组数"：
+    开关关时各层保留历史数值（flag-off 逐位等价），开时统一换成默认构造。
+    ``max_attempts`` 是**形状的一部分**，但工具层的实际尝试次数由
+    ``ToolSpec.max_retries`` 决定（声明面），这里不参与执行计数。
+    """
+
+    initial_interval: float = RETRY_INITIAL_INTERVAL
+    backoff_factor: float = RETRY_BACKOFF_FACTOR
+    max_interval: float = RETRY_MAX_INTERVAL
+    max_attempts: int = RETRY_MAX_ATTEMPTS
+    jitter: bool = RETRY_JITTER
+
+    def delay(self, attempt: int) -> float:
+        """第 ``attempt`` 次失败后的等待秒数（``attempt`` 从 0 起）。"""
+        delay = min(
+            self.initial_interval * (self.backoff_factor**attempt),
+            self.max_interval,
+        )
+        if self.jitter:
+            delay *= 0.5 + random.random() / 2
+        return delay
 
 
 def aretry(
-    max_attempts: int = 3,
-    base_delay: float = 0.5,
-    max_delay: float = 8.0,
-    jitter: bool = True,
+    max_attempts: int = RETRY_MAX_ATTEMPTS,
+    base_delay: float = RETRY_INITIAL_INTERVAL,
+    max_delay: float = RETRY_MAX_INTERVAL,
+    jitter: bool = RETRY_JITTER,
 ) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """指数退避 + 抖动的异步重试装饰器。
 
@@ -51,6 +103,13 @@ def aretry(
     """
 
     def deco(fn: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+        shape = RetryBackoff(
+            initial_interval=base_delay,
+            max_interval=max_delay,
+            max_attempts=max_attempts,
+            jitter=jitter,
+        )
+
         @wraps(fn)
         async def wrapper(*args: Any, **kwargs: Any) -> T:
             last: BaseException | None = None
@@ -63,10 +122,7 @@ def aretry(
                     last = e
                     if not is_retryable(e) or attempt == max_attempts - 1:
                         raise
-                    delay = min(base_delay * (2**attempt), max_delay)
-                    if jitter:
-                        delay *= 0.5 + random.random() / 2
-                    await asyncio.sleep(delay)
+                    await asyncio.sleep(shape.delay(attempt))
             raise last  # type: ignore[misc]
 
         return wrapper
