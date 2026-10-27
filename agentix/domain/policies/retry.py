@@ -28,7 +28,10 @@ from .error_classification import is_retryable
 
 T = TypeVar("T")
 
-__all__ = ["aretry"]
+#: ``is_retryable`` 从这里转出，供 ``orchestration/langgraph/policies.py`` 接成
+#: ``RetryPolicy(retry_on=...)``（LG-1-2）——**方向**：编排层依赖领域层，
+#: 领域层不知道 LangGraph 的存在；可重试性的判定只有这一份实现。
+__all__ = ["aretry", "is_retryable"]
 
 
 def aretry(
