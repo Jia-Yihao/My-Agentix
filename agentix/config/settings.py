@@ -585,7 +585,8 @@ class Settings(BaseSettings):
     )
     # RETRY_BUDGET_ENABLED：run 级共享重试预算桶（task/tool/retrieval 三层
     # 共用 token，防 3×3×3 放大）+ 工具/检索层可重试性分类审计闸；
-    # 默认关 = 各层现行为逐位等价。
+    # 默认关 = 各层现行为逐位等价。LG-1-4 只在部署面写推荐值 true
+    # （.env.example / staging override），代码默认仍为 false。
     RETRY_BUDGET_ENABLED: bool = Field(
         default=False,
         description="Share a per-run retry token budget across task/tool/retrieval layers; default off",

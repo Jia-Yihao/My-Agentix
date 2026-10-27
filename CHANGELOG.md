@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-1-4 打开预算桶（部署面）（2026-10-27）
+
+《LangGraph 原生对齐与恢复链优化》P1 第 4 条：把 Phase H·W3 已有的 run 级重试预算桶推进到部署面。**代码零行为变更**——`RETRY_BUDGET_ENABLED` 的 Settings 默认仍是 `False`（纪律 1），本轮只让 `.env.example` 与 staging override 说出推荐值。
+
+- **[部署面·推荐值] `.env.example`**：`RETRY_BUDGET_ENABLED=false → true`，注释写明「代码默认仍是 false；这里写 true 是部署推荐值——桶只收紧重试放大、不新增任何调用，耗尽即停；额度由 `RETRY_BUDGET_TOKENS` 定（首 attempt 不占额度）」。这不是把开关默认开：`Settings` 字段默认值未动，不设环境变量的基线路径逐位等价。
+- **[部署面·预发] `docker/compose.override.staging.yml`**：backend 显式钉 `RETRY_BUDGET_ENABLED: "true"` 并署名理由（LG-1-4）；**不另钉 `RETRY_BUDGET_TOKENS`**——它没有被 compose 转发，容器拿的就是字段默认 6，两处写反而多一份口径。
+- **[生成物] 配置矩阵多一行**：`docs/runbooks/预发环境与配置矩阵.md` 的 dev=`false`（compose 未转发 ⇒ 回落字段默认）、staging=**`true`**（加粗 = 预发真的设了）、production 列手写推荐与理由；`python scripts/gen_staging_matrix.py --check` 退出 0，读数从「16 行由 override/Settings 生成，1 行登记为手填」变成 **17 + 1**。
+- **[新增守卫] `tests/test_p151_retry_budget_deployment.py`（4 条）**：① 读 `Settings.model_fields`（不实例化，避免宿主机 `.env` 污染）断言默认仍 `false`、令牌默认仍 6；② `.env.example` 写 `RETRY_BUDGET_ENABLED=true` 且上方注释含「推荐」「不新增」两条理由；③ staging override 真设 `"true"` 且注释署名 LG-1-4；④ 配置矩阵该行由 `generated_rows()` 算出（dev=false / staging=true / 加粗）且 `check()` 干净。**行为面不重复断言**：flag-on 下三层共享 token、耗尽即停、分类审计由 `tests/test_p97_runtime_control.py::TestRetryBudget` 既有用例覆盖（42 条，本轮同批实跑全绿）。
+- **[flag-off 等价]** 本轮不改任何执行路径；`RETRY_BUDGET_ENABLED=false` 时 `ensure_retry_budget()` 不被调用（`agentix/reliability/retry_budget.py` 的懒建口径），p97 的 `test_task_layer_flag_off_keeps_full_attempts` / `test_tool_layer_flag_off_retries_any_error` / `test_retrieval_layer_flag_off_keeps_retries` 仍按基线读数（3 次 / 3 次 / 2 次）通过。
+- **[文档同步]** `docs/architecture/配置管理.md` §5 该行补「代码默认仍 false / 部署面推荐 true / 回滚即改回 false」；`docs/项目实现手册.md` 补部署姿态一段；`README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第六段读数。
+- **[验证]** 定向 `test_p151 + p97 + p115 + p41` → **144 passed**（4 + 42 + 44 + 54）；`ruff check agentix tests` → `All checks passed!`；`mypy agentix/domain` → `Success: no issues found in 38 source files`；`python scripts/gen_staging_matrix.py --check` 退出 0（`配置矩阵与部署物一致：17 行由 override/Settings 生成，1 行登记为手填`）；全量 `.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **5309 passed / 40 skipped / 4 deselected / 0 failed**（457.79s；相对 LG-1-3 的 5305 恰好 **+4**，即本条新用例数，既有 5305 条零翻转）。
+
 ### LangGraph 原生对齐 · LG-1-3 三层自研退避与原生默认同源（2026-10-27）
 
 《LangGraph 原生对齐与恢复链优化》P1 第 3 条：tool / task / retrieval 三层各自一套退避数值收敛到同一份真源，与 `RetryPolicy` 默认逐项相同。
