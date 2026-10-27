@@ -1134,6 +1134,14 @@ class Settings(BaseSettings):
         default=False,
         description="Enable task-type routing (task-query -> execute_task) and the task execution pipeline; default off",
     )
+    # LG-3-4：恢复期幂等——`execute_task` 节点内挂起后续跑会重跑挂起点之前的
+    # 步骤（LangGraph 节点重入），带副作用的步骤不能重放两遍。开 = 已完成步骤
+    # 落 `run_step_ledger`（键：thread + 节点执行作用域 + 步骤指纹），同一作用域
+    # 内恢复时跳过；默认关 = 不建表、零读写，与基线逐位等价（纪律 1）。
+    RECOVERY_STEP_LEDGER_ENABLED: bool = Field(
+        default=False,
+        description="Persist completed task steps (run_step_ledger) and skip them when execute_task is re-run after an in-loop suspension; default off",
+    )
     # Phase 21（Skills 渐进披露）：SKILL.md 元数据常驻注入 + read_skill 惰性读正文。
     # 默认 False = 零注入零注册（Strangler，flag-off 行为字节等价）。
     SKILLS_ENABLED: bool = False

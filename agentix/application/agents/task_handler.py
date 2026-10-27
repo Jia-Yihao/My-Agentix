@@ -54,6 +54,10 @@ async def execute_task(state: AgentState, *, config: RunnableConfig) -> Dict[str
     message = _message_text(state.messages[-1].content if state.messages else "")
     cfg = _extract_configurable(config)
     session_id = str(cfg.get("thread_id") or "")
+    # LG-3-4：恢复期幂等的节点执行作用域。取 LangGraph 注入的 checkpoint_ns：
+    # 同一次挂起的续跑拿到同一个 ns，新一轮对话换新 ns（1.2.18 实测）——用它
+    # 区分「同一轮的重入」与「下一轮」，避免把上一轮的完成清单套到新任务上。
+    step_scope = str(cfg.get("checkpoint_ns") or "")
     task_steps = cfg.get("task_steps")
     # F1e·A-P1-4：进环中断回调（lg_builder 注入壳塞进 configurable；flag-off /
     # py3.10 / stream 未声明进环 ⇒ 缺省 = 现行为 review_required 快速失败）。
@@ -71,6 +75,7 @@ async def execute_task(state: AgentState, *, config: RunnableConfig) -> Dict[str
         task_steps=task_steps,
         route="task-query",
         review_interrupt=review_interrupt if callable(review_interrupt) else None,
+        step_scope=step_scope,
     )
     bridge_observations_to_trajectory(result)
 
