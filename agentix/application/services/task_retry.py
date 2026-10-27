@@ -34,7 +34,12 @@ from loguru import logger
 from agentix.application.services.task_plan import TaskSpec
 from agentix.config import settings
 from agentix.domain.policies.error_classification import is_retryable
-from agentix.domain.policies.retry import RETRY_MAX_ATTEMPTS, RetryBackoff
+from agentix.domain.policies.retry import (
+    RETRY_MAX_ATTEMPTS,
+    RetryBackoff,
+    budgeted_pause,
+    remaining_seconds,
+)
 from agentix.domain.runtime.lifecycle import ExitReason, ExitStatus
 
 __all__ = [
@@ -189,6 +194,10 @@ async def run_task(
     :func:`task_retry_backoff`——即 ``RETRY_BACKOFF_ALIGNED`` 开时与原生
     ``RetryPolicy`` 默认逐项相同的形状，关时是历史实值（LG-1-3）。
 
+    LG-3-1：有 run deadline 时退避停等压进剩余预算（``budgeted_pause``）；
+    余量不足以完成这次退避即放弃（不再开下一次尝试），返回的
+    :class:`TaskOutcome` 标 ``truncated=True``。无 deadline 时与基线逐位等价。
+
     ``asyncio.CancelledError`` **一律透传**（取消不是失败，不可被吞掉）。
 
     P4-4.1（``TOOL_GUARDRAILS_ENABLED``，默认关 ⇒ 下列两处零调用）：
@@ -210,6 +219,7 @@ async def run_task(
     )
     attempts = 0
     last_error: Optional[BaseException] = None
+    truncated_by_budget = False
     started = time.perf_counter()
     # 工具名启发：task 管线的 payload 携带真实工具名（name 是步骤 id）；
     # 无 payload 的通用调用退回 spec.name（护栏对未跟踪工具返回 None，无副作用）。
@@ -253,14 +263,29 @@ async def run_task(
             if not retry_predicate(exc) or attempt == max_attempts - 1:
                 break
             delay = attempt_backoff.delay(attempt)
+            # LG-3-1：有 run deadline 时把停等压进剩余预算；余量不足以完成这次
+            # 退避就直接放弃（不再开下一次尝试，标记 truncated）。无 deadline
+            # 时 pause == delay、out_of_budget 恒 False，与基线逐位等价。
+            pause, out_of_budget = budgeted_pause(delay, remaining_seconds())
             logger.info(
                 "task '{}' attempt {}/{} failed ({}), retrying in {:.2f}s",
                 spec.name,
                 attempts,
                 max_attempts,
                 type(exc).__name__,
-                delay,
+                pause,
             )
+            if out_of_budget:
+                logger.warning(
+                    "task '{}' retry truncated by run budget (needs {:.2f}s, "
+                    "{:.2f}s left): giving up after {} attempt(s)",
+                    spec.name,
+                    delay,
+                    pause,
+                    attempts,
+                )
+                truncated_by_budget = True
+                break
             # Phase H · W3（RETRY_BUDGET_ENABLED，flag 关 = 原样重试）：
             # task 层是三层（task/tool/retrieval）共享预算的最外层消费点，
             # 耗尽即停（工具/检索层同桶，3×3×3 放大被压成一个总额度）。
@@ -273,7 +298,7 @@ async def run_task(
                         spec.name,
                     )
                     break
-            await asyncio.sleep(delay)
+            await asyncio.sleep(pause)
         else:
             return TaskOutcome(
                 name=spec.name,
@@ -305,6 +330,7 @@ async def run_task(
         attempts=attempts,
         retryable=bool(retry_predicate(last_error)),
         duration_ms=(time.perf_counter() - started) * 1000.0,
+        truncated=truncated_by_budget,
     )
 
 

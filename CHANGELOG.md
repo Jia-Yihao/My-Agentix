@@ -12,6 +12,16 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-3-1 退避停等的 deadline 预算感知（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P3 第 1 条：三层重试（检索 / task / 工具）的退避停等此前只认「第几次失败」，不认「还剩多少时间」——预算只剩 1s 时仍会先睡 1s 再开一次注定越界的尝试，用户要等到最后一次尝试之后才看到超时。
+
+- **[单一算术] `domain.policies.retry.budgeted_pause(delay, remaining)`**：返回 `(实际停等秒数, 是否应放弃重试)`。无 deadline ⇒ `(delay, False)`；预算够 ⇒ 原样；预算不够 ⇒ `(remaining, True)`——只等剩余预算即放弃，不再开下一次尝试。
+- **[deadline 来源唯一] `RequestScope.deadline_at`**：domain 是依赖链最底层（`test_p17` 守着方向），故由 application 的 `request_scope` 在导入期把读取函数**注册**进 domain（`set_remaining_provider`）；`remaining_seconds()` 读不到 provider / 读不到 deadline / provider 故障 ⇒ `None`（= 回基线，纪律 2）。
+- **[三层接入]** 检索（`aretry`，余量不足时给抛出的异常打 `retry_truncated` 标，类型与消息不变）、task（`run_task`，返回的 `TaskOutcome.truncated=True`）、工具（`ToolExecutor`，新增 `ToolResult.truncated` 字段，与「输出被截断」不是一回事）。
+- **[新增守卫] `tests/test_p159_retry_deadline_budget.py`（16 条）**：`budgeted_pause` 五种取值、deadline 来源单一与故障降级、三层各自「剩余不足时不进入下一次尝试 + truncated 可见」、三层各自「无 deadline 时跑满 max_attempts（基线等价）」。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十四段读数；`docs/项目实现手册.md` 补预算感知一段。
+
 ### LangGraph 原生对齐 · LG-2-7 启动期崩溃恢复的并发与总预算（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P2 第 7 条：启动期的崩溃恢复此前是**串行 for 循环**——N 个待恢复线程逐个 `ainvoke`，单个卡死就把启动拖到天荒地老，恢复总耗时随 N 线性增长。
