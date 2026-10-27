@@ -25,6 +25,7 @@ from loguru import logger
 
 from agentix.config import ablation, settings
 from agentix.observability.spans import record_resume_from_checkpoint
+from agentix.observability.metrics import record_graph_resume
 from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
 from agentix.orchestration.langgraph.lg_states import AgentState, GradeHallucinations
 from agentix.orchestration.langgraph.policies import node_timeout, readonly_retry_policy
@@ -359,6 +360,8 @@ async def resume_in_loop(thread_id: str, resume_value: Any) -> Any:
     # PhaseK 任务 6：进环恢复点落 span。thread_id 判据只从 config 取（唯一真源，
     # 纪律 6 ④）；fail-open 由 helper 保证（无 span/异常 ⇒ no-op，纪律 2）。
     record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))
+    # LG-3-3：第四个恢复入口（进环 HITL 裁决）。计数点是「向图发起续跑」。
+    record_graph_resume("hitl_in_loop")
     return await graph.ainvoke(
         Command(resume=resume_value),
         config=config,

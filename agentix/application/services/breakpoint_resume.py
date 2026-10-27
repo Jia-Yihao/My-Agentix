@@ -31,6 +31,7 @@ from redis.asyncio import Redis
 
 from agentix.config import settings
 from agentix.observability.spans import record_resume_from_checkpoint
+from agentix.observability.metrics import record_graph_resume
 from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
 
 
@@ -526,7 +527,7 @@ class CheckpointRecovery:
                 thread_id, task_id, "task already completed; refusing to replay it"
             )
 
-        result = await self.resume_thread(thread_id, graph)
+        result = await self.resume_thread(thread_id, graph, kind="retry_task")
         if result is None:
             return None
         return {
@@ -628,12 +629,20 @@ class CheckpointRecovery:
             return None
         return json.loads(raw)
 
-    async def resume_thread(self, thread_id: str, graph) -> Optional[Dict[str, Any]]:
+    async def resume_thread(
+        self, thread_id: str, graph, *, kind: str = "ops"
+    ) -> Optional[Dict[str, Any]]:
         """Attempt to resume a thread from its last checkpoint.
 
         Args:
             thread_id: The thread to resume.
             graph: The compiled LangGraph graph.
+            kind: 续跑入口（LG-3-3 指标 label）。四个生产入口各占一个值：
+                ``startup``（启动恢复）/ ``ops``（``/ops/threads/resume``，
+                也是本方法缺省值）/ ``retry_task``（``/ops/threads/retry-task``
+                定点重跑）/ ``hitl_in_loop``（进环 HITL，走 ``resume_in_loop``，
+                不经本方法）。取值封闭在 ``metrics.GRAPH_RESUME_KIND_VALUES``，
+                越界落 ``other``——不引入 thread_id 等高基数 label。
 
         Returns:
             The final state after resumption, or None if no checkpoint found.
@@ -682,6 +691,9 @@ class CheckpointRecovery:
             # chat_service.py）；fail-open 由 helper 保证，绝不影响恢复主链路（纪律 2）。
             record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))
 
+            # LG-3-3：计数点是「向图发起续跑」（含随后抛错的），不是续跑成功——
+            # 恢复失败同样要看得到，否则指标只在成功路径上自夸。
+            record_graph_resume(kind)
             result = await graph.ainvoke(None, config=config, **durability_kwargs())
 
             await self.save_checkpoint_metadata(

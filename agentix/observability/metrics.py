@@ -370,6 +370,36 @@ try:
         ["reason"],  # reason: backpressure（有界枚举）
     )
 
+    # ============================================================
+    # LG-3-3 重试与恢复的业务指标
+    # ============================================================
+    # 两个 label 的取值都是封闭枚举（``RETRY_LAYER_VALUES`` /
+    # ``GRAPH_RESUME_KIND_VALUES``，见下方 record_* 区）；越界值一律落 ``"other"``，
+    # 指标基数由枚举封死——thread_id / user_id 这类高基数标识只进 span。
+    RETRY_ATTEMPTS = Counter(
+        "retry_attempts_total",
+        "Retry attempts actually started per retry layer (first attempt not counted)",
+        ["layer"],  # layer: tool / task / retrieval（有界枚举）
+    )
+
+    RETRY_SLEEP_SECONDS = Counter(
+        "retry_sleep_seconds_total",
+        "Backoff seconds actually slept per retry layer",
+        ["layer"],  # layer: tool / task / retrieval（有界枚举）
+    )
+
+    RETRY_EXHAUSTED = Counter(
+        "retry_exhausted_total",
+        "Retry chains that failed without a further attempt (attempts used up or budget denied)",
+        ["layer"],  # layer: tool / task / retrieval（有界枚举）
+    )
+
+    GRAPH_RESUME = Counter(
+        "graph_resume_total",
+        "Graph resumes from checkpoint by entry point",
+        ["kind"],  # kind: startup / ops / retry_task / hitl_in_loop（有界枚举）
+    )
+
     PROMETHEUS_AVAILABLE = True
     logger.info("Prometheus metrics enabled")
 
@@ -435,6 +465,10 @@ except ImportError:
     PROMPT_PREFIX_FINGERPRINT = _NoopMetric()
     ADMISSION_DECISIONS = _NoopMetric()
     SSE_DROPPED_FRAMES = _NoopMetric()
+    RETRY_ATTEMPTS = _NoopMetric()
+    RETRY_SLEEP_SECONDS = _NoopMetric()
+    RETRY_EXHAUSTED = _NoopMetric()
+    GRAPH_RESUME = _NoopMetric()
 
 
 # ============================================================
@@ -522,6 +556,42 @@ def record_admission_decision(state: str) -> None:
 def record_sse_dropped(reason: str = "backpressure") -> None:
     """Phase H · W4：SSE 有界队列背压丢帧计数（终态帧永不丢）。"""
     SSE_DROPPED_FRAMES.labels(reason=reason or "backpressure").inc()
+
+
+#: LG-3-3：重试层名的封闭枚举——与 ``RetryBudget.try_consume(layer=...)``
+#: 的实参取值同源（tool / task / retrieval 三层）。枚举外的值落 ``"other"``。
+RETRY_LAYER_VALUES = frozenset({"tool", "task", "retrieval"})
+
+#: LG-3-3：图续跑入口的封闭枚举——四个生产入口各占一个值
+#: （启动恢复 / ops 手工续跑 / ops 定点重跑 / 进环 HITL 裁决恢复）。
+GRAPH_RESUME_KIND_VALUES = frozenset({"startup", "ops", "retry_task", "hitl_in_loop"})
+
+
+def _bounded_label(value: str, allowed: frozenset[str]) -> str:
+    """把 label 取值收进封闭枚举：越界落 ``"other"``，基数不随调用方自由串膨胀。"""
+    return value if value in allowed else "other"
+
+
+def record_retry_attempt(layer: str) -> None:
+    """LG-3-3：某一层实际发起的**重试**次数（首次尝试不计）。"""
+    RETRY_ATTEMPTS.labels(layer=_bounded_label(layer, RETRY_LAYER_VALUES)).inc()
+
+
+def record_retry_sleep(layer: str, seconds: float) -> None:
+    """LG-3-3：某一层实际退避停等的秒数（被预算截断、没真停的不计）。"""
+    if seconds <= 0:
+        return
+    RETRY_SLEEP_SECONDS.labels(layer=_bounded_label(layer, RETRY_LAYER_VALUES)).inc(seconds)
+
+
+def record_retry_exhausted(layer: str) -> None:
+    """LG-3-3：某一层以失败收场且不再有下一次尝试（次数用尽或被预算拒批）。"""
+    RETRY_EXHAUSTED.labels(layer=_bounded_label(layer, RETRY_LAYER_VALUES)).inc()
+
+
+def record_graph_resume(kind: str) -> None:
+    """LG-3-3：向图发起一次续跑（计数点是**发起**，不是续跑成功）。"""
+    GRAPH_RESUME.labels(kind=_bounded_label(kind, GRAPH_RESUME_KIND_VALUES)).inc()
 
 
 def record_llm_calls_saved(reason: str) -> None:

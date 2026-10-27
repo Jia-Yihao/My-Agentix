@@ -38,6 +38,11 @@ from agentix.domain.policies.retry import (
 )
 from agentix.domain.tool.sandbox import ExecutionSandbox, Handler, SandboxUnavailable
 from agentix.domain.tool.spec import diff_spec_fields
+from agentix.observability.metrics import (
+    record_retry_attempt,
+    record_retry_exhausted,
+    record_retry_sleep,
+)
 from agentix.tools.definitions import (
     RISK_LEVELS,
     ToolSpec,
@@ -487,6 +492,7 @@ class ToolExecutor:
         last_error: str | None = None
         last_exc: BaseException | None = None
         truncated_by_budget = False
+        gave_up_non_retryable = False
         for attempt in range(attempts):
             timeout_ms = _effective_timeout_ms(spec.timeout_ms)
             pool = pool_for_tool(tool_name)
@@ -585,6 +591,7 @@ class ToolExecutor:
                             tool_name,
                             type(last_exc).__name__,
                         )
+                        gave_up_non_retryable = True
                         break
                     if not ensure_retry_budget().try_consume(layer="tool"):
                         logger.warning(
@@ -592,8 +599,15 @@ class ToolExecutor:
                             tool_name,
                         )
                         break
+                # LG-3-3：走到这里的重试才会真正发生（截断/拒批路径上面已 break）。
+                record_retry_attempt("tool")
+                record_retry_sleep("tool", pause)
                 await asyncio.sleep(pause)
 
+        if spec.retryable and attempts > 1 and not gave_up_non_retryable:
+            # LG-3-3：重试链以失败收场（尝试用尽 / 预算拒批 / 期限截断）。
+            # 不可重试的工具与「首错即判不可重试」的路径不落这一账。
+            record_retry_exhausted("tool")
         latency = int((time.perf_counter() - started) * 1000)
         result = ToolResult(
             tool_name=tool_name,
