@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-3-2 主图节点的原生超时（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P3 第 2 条：原方案的「`asyncio.wait_for` 壳」换成框架原生`add_node(timeout=TimeoutPolicy(...))`——超时由图执行器按**每次节点尝试**计时，超时点抛`NodeTimeoutError`，不再由调用方在节点外面再包一层。
+
+- **[新增配置] `NODE_TIMEOUT_SECONDS`**（`float`，默认 `0.0`，`ge=0`）：主图节点的每次尝试墙钟上限（秒）。`0` = 关：注册处**完全不传** `timeout` 形参（不是传 `None`），编译出的主图与基线逐位等价（纪律 1）。
+- **[单一构造点] `policies.node_timeout` → `lg_builder._node_timeout_kwargs()`**：非正一律 `None`；辅助函数只在策略非空时返回 `{"timeout": policy}`，10 个 `add_node` 全部 `**` 展开该 dict（关时是空 dict）。`lg_builder` 内不内联 `TimeoutPolicy(...)`（LG-0-3 策略集中）。
+- **[重试不放大] `nodetimeouterror` 进不可重试分类**：`NodeTimeoutError` 故意不继承内置 `TimeoutError`，框架默认把它当可重试——同节点挂 `timeout` + `retry_policy` 会变成「超时→重试→再超时」。业务分类 `is_retryable` 把它判为不可重试（验收第 ④ 条）：慢节点只执行一次，异常冒泡后可由原生 `error_handler` 接住，整轮不会静默失败。
+- **[边界] 协作式取消，不是抢占**：`run_timeout` 只在节点**让出事件循环**的时刻判得出来。三条用例钉住：整段不让出的协程照常跑完（0.05s 上限下 0.4s 阻塞仍返回）、阻塞后让出的协程能杀但耗时等于阻塞时长、同步节点在 `compile().validate()` 阶段直接 `ValueError`（框架不接受同步节点超时）。
+- **[新增守卫] `tests/test_p160_node_timeout.py`（26 条）**：策略工厂五种「关」取值、设置项默认值与 `ge=0`、关时 10 个节点 `timeout is None`、开时 10 个节点都挂同一策略、10 个 `add_node` 全部 `**node_timeout_kwargs`（AST，防空漏接）、辅助函数的值只来自 `policies.node_timeout`（AST）、`NodeTimeoutError` 原生抛出与字段、业务 `retry_policy` 不重试（验收 ④）、`error_handler` 收到 `NodeError` 并落地 `Command` 更新、两条协作式取消边界、分类层四条断言。
+- **[配置五处同步]** `settings.py` / `selfcheck.py::DEFAULT_IGNORED_MISSING` / `.env.example` / `docs/architecture/配置管理.md` §5 / `test_p41_doc_consistency.py` 手写清单。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十五段读数；`docs/项目实现手册.md` 补节点超时一段。
+
 ### LangGraph 原生对齐 · LG-3-1 退避停等的 deadline 预算感知（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P3 第 1 条：三层重试（检索 / task / 工具）的退避停等此前只认「第几次失败」，不认「还剩多少时间」——预算只剩 1s 时仍会先睡 1s 再开一次注定越界的尝试，用户要等到最后一次尝试之后才看到超时。

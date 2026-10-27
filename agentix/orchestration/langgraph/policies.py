@@ -23,8 +23,9 @@ LangGraph 的策略对象；守卫按"该名字是不是从 ``langgraph*`` 导�
 LG-0-3 只建集中点；LG-1-1 把 ``readonly_retry_policy`` 接到 6 个只读节点；
 LG-1-2 把 ``retry_on`` 换成业务分类 ``is_retryable``（唯一真源）；LG-1-3 把三层
 自研退避的数值与原生默认对齐（真源在 ``agentix.domain.policies.retry``，本模块
-只转出——领域层不能反向依赖 LangGraph）。接线仍归属：LG-3-2（节点级 ``timeout``）、
-LG-3-5（``error_handler`` 补偿）。
+只转出——领域层不能反向依赖 LangGraph）。LG-3-2 已把 ``node_timeout`` 接到主图
+全部 10 个节点（开关 ``NODE_TIMEOUT_SECONDS``，为 0 时完全不传 ``timeout``）；
+``error_handler`` 补偿仍归属：LG-3-5。
 """
 
 from __future__ import annotations

@@ -38,6 +38,15 @@ NON_RETRYABLE_HINTS = (
     "403",
     "invalid_request",
     "400",
+    # LG-3-2：LangGraph 的节点超时异常（``NodeTimeoutError``，``langgraph.errors``）
+    # 刻意**不**继承内置 ``TimeoutError``，框架默认 ``default_retry_on`` 有意把它
+    # 判为可重试——节点同时挂 ``timeout`` 与 ``retry_policy`` 时，超时会变成
+    # 「超时 → 重试 → 再超时」，耗时按尝试次数成倍放大（指导文档 §4.4 LG-3-2
+    # 验收第 ④ 条）。业务口径判的是「重试能否换来成功」：同一节点以同样的超时
+    # 上限再跑一遍，结果不会不同，重试只放大故障。放在「先否后肯」的不可重试组里，
+    # 同时压制了异常名中 ``timeout`` 子串命中 RETRYABLE_HINTS 的兜底。
+    # 领域层零第三方依赖：只认字符串特征，不 import ``langgraph.errors``。
+    "nodetimeouterror",
 )
 
 

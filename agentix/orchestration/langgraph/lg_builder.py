@@ -27,7 +27,7 @@ from agentix.config import ablation, settings
 from agentix.observability.spans import record_resume_from_checkpoint
 from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
 from agentix.orchestration.langgraph.lg_states import AgentState, GradeHallucinations
-from agentix.orchestration.langgraph.policies import readonly_retry_policy
+from agentix.orchestration.langgraph.policies import node_timeout, readonly_retry_policy
 from agentix.application.agents.lg_prompts import (
     CHECK_HALLUCINATIONS,
 )
@@ -366,6 +366,22 @@ async def resume_in_loop(thread_id: str, resume_value: Any) -> Any:
     )
 
 
+def _node_timeout_kwargs() -> Dict[str, Any]:
+    """LG-3-2：主图节点的原生超时实参；**未启用时返回空 dict**。
+
+    返回空 dict 而不是 ``{"timeout": None}`` 是本项的口径：开关为 0 时
+    ``add_node`` 完全不传该形参，注册出来的节点与基线逐位等价（纪律 1）。
+    策略对象只从 ``policies.node_timeout`` 出（LG-0-3 集中点，且
+    ``tests/test_p147_policy_centralization.py`` 按实参来源判违规）。
+
+    只对**异步节点**合法：超时依赖 asyncio 协作式取消，而同步节点无法在
+    进程内被安全取消——框架在 ``compile().validate()`` 阶段就抛 ``ValueError``，
+    不会留到运行期才发现（边界说明见指导文档 §4.4 LG-3-2 验收第 ③ 条）。
+    """
+    policy = node_timeout(settings.NODE_TIMEOUT_SECONDS)
+    return {"timeout": policy} if policy is not None else {}
+
+
 def build_graph(checkpointer=None):
     """构建并编译主图；checkpointer 由启动期注入（Redis 实例或 None/MemorySaver）。
 
@@ -380,12 +396,21 @@ def build_graph(checkpointer=None):
     readonly_retry_kwargs = (
         {"retry_policy": readonly_retry_policy()} if settings.NODE_RETRY_ENABLED else {}
     )
+    # LG-3-2：节点级原生超时（langgraph 1.x 的 `add_node(timeout=)`）。flag-off
+    # （`NODE_TIMEOUT_SECONDS=0`，默认）⇒ 下面是**空 dict** ⇒ add_node 完全不传
+    # `timeout` ⇒ 与基线逐位等价（纪律 1）。超时是**每次节点尝试**的墙钟上限，
+    # 靠 asyncio 协作式取消生效（纪律 6 ②：不让出事件循环的节点杀不掉）；
+    # `NodeTimeoutError` 已在领域分类里判为不可重试，不会与上面的 retry_policy
+    # 叠成「超时→重试→再超时」（LG-3-2 验收第 ④ 条）。
+    node_timeout_kwargs = _node_timeout_kwargs()
     # 策略形参口径（LG-0-3）：下面这些 add_node 若要挂 retry_policy / cache_policy /
     # error_handler / timeout，实参**只能**来自 agentix/orchestration/langgraph/policies.py
     # 的工厂；在本文件内联 `RetryPolicy(...)` / `TimeoutPolicy(...)` 由
     # tests/test_p147_policy_centralization.py 判违规（散落的字面量改一处漏一处且不报错）。
     # 接线进度：LG-1-1 已给 6 个只读节点挂 retry_policy（见上方 readonly_retry_kwargs）；
-    # cache_policy / error_handler / timeout 仍未接线，归 LG-3-2 / LG-3-5。
+    # LG-3-2 已给全部 10 个节点挂 timeout（见 node_timeout_kwargs）；
+    # cache_policy / error_handler 仍未接线，归 LG-3-5。两个 kwargs 都用 `**` 展开，
+    # 关时完全不传形参——守卫（p147 判据 2）对 `**` 展开显式豁免的正是这一形态。
     # 注意：check_hallucinations 故意不在此注册（本块仅注册下列 10 个节点：
     # message_window / analyze_and_route_query / respond_to_general_query /
     # get_additional_info / create_research_plan / create_image_query /
@@ -401,24 +426,32 @@ def build_graph(checkpointer=None):
             settings.MAX_HISTORY_MESSAGES,
             getattr(settings, "LG_TOKEN_HISTORY_BUDGET", 0),
         ),
+        **node_timeout_kwargs,
     )
-    builder.add_node(analyze_and_route_query, **readonly_retry_kwargs)
-    builder.add_node(respond_to_general_query, **readonly_retry_kwargs)
-    builder.add_node(get_additional_info)
-    builder.add_node("create_research_plan", create_research_plan, **readonly_retry_kwargs)
-    builder.add_node(create_image_query, **readonly_retry_kwargs)
-    builder.add_node(create_file_query, **readonly_retry_kwargs)
-    builder.add_node(create_kb_query, **readonly_retry_kwargs)
+    builder.add_node(analyze_and_route_query, **readonly_retry_kwargs, **node_timeout_kwargs)
+    builder.add_node(respond_to_general_query, **readonly_retry_kwargs, **node_timeout_kwargs)
+    builder.add_node(get_additional_info, **node_timeout_kwargs)
+    builder.add_node(
+        "create_research_plan",
+        create_research_plan,
+        **readonly_retry_kwargs,
+        **node_timeout_kwargs,
+    )
+    builder.add_node(create_image_query, **readonly_retry_kwargs, **node_timeout_kwargs)
+    builder.add_node(create_file_query, **readonly_retry_kwargs, **node_timeout_kwargs)
+    builder.add_node(create_kb_query, **readonly_retry_kwargs, **node_timeout_kwargs)
     # P1（任务执行）：execute_task 无条件注册（route_query 的 Literal/ROUTE_HANDLERS
     # 需与节点集对齐，phase19 绊线断言两者相等）；可达性由 TASK_EXEC_ENABLED 在
     # 路由侧门控——flag-off 时任何路由决策都不会进入本节点，行为与基线等价。
     # F1e·A-P1-4：注册时包一层进环注入壳（节点名不变 = 绊线断言不受影响；
     # flag-off/3.10/未声明进环意图时纯透传）。
-    builder.add_node("execute_task", _wrap_execute_task_in_loop(execute_task))
+    builder.add_node(
+        "execute_task", _wrap_execute_task_in_loop(execute_task), **node_timeout_kwargs
+    )
     # P2（代码执行）：code_agent 无条件注册（route_query 的 Literal / ROUTE_HANDLERS
     # 需与节点集对齐，phase19 绊线断言两者相等）；可达性由 CODE_EXEC_ENABLED 在
     # 路由侧门控——flag-off 时任何路由决策都不会进入本节点，行为与基线等价。
-    builder.add_node("code_agent", create_code_query)
+    builder.add_node("code_agent", create_code_query, **node_timeout_kwargs)
 
     builder.add_edge(START, "message_window")
     builder.add_edge("message_window", "analyze_and_route_query")

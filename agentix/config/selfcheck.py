@@ -262,6 +262,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "ADMISSION_MAX_QUEUE",
         # LG-1-1：只读节点原生重试开关，不设 = 默认 false（不传 retry_policy），属合法省略
         "NODE_RETRY_ENABLED",
+        # LG-3-2：节点级原生超时，不设 = 0（不传 timeout 形参），属合法省略
+        "NODE_TIMEOUT_SECONDS",
         "RETRY_BUDGET_ENABLED",
         "RETRY_BUDGET_TOKENS",
         "RETRY_BACKOFF_ALIGNED",
