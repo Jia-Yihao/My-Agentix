@@ -10,14 +10,18 @@
 3. **flag-off 逐位等价**（``AGENTS.md`` 纪律 1）：``NODE_RETRY_ENABLED=false``（默认）时
    注册处**完全不传** ``retry_policy``，十个业务节点读到的策略全为 ``None``。
 
-## 一条必须登记的不利事实（也是 LG-1-2 的动机）
+## 一条必须登记的不利事实（LG-1-2 已收口）
 
 LangGraph 原生 ``default_retry_on`` 对 ``httpx.HTTPStatusError`` **只认 5xx**
 （源码里写死 ``500 <= status_code < 600``），所以「HTTP 429 以 httpx 状态错误的形态
 抛出来」时原生默认**不重试**；而 ``openai.RateLimitError`` 不是 ``HTTPStatusError``
-子类，会落到默认的「未知即重试」分支 ⇒ 被重试。本文件把两种形态都测出来并写清结论：
-真源应当是业务分类函数 ``is_retryable``（``agentix/domain/policies/error_classification.py``
-把 ``429`` / ``rate limit`` 明确列为可重试），这正是 LG-1-2 要把它接成 ``retry_on`` 的原因。
+子类，会落到默认的「未知即重试」分支 ⇒ 被重试。真源应当是业务分类函数
+``is_retryable``（``agentix/domain/policies/error_classification.py``
+把 ``429`` / ``rate limit`` 明确列为可重试）——LG-1-2 已把它接成
+``readonly_retry_policy()`` 的 ``retry_on``，接线处从此按业务口径判定。
+本文件保留原生默认的**框架事实**（``TestRetryOnSourceOfTruthGap``）与接线处的
+**业务读数**（401 一次即抛）作对照，LG-1-2 的验收见
+``tests/test_p149_retry_on_business.py``。
 
 判据不依赖网络：全部用本地构造的异常与内存图。
 """
@@ -131,9 +135,17 @@ class TestFlagOnWiring:
         )
 
     def test_policy_is_native_defaults_not_a_copied_number_set(self, compiled_on):
-        """策略参数必须逐项等于原生默认（LG-1-3 的基准），不是抄来的数字。"""
+        """策略**数值**必须逐项等于原生默认（LG-1-3 的基准），不是抄来的数字。
+
+        LG-1-2 起 ``retry_on`` 是业务分类 ``is_retryable``，是唯一允许的差异项。
+        """
+        from agentix.domain.policies.retry import is_retryable
+
         policy = _retry_policies_of(compiled_on, "create_kb_query")[0]
-        assert policy == RetryPolicy(), f"实得 {policy._asdict()}"
+        assert policy.retry_on is is_retryable, f"retry_on 未接业务分类：{policy.retry_on!r}"
+        assert policy._replace(retry_on=RetryPolicy().retry_on) == RetryPolicy(), (
+            f"数值默认值偏离原生：实得 {policy._asdict()}"
+        )
 
 
 class TestNativeRetryActuallyFires:
@@ -159,34 +171,40 @@ class TestNativeRetryActuallyFires:
         assert len(calls) == 2, f"期望「首次 429 + 重试一次成功」共 2 次调用，实得 {len(calls)} 次"
 
     @pytest.mark.asyncio
-    async def test_native_default_retries_auth_error_this_is_the_gap_lg_1_2_closes(self):
-        """**登记事实，不是断言期望**：原生 ``default_retry_on`` 把 401 也重试用尽。
+    async def test_framework_default_retries_auth_error_business_policy_does_not(self):
+        """原生默认把 401 重试用尽；业务策略（``is_retryable``）1 次即抛。
 
-        ``openai.AuthenticationError`` 既不是 ``httpx.HTTPStatusError``，也不在原生默认
-        的「明确不重试」类型清单里 ⇒ 落到 ``return True`` 分支。业务口径
-        （``is_retryable``）对 401 / ``invalid api key`` 判 **False**（重试换不来鉴权，
-        只会放大故障）。两者不一致正是 LG-1-2「把 ``is_retryable`` 接成 ``retry_on``」
-        的理由，本用例把它钉住：等 LG-1-2 落地后，这里的读数应当变成 **1 次即抛**。
+        左边是**框架事实**（``openai.AuthenticationError`` 既不是 ``httpx.HTTPStatusError``
+        也不在原生「明确不重试」清单里 ⇒ 落到 ``return True``），右边是 LG-1-2 落地后
+        接线处的真实读数。两者放在一起，任何一侧变化都能立刻看出是哪边动了。
         """
-        calls = []
+        async def _run(policy):
+            calls = []
 
-        async def always_auth_error(state: dict) -> dict:
-            calls.append(1)
-            raise _auth_401()
+            async def always_auth_error(state: dict) -> dict:
+                calls.append(1)
+                raise _auth_401()
 
-        builder = StateGraph(dict)
-        builder.add_node("auth", always_auth_error, retry_policy=readonly_retry_policy())
-        builder.add_edge(START, "auth")
-        builder.add_edge("auth", END)
+            builder = StateGraph(dict)
+            builder.add_node("auth", always_auth_error, retry_policy=policy)
+            builder.add_edge(START, "auth")
+            builder.add_edge("auth", END)
+            with pytest.raises(openai.AuthenticationError):
+                await builder.compile().ainvoke({"v": 1})
+            return len(calls)
 
-        with pytest.raises(openai.AuthenticationError):
-            await builder.compile().ainvoke({"v": 1})
         assert is_retryable(_auth_401()) is False, (
             "is_retryable 对 401 判可重试——业务分类口径漂移，本用例的对比前提失效"
         )
-        assert len(calls) == 3, (
-            f"原生默认策略下 401 被尝试 {len(calls)} 次。读数变化意味着 LG-1-2 已落地"
-            "（retry_on 换成 is_retryable）⇒ 请同步本用例与 LG-1-2 的状态，不要把红改绿"
+        framework_calls = await _run(RetryPolicy())
+        assert framework_calls == 3, (
+            f"原生 RetryPolicy() 对 401 尝试 {framework_calls} 次（期望 3）。"
+            "框架默认行为变了 ⇒ 复核 LG-1-2 的动因说明与 test_p149 的对比基准"
+        )
+        business_calls = await _run(readonly_retry_policy())
+        assert business_calls == 1, (
+            f"业务策略对 401 尝试 {business_calls} 次（期望 1 次即抛）。"
+            "retry_on 没接上 is_retryable ⇒ 鉴权失败会被无意义重试"
         )
 
     @pytest.mark.asyncio

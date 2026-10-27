@@ -231,20 +231,27 @@ class TestPoliciesModuleContract:
         )
 
     def test_readonly_retry_policy_matches_native_defaults_item_by_item(self):
-        """LG-1-3「与原生默认同源」的锚点：默认值必须由 ``RetryPolicy`` 自己给出。
+        """LG-1-3「与原生默认同源」的锚点：**数值**默认值必须由 ``RetryPolicy`` 自己给出。
 
         本断言同时是反抄本守卫：一旦有人把数字抄进 ``readonly_retry_policy``
         并抄错，这里就红。
+
+        LG-1-2 之后 ``retry_on`` 是业务分类（唯一真源），与原生默认的差异**只准有
+        这一项**——断言写成"换回原生 retry_on 后逐项相等"，例外被钉死在明面上。
         """
         from langgraph.types import RetryPolicy
 
+        from agentix.domain.policies.retry import is_retryable
         from agentix.orchestration.langgraph.policies import NATIVE_RETRY_DEFAULTS, readonly_retry_policy
 
         produced = readonly_retry_policy()
         baseline = RetryPolicy()
-        assert produced == baseline, (
-            f"readonly_retry_policy() 与原生 RetryPolicy() 默认值不一致："
-            f"产出={produced._asdict()} 原生={baseline._asdict()}"
+        assert produced.retry_on is is_retryable, (
+            "retry_on 必须直接是领域层的 is_retryable（LG-1-2 唯一真源），"
+            f"实际={produced.retry_on!r}"
+        )
+        assert produced._replace(retry_on=baseline.retry_on) == baseline, (
+            f"除 retry_on 外与原生默认不一致：产出={produced._asdict()} 原生={baseline._asdict()}"
         )
         assert NATIVE_RETRY_DEFAULTS == baseline, (
             "NATIVE_RETRY_DEFAULTS 快照失真（框架默认值变了，LG-1-3 的基准需同步）"
@@ -253,9 +260,12 @@ class TestPoliciesModuleContract:
     def test_readonly_retry_policy_accepts_overrides(self):
         from langgraph.types import RetryPolicy
 
+        from agentix.domain.policies.retry import is_retryable
         from agentix.orchestration.langgraph.policies import readonly_retry_policy
 
-        assert readonly_retry_policy(max_attempts=5) == RetryPolicy(max_attempts=5)
+        assert readonly_retry_policy(max_attempts=5) == RetryPolicy(
+            max_attempts=5, retry_on=is_retryable
+        )
 
     def test_node_timeout_is_none_when_disabled(self):
         """LG-3-2 口径①：关的时候返回 None，调用方据此**完全不传** timeout。"""

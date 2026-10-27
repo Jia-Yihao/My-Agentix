@@ -20,8 +20,8 @@ LangGraph 的策略对象；守卫按"该名字是不是从 ``langgraph*`` 导�
 
 ## 本轮的边界
 
-LG-0-3 **只建集中点，不改任何注册处**，因此运行期行为与基线逐位等价
-（``AGENTS.md`` 纪律 1）。接线分别归属：LG-1-1（只读节点接 ``retry_policy``）、
+LG-0-3 只建集中点；LG-1-1 把 ``readonly_retry_policy`` 接到 6 个只读节点；
+LG-1-2 把 ``retry_on`` 换成业务分类 ``is_retryable``（唯一真源）。接线仍归属：
 LG-3-2（节点级 ``timeout``）、LG-3-5（``error_handler`` 补偿）。
 """
 
@@ -30,6 +30,8 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from langgraph.types import RetryPolicy, TimeoutPolicy
+
+from agentix.domain.policies.retry import is_retryable
 
 __all__ = [
     "NATIVE_RETRY_DEFAULTS",
@@ -54,17 +56,22 @@ LEGACY_POLICY_KWARG_NAMES = frozenset({"retry"})
 def readonly_retry_policy(**overrides: Any) -> RetryPolicy:
     """只读节点用的重试策略。
 
-    默认值全部来自 ``RetryPolicy`` 自身（``initial_interval=0.5`` /
+    **数值**默认值全部来自 ``RetryPolicy`` 自身（``initial_interval=0.5`` /
     ``backoff_factor=2.0`` / ``max_interval=128.0`` / ``max_attempts=3`` /
-    ``jitter=True`` / ``retry_on=default_retry_on``）——本函数刻意**不**填数字，
-    这样"与原生默认同源"是由构造保证的，而不是靠注释里的约定。
+    ``jitter=True``）——本函数刻意**不**填数字，这样"与原生默认同源"是由构造
+    保证的，而不是靠注释里的约定。
+
+    **唯一与原生默认不同的是 ``retry_on``**（LG-1-2）：接业务分类
+    ``agentix.domain.policies.retry.is_retryable``，它是全仓"可重试"的唯一真源。
+    原生 ``default_retry_on`` 与业务口径实测有三处漂移：`httpx.HTTPStatusError(429)`
+    原生**不重试**而业务判可重试；`openai.AuthenticationError`（401）原生会重试
+    3 次而业务判不可重试；未知异常原生"未知即重试"而业务判不可重试（重试换不来
+    一个缺陷的修复）。漂移用例见 ``tests/test_p149_retry_on_business.py``。
 
     ⚠️ 只给**只读**节点。``execute_task`` 与 ``code_agent`` 不得接：整节点重跑会
     重放工具副作用（指导文档铁律，也是 LG-1-1 验收第 ② 条）。
-
-    LG-1-2 会把业务分类函数 ``is_retryable`` 经 ``retry_on`` 从这里转出，
-    成为全仓唯一的"可重试"真源；届时只改本模块，注册处不动。
     """
+    overrides.setdefault("retry_on", is_retryable)
     return RetryPolicy(**overrides)
 
 
