@@ -289,6 +289,39 @@ class ThreadInterruptedError(RuntimeError):
         self.pending = pending
 
 
+def _task_summary(task: Any) -> Dict[str, Any]:
+    """把图快照里的 task 投影成可下发的摘要（不携带 interrupt 载荷）。"""
+    error = getattr(task, "error", None)
+    return {
+        "task_id": str(getattr(task, "id", "")),
+        "name": str(getattr(task, "name", "")),
+        "path": [str(p) for p in (getattr(task, "path", ()) or ())],
+        "error": None if error is None else str(error),
+        "interrupts": len(getattr(task, "interrupts", ()) or ()),
+        "has_result": getattr(task, "result", None) is not None,
+    }
+
+
+class PendingTaskNotFoundError(LookupError):
+    """线程或待执行 task 不存在（端点转 404）。"""
+
+    def __init__(self, thread_id: str, task_id: str):
+        super().__init__(f"no pending task {task_id} on thread {thread_id}")
+        self.thread_id = thread_id
+        self.task_id = task_id
+
+
+class TaskNotRetryableError(RuntimeError):
+    """目标 task 已完成：拒绝重放（端点转 409，防副作用重复）。"""
+
+    def __init__(self, thread_id: str, task_id: str, reason: str):
+        super().__init__(f"task {task_id} on thread {thread_id} is not retryable: {reason}")
+        self.thread_id = thread_id
+        self.task_id = task_id
+        self.reason = reason
+
+
+
 class CheckpointRecovery:
     """Crash recovery driven by the LangGraph checkpointer itself.
 
@@ -399,6 +432,80 @@ class CheckpointRecovery:
         if snapshot is None or not getattr(snapshot, "values", None):
             return None
         return snapshot
+
+    async def list_pending_tasks(
+        self, thread_id: str, graph: Any
+    ) -> Optional[List[Dict[str, Any]]]:
+        """列出线程当前待执行的 task；线程不存在 ⇒ None（端点 404）。
+
+        task 只从图自己的快照取（``snapshot.tasks``），不另造 task 概念——
+        与执行链同源（纪律 6 ④）。已完成线程返回空表。
+        """
+        snapshot = await self.get_thread_snapshot(thread_id, graph)
+        if snapshot is None:
+            return None
+        return [_task_summary(t) for t in (getattr(snapshot, "tasks", ()) or ())]
+
+    async def retry_task(
+        self, thread_id: str, task_id: str, graph: Any
+    ) -> Optional[Dict[str, Any]]:
+        """定点重跑线程里失败的那个 task（LG-2-4）。
+
+        只重跑目标 task 的机制来自 checkpointer 自己的台账：同一超级步里已完成
+        的兄弟 task 其写入已落盘（``pending_writes``），``ainvoke(None)`` 只会
+        重跑没有落盘写入的 task——实测兄弟 task 不重放。本方法不手工补写兄弟结果，
+        也不调 ``update_state(task_id=...)``：
+
+        *指导文档的偏差（有实测依据）*：1.2.18 里对失败超级步调
+        ``aupdate_state(..., task_id=<失败 task>)`` 会把整步收敛成这一条 update——
+        兄弟 task 已落盘的结果连同 ``next`` 一起被丢弃（实测 ``done`` 从
+        ``["good"]`` 变空、``next`` 变 ``()``），拿它做「重试」会损坏状态。
+        ``update_state`` 的 ``task_id`` 只适合「补写某条 task 的结果」，不适合
+        「重跑」，故此处走原生 resume。
+
+        已完成（有结果且无 error）的 task 一律拒绝——从端点这一侧堵住「重放成功
+        task」的路（主防仍在引擎：兄弟 task 有已落盘写入就不会被调度）。
+
+        Args:
+            thread_id / task_id: 目标定位；任一不存在 ⇒ ``PendingTaskNotFoundError``。
+            graph: 编译图。
+
+        Returns:
+            重跑结果摘要；续跑失败（图抛错）时为 None。
+
+        Raises:
+            PendingTaskNotFoundError: 线程或 task 不存在（端点 404）。
+            TaskNotRetryableError: task 已完成（端点 409）。
+            ThreadInterruptedError: 线程挂着未决中断（端点 409 → /ops/hitl/in-loop）。
+        """
+        snapshot = await self.get_thread_snapshot(thread_id, graph)
+        if snapshot is None:
+            raise PendingTaskNotFoundError(thread_id, task_id)
+        task = next(
+            (
+                t
+                for t in (getattr(snapshot, "tasks", ()) or ())
+                if str(getattr(t, "id", "")) == task_id
+            ),
+            None,
+        )
+        if task is None:
+            raise PendingTaskNotFoundError(thread_id, task_id)
+        if getattr(task, "result", None) is not None and getattr(task, "error", None) is None:
+            raise TaskNotRetryableError(
+                thread_id, task_id, "task already completed; refusing to replay it"
+            )
+
+        result = await self.resume_thread(thread_id, graph)
+        if result is None:
+            return None
+        return {
+            "thread_id": thread_id,
+            "task_id": task_id,
+            "task_name": str(getattr(task, "name", "")),
+            "status": "retried",
+            "message_count": len(result.get("messages", []) or []),
+        }
 
     async def get_active_threads(
         self,
