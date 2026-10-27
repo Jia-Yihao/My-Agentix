@@ -12,6 +12,18 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-2-6 `durability` 参数化（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P2 第 6 条：checkpoint 何时落盘此前由框架默认档决定（`async`：每步后台写、下一步不等），运维无法要求「每步强制等落盘」。
+
+- **[新增配置] `GRAPH_DURABILITY`**（`Literal["sync", "async", "exit"]`，默认 `async`）：`sync` = 每步写完 checkpoint 才走下一步；`async` = 每步后台写、下一步不等（**框架默认**，与升级前行为一致，**不是可靠性升级**）；`exit` = 只在退出 / 中断 / 报错时写。非法取值在 Settings 实例化（启动）即抛 `ValidationError`，不静默回落。
+- **[单一透传点] `graph_config.durability_kwargs()`**：默认档返回空 dict——框架在 `durability=None` 时按同一默认值解析，调用形状与基线逐位相同（纪律 1）；「默认值」只取自 Settings 字段自己的默认，不另写字面量。
+- **[四处调用点]** chat 的非流式 ask（`ainvoke`）与流式（`astream_events`，经 `**kwargs` 下传给 `astream`）、`lg_builder.resume_in_loop`、`breakpoint_resume.resume_thread`（定点重跑复用后者）。
+- **[实测口径]** 1.2.18 下 `durability="exit"` 让同一条两节点图的历史从 4 条降为 1 条（`astream_events` 同样生效）；慢速 saver（每次写延迟 50ms）下，`sync` 档第 3 个节点能读到本轮前两步的 checkpoint，`async` 档读不到——两种读数同一条用例钉住。
+- **[新增守卫] `tests/test_p157_graph_durability.py`（18 条）**：默认 async 与默认值单一来源、四种非法取值启动即报错、默认档空 kwargs、非默认档透传、四处调用点实际收到 kwargs、默认档不发参数、`sync`/`async` 落盘可见性双读数、`exit` 原生生效、三处调用点不得内联 `durability=` 字面量（AST）。
+- **[配置五处同步]** `settings.py` / `selfcheck.py::DEFAULT_IGNORED_MISSING` / `.env.example` / `docs/architecture/配置管理.md` §5 / `test_p41_doc_consistency.py` 手写清单。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十二段读数；`docs/项目实现手册.md` 补 durability 一段。
+
 ### LangGraph 原生对齐 · LG-2-5 历史回看端点（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P2 第 5 条：线程走到哪一步、每步 `next` 是谁，此前只能直接读 checkpoint 或翻日志。

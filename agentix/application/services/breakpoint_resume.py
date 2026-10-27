@@ -31,7 +31,7 @@ from redis.asyncio import Redis
 
 from agentix.config import settings
 from agentix.observability.spans import record_resume_from_checkpoint
-from agentix.orchestration.langgraph.graph_config import thread_config
+from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
 
 
 class InterruptReason(str, Enum):
@@ -682,7 +682,7 @@ class CheckpointRecovery:
             # chat_service.py）；fail-open 由 helper 保证，绝不影响恢复主链路（纪律 2）。
             record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))
 
-            result = await graph.ainvoke(None, config=config)
+            result = await graph.ainvoke(None, config=config, **durability_kwargs())
 
             await self.save_checkpoint_metadata(
                 thread_id,

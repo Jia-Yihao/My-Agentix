@@ -25,7 +25,7 @@ from loguru import logger
 
 from agentix.config import ablation, settings
 from agentix.observability.spans import record_resume_from_checkpoint
-from agentix.orchestration.langgraph.graph_config import thread_config
+from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
 from agentix.orchestration.langgraph.lg_states import AgentState, GradeHallucinations
 from agentix.orchestration.langgraph.policies import readonly_retry_policy
 from agentix.application.agents.lg_prompts import (
@@ -362,6 +362,7 @@ async def resume_in_loop(thread_id: str, resume_value: Any) -> Any:
     return await graph.ainvoke(
         Command(resume=resume_value),
         config=config,
+        **durability_kwargs(),
     )
 
 

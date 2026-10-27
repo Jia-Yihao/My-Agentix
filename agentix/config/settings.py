@@ -4,7 +4,7 @@ Centralised application settings for My Agentix.
 
 import logging
 import secrets
-from typing import List, Optional
+from typing import List, Literal, Optional
 from zoneinfo import ZoneInfo
 
 from pydantic import AliasChoices, Field, PrivateAttr, model_validator
@@ -984,6 +984,12 @@ class Settings(BaseSettings):
 
     # Agent behaviour
     MAX_ITERATIONS: int = 10
+    # LG-2-6：图执行落盘时机（LangGraph 1.2 原生 `durability` 三档）。
+    # - sync：每步写完 checkpoint 才开始下一步（崩溃最多丢当前步）；
+    # - async：每步后台写、下一步不等（**框架默认**，与升级前行为一致）；
+    # - exit：只在整轮退出 / 中断 / 报错时写（步骤历史会稀疏）。
+    # Literal 让非法取值在 Settings 实例化（启动）即报错，不许静默回落（纪律 1）。
+    GRAPH_DURABILITY: Literal["sync", "async", "exit"] = "async"
     AGENT_TIMEOUT: int = 300
     # 批次 B1（audit-2026-09-28 §2 B1）：流式**单事件间隔**看门狗——与
     # AGENT_TIMEOUT（整流墙钟）解耦。`astream_events.__anext__()` 静默挂起
