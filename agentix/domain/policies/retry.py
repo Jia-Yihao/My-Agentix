@@ -23,7 +23,7 @@ import asyncio
 import random
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar
 
 from .error_classification import is_retryable
 
@@ -41,6 +41,12 @@ __all__ = [
     "RETRY_MAX_INTERVAL",
     "RETRY_MAX_ATTEMPTS",
     "RETRY_JITTER",
+    "budgeted_pause",
+    "remaining_seconds",
+    "set_remaining_provider",
+    "RETRY_TRUNCATED_ATTR",
+    "mark_retry_truncated",
+    "is_retry_truncated",
 ]
 
 # ---------------------------------------------------------------------------
@@ -86,6 +92,75 @@ class RetryBackoff:
         return delay
 
 
+# ---------------------------------------------------------------------------
+# LG-3-1：退避停等的预算感知（deadline 的存储在 application，读取在 domain）
+# ---------------------------------------------------------------------------
+# 为什么是「注入读取函数」而不是在这里 import ``RequestScope``：domain 是依赖链
+# 的最底层（``tests/test_p17_domain_layer.py`` 守着方向），deadline 的**存储**
+# 留在 application 的请求作用域里；本层只持有一个读取函数，退避算术只有一份
+# （纪律 6 ④：同一个判定不许两个源）。
+_remaining_provider: Optional[Callable[[], Optional[float]]] = None
+
+#: 「因 run 预算耗尽而放弃重试」打在最后抛出的异常上的属性名。
+RETRY_TRUNCATED_ATTR = "retry_truncated"
+
+
+def set_remaining_provider(
+    provider: Optional[Callable[[], Optional[float]]],
+) -> None:
+    """注册「距 deadline 的剩余秒数」读取函数（application 在导入期注册）。"""
+    global _remaining_provider
+    _remaining_provider = provider
+
+
+def remaining_seconds() -> Optional[float]:
+    """当前 run 的剩余预算秒数；无 provider / 无 deadline / 读取故障 → ``None``。
+
+    ``None`` 是**回原行为**的信号：无 deadline 时退避与基线逐位等价。
+    """
+    provider = _remaining_provider
+    if provider is None:
+        return None
+    try:
+        value = provider()
+    except Exception:  # noqa: BLE001 - 预算读取故障不得拖垮重试主链路
+        return None
+    if value is None:
+        return None
+    return max(0.0, float(value))
+
+
+def budgeted_pause(delay: float, remaining: Optional[float]) -> Tuple[float, bool]:
+    """把一次退避停等压进剩余预算：返回 ``(实际停等秒数, 是否应放弃重试)``。
+
+    - ``remaining is None``（无 deadline）⇒ ``(delay, False)``，与基线逐位等价；
+    - ``remaining > delay`` ⇒ ``(delay, False)``，预算够，原样停等；
+    - ``remaining <= delay`` ⇒ ``(remaining, True)``：只等剩余预算即放弃——停满
+      之后下一次尝试必然越过 deadline，重试不会得到结果，只会把「超时」拖到
+      最后一次尝试之后才暴露。
+    """
+    if remaining is None or remaining > delay:
+        return delay, False
+    return max(0.0, remaining), True
+
+
+def mark_retry_truncated(exc: BaseException) -> BaseException:
+    """给「因预算耗尽而放弃重试」的异常打标（调用方用 :func:`is_retry_truncated` 读）。
+
+    只加属性、不改类型与消息：上层的错误分类（``is_retryable``）不受影响。
+    """
+    try:
+        setattr(exc, RETRY_TRUNCATED_ATTR, True)
+    except Exception:  # noqa: BLE001 - 标记失败不得影响异常继续抛出
+        pass
+    return exc
+
+
+def is_retry_truncated(exc: BaseException) -> bool:
+    """该异常是否由「重试因 run 预算耗尽被截断」产生（未打标 ⇒ False）。"""
+    return bool(getattr(exc, RETRY_TRUNCATED_ATTR, False))
+
+
 def aretry(
     max_attempts: int = RETRY_MAX_ATTEMPTS,
     base_delay: float = RETRY_INITIAL_INTERVAL,
@@ -100,6 +175,10 @@ def aretry(
     可重试性由 ``is_retryable`` 判定（瞬时网络/限流/5xx → 重试；
     鉴权/参数错误 → 立即抛出）。``asyncio.CancelledError`` 一律透传，
     不可被重试逻辑吞掉。
+
+    LG-3-1：有 run deadline 时，退避停等压进剩余预算（``budgeted_pause``）；
+    余量不足以完成这次退避即放弃，并在抛出的异常上打 ``retry_truncated`` 标。
+    无 deadline（``remaining_seconds() is None``）时的代码路径与基线逐位相同。
     """
 
     def deco(fn: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
@@ -122,7 +201,15 @@ def aretry(
                     last = e
                     if not is_retryable(e) or attempt == max_attempts - 1:
                         raise
-                    await asyncio.sleep(shape.delay(attempt))
+                    pause, out_of_budget = budgeted_pause(
+                        shape.delay(attempt), remaining_seconds()
+                    )
+                    if out_of_budget:
+                        # 余量不足以完成这次退避：不再开下一次尝试，原样抛出
+                        # （只打标，不改类型/消息）。
+                        mark_retry_truncated(e)
+                        raise
+                    await asyncio.sleep(pause)
             raise last  # type: ignore[misc]
 
         return wrapper

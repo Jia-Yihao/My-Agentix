@@ -27,6 +27,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, List, Optional
 
+from agentix.domain.policies.retry import set_remaining_provider
+
 
 @dataclass
 class RequestScope:
@@ -91,6 +93,20 @@ class RequestScope:
 _scope_var: contextvars.ContextVar[Optional[RequestScope]] = contextvars.ContextVar(
     "request_scope", default=None
 )
+
+
+def _remaining_seconds_from_scope() -> Optional[float]:
+    """把当前作用域的 deadline 换算成秒，供 domain 重试层读取（LG-3-1）。"""
+    scope = _scope_var.get()
+    if scope is None:
+        return None
+    remaining_ms = scope.remaining_ms()
+    return None if remaining_ms is None else remaining_ms / 1000.0
+
+
+# LG-3-1：domain 不得反向依赖 application（分层），故由**本层**注册读取函数；
+# 三层退避的停等只读这一个来源，不各自去猜 deadline。
+set_remaining_provider(_remaining_seconds_from_scope)
 
 
 def get_current_scope() -> Optional[RequestScope]:

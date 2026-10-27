@@ -23,6 +23,10 @@ from .retry import (
     RETRY_MAX_INTERVAL,
     RetryBackoff,
     aretry,
+    budgeted_pause,
+    is_retry_truncated,
+    remaining_seconds,
+    set_remaining_provider,
 )
 
 __all__ = [
@@ -36,4 +40,8 @@ __all__ = [
     "RETRY_MAX_INTERVAL",
     "RETRY_MAX_ATTEMPTS",
     "RETRY_JITTER",
+    "budgeted_pause",
+    "remaining_seconds",
+    "set_remaining_provider",
+    "is_retry_truncated",
 ]

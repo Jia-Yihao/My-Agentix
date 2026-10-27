@@ -31,7 +31,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from agentix.domain.policies.retry import RetryBackoff
+from agentix.domain.policies.retry import (
+    RetryBackoff,
+    budgeted_pause,
+    remaining_seconds,
+)
 from agentix.domain.tool.sandbox import ExecutionSandbox, Handler, SandboxUnavailable
 from agentix.domain.tool.spec import diff_spec_fields
 from agentix.tools.definitions import (
@@ -163,6 +167,9 @@ class ToolResult:
     latency_ms: int = 0
     retryable: bool = False
     trace_id: str | None = None
+    #: LG-3-1：重试因 **run 预算（deadline）耗尽**而中止——与「输出被截断」
+    #: （``result_limiter`` 的 ``limited`` 元信息）不是一回事，别混用。
+    truncated: bool = False
 
 
 def _risk_rank(level: str) -> int:
@@ -479,6 +486,7 @@ class ToolExecutor:
         backoff = tool_retry_backoff()
         last_error: str | None = None
         last_exc: BaseException | None = None
+        truncated_by_budget = False
         for attempt in range(attempts):
             timeout_ms = _effective_timeout_ms(spec.timeout_ms)
             pool = pool_for_tool(tool_name)
@@ -548,6 +556,19 @@ class ToolExecutor:
                 self._observe_after(tool_name, result)
                 return result
             if attempt < attempts - 1:
+                # LG-3-1：有 run deadline 时把停等压进剩余预算；余量不足以完成
+                # 这次退避就直接放弃（不再开下一次尝试，结果标 truncated）。
+                # 无 deadline 时 pause == delay、out_of_budget 恒 False。
+                delay = backoff.delay(attempt)
+                pause, out_of_budget = budgeted_pause(delay, remaining_seconds())
+                if out_of_budget:
+                    logger.warning(
+                        "tool %s retry truncated by run budget (needs %.2fs, "
+                        "%.2fs left): giving up after %d attempt(s)",
+                        tool_name, delay, pause, attempt + 1,
+                    )
+                    truncated_by_budget = True
+                    break
                 # Phase H · W3（RETRY_BUDGET_ENABLED，flag 关 = 原样退避重试）：
                 # ① 分类审计闸——仅瞬时性错误（timeout/429/503/reset）可重试，
                 #    鉴权/参数类 4xx 重试只会放大故障；② run 级共享预算扣减，
@@ -571,7 +592,7 @@ class ToolExecutor:
                             tool_name,
                         )
                         break
-                await asyncio.sleep(backoff.delay(attempt))
+                await asyncio.sleep(pause)
 
         latency = int((time.perf_counter() - started) * 1000)
         result = ToolResult(
@@ -581,6 +602,7 @@ class ToolExecutor:
             error=last_error,
             latency_ms=latency,
             retryable=spec.retryable,
+            truncated=truncated_by_budget,
         )
         # 护栏失败记账（P4-4.1，flag 关 ⇒ 零调用）：三计数器分级 + 恢复建议
         # 进 metadata——**error 文本保持原样**（is_retryable / failure_key 指纹
