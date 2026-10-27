@@ -834,7 +834,10 @@ async def _startup() -> None:
 
     # Crash recovery: resume any interrupted threads
     try:
-        from agentix.application.services.breakpoint_resume import get_checkpoint_recovery
+        from agentix.application.services.breakpoint_resume import (
+            ThreadInterruptedError,
+            get_checkpoint_recovery,
+        )
         recovery = get_checkpoint_recovery()
         # LG-2-1：线程清单来自 checkpointer.alist() 枚举（不再读 Redis 集合），
         # 「未完成」由图状态快照判定；60 秒空闲闸的口径也从 Redis 元数据
@@ -849,7 +852,17 @@ async def _startup() -> None:
             # 这里动态读取 lg_builder.graph 属性，始终拿到当前编译图。
             recovered = []
             for thread_id in active_threads:
-                result = await recovery.resume_thread(thread_id, lg_builder.graph)
+                try:
+                    result = await recovery.resume_thread(thread_id, lg_builder.graph)
+                except ThreadInterruptedError as exc:
+                    # LG-2-2：等人工裁决的线程不硬续（会 200 但又挂回去）；留在
+                    # active 清单里由 ops 面处理，启动流程继续走下一个。
+                    logger.info(
+                        "Skipped interrupted thread {} ({} pending): use /ops/hitl/in-loop",
+                        thread_id,
+                        exc.pending,
+                    )
+                    continue
                 if result:
                     recovered.append(thread_id)
             logger.info("Recovered {} threads: {}", len(recovered), recovered)
