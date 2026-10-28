@@ -1,10 +1,17 @@
 <template>
-  <div class="chat-message-list" :class="variantClass">
+  <div ref="listRef" class="chat-message-list" :class="variantClass">
+    <div
+      v-for="pad in topSpacers"
+      :key="pad.kind"
+      class="virtual-spacer virtual-spacer--top"
+      aria-hidden="true"
+      :style="{ height: `${pad.height}px` }"
+    ></div>
     <!-- 批次 C1（audit §2 C1）：>200 条折叠中段——保留首 50 + 尾 150，
          中间插入可点击的折叠条；展开后保持全量渲染（新消息不再收起）。 -->
-    <template v-for="(msg, idx) in displayMessages" :key="msg.id">
+    <template v-for="(msg, idx) in listForRender" :key="msg.id">
       <div
-        v-if="idx === FOLD_HEAD_KEEP && hiddenCount > 0"
+        v-if="idx === foldBarIndex && hiddenCount > 0"
         class="message-fold-bar"
         role="button"
         tabindex="0"
@@ -187,6 +194,13 @@
         </details>
       </div>
     </template>
+    <div
+      v-for="pad in bottomSpacers"
+      :key="pad.kind"
+      class="virtual-spacer virtual-spacer--bottom"
+      aria-hidden="true"
+      :style="{ height: `${pad.height}px` }"
+    ></div>
     <CitationPreviewCard
       :citation="citationPreview?.citation ?? null"
       :anchor="citationPreview?.anchor ?? null"
@@ -198,7 +212,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+/**
+ * 消息列表渲染组件（页面态 / 弹窗态共用）。
+ *
+ * T14 虚拟滚动：`virtual` prop **默认 false** ⇒ 零行为变化——模板里虚拟分支的两块
+ * 占位节点不渲染、`listForRender` 就是 `displayMessages` 本身（同一引用，全量渲染）、
+ * 折叠条下标恒为 `FOLD_HEAD_KEEP`，因此 flag-off 的 DOM 与基线逐位一致
+ * （`AGENTS.md` 硬性纪律 1 的前端对应物）。只有装配方显式传 `virtual` 才走窗口渲染。
+ */
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 
 import ChatThinkingPlaceholder from './ChatThinkingPlaceholder.vue'
 import CitationPreviewCard from './CitationPreviewCard.vue'
@@ -219,6 +241,12 @@ import type {
   StreamToolActivity,
 } from '../api/chatStreamHandlers'
 import { useToast } from '../composables/useToast'
+import {
+  DEFAULT_OVERSCAN,
+  DEFAULT_ROW_HEIGHT,
+  FALLBACK_VIEWPORT_HEIGHT,
+  computeVirtualWindow,
+} from '../composables/useVirtualWindow'
 
 export type { ChatCitation } from '../api/chatTypes'
 
@@ -250,8 +278,14 @@ const props = withDefaults(
     feedbackEnabled?: boolean
     /** P2-1：反馈归属的会话 ID（未传入时不渲染反馈按钮） */
     sessionId?: string
+    /**
+     * T14：虚拟滚动开关。**默认 false**——关闭时模板与渲染结果与基线逐位一致
+     * （`AGENTS.md` 硬性纪律 1 的前端对应物：默认关的生产链路必须与基线等价）；
+     * 打开时只渲染滚动窗口内的消息，窗口外用两个高度占位 div 撑起滚动条。
+     */
+    virtual?: boolean
   }>(),
-  { variant: 'modal', feedbackEnabled: false, sessionId: '' },
+  { variant: 'modal', feedbackEnabled: false, sessionId: '', virtual: false },
 )
 
 const emit = defineEmits<{
@@ -510,6 +544,157 @@ const displayMessages = computed(() => {
   if (foldExpanded.value || all.length <= FOLD_THRESHOLD) return all
   return [...all.slice(0, FOLD_HEAD_KEEP), ...all.slice(-FOLD_TAIL_KEEP)]
 })
+
+// ---------------------------------------------------------------------------
+// T14：虚拟滚动（`virtual` 默认关）
+// ---------------------------------------------------------------------------
+
+/** 根节点引用：既是"自身即滚动容器"时的滚动源，也是向上找滚动祖先的起点 */
+const listRef = ref<HTMLElement | null>(null)
+
+/** 滚动源当前 scrollTop（px）。virtual=false 时不采集，也不影响任何渲染。 */
+const scrollTopPx = ref(0)
+
+/** 滚动源可视高度（px）。首帧/纯 DOM 环境量到 0 时回落 FALLBACK_VIEWPORT_HEIGHT。 */
+const viewportPx = ref(FALLBACK_VIEWPORT_HEIGHT)
+
+/**
+ * 当前窗口。virtual=false 时固定为「全量 + 两个 0 占位」，
+ * 不看 scrollTop ⇒ 关闭态没有任何按滚动的重算。
+ */
+const virtualWindow = computed(() => {
+  const total = displayMessages.value.length
+  if (!props.virtual) return { start: 0, end: total, topPad: 0, bottomPad: 0 }
+  return computeVirtualWindow({
+    total,
+    scrollTop: scrollTopPx.value,
+    viewportHeight: viewportPx.value,
+    rowHeight: DEFAULT_ROW_HEIGHT,
+    overscan: DEFAULT_OVERSCAN,
+  })
+})
+
+/**
+ * 真正参与 v-for 的消息：virtual=false ⇒ 原样返回 `displayMessages`（同一引用，
+ * 全量渲染，与基线逐位等价）；窗口恰好覆盖全量时也原样返回，避免无意义的切片。
+ */
+const listForRender = computed(() => {
+  const src = displayMessages.value
+  const win = virtualWindow.value
+  if (win.start === 0 && win.end === src.length) return src
+  return src.slice(win.start, win.end)
+})
+
+/**
+ * 折叠条在**渲染列表内**的相对下标。
+ *
+ * 非虚拟模式恒为 `FOLD_HEAD_KEEP`（= 基线里 `idx === FOLD_HEAD_KEEP` 的判定，逐位等价）；
+ * 虚拟模式下折算成窗口内下标，窗口没覆盖到折叠位置时返回 -1（永不匹配任何 idx）——
+ * 折叠条随窗口滚进滚出，而不是被钉在窗口顶部。
+ */
+const foldBarIndex = computed(() => {
+  if (!props.virtual) return FOLD_HEAD_KEEP
+  const win = virtualWindow.value
+  if (FOLD_HEAD_KEEP < win.start || FOLD_HEAD_KEEP >= win.end) return -1
+  return FOLD_HEAD_KEEP - win.start
+})
+
+/**
+ * 顶部 / 底部占位的高度清单。
+ *
+ * 用「0 或 1 个元素的数组 + v-for」而不是「v-if 包一个 div」：`v-if` 为 false 时
+ * Vue 仍会插入 `<!--v-if-->` 占位注释节点，virtual=false 的 DOM 就不再与基线逐位一致；
+ * 空数组的 v-for 一个节点都不产生。
+ */
+const topSpacers = computed<Array<{ kind: string; height: number }>>(() =>
+  props.virtual ? [{ kind: 'top', height: virtualWindow.value.topPad }] : [],
+)
+
+const bottomSpacers = computed<Array<{ kind: string; height: number }>>(() =>
+  props.virtual ? [{ kind: 'bottom', height: virtualWindow.value.bottomPad }] : [],
+)
+
+/** 手动绑定的滚动监听元素（最近的可滚动祖先；与根元素相同时不重复绑定） */
+let boundRootEl: HTMLElement | null = null
+let boundScrollEl: HTMLElement | null = null
+
+function refreshMetrics(el: HTMLElement | null): void {
+  const src = el ?? boundScrollEl ?? listRef.value
+  if (!src) return
+  scrollTopPx.value = src.scrollTop
+  // clientHeight 为 0 说明还没布局（首帧 / 纯 DOM 环境）：回落默认视口高度，
+  // 否则窗口只剩 overscan 条，表现为"列表几乎空白"。
+  viewportPx.value = src.clientHeight > 0 ? src.clientHeight : FALLBACK_VIEWPORT_HEIGHT
+}
+
+/**
+ * 真正的滚动容器通常是装配方的祖先（页面态的 `.chat-content`、弹窗态的
+ * `.chat-modal-body`），本组件自身不滚动。逐级向上找第一个 `overflow-y` 为
+ * auto/scroll 的祖先；找不到就退回自身（装配方式即"自身是滚动容器"）。
+ */
+function resolveScrollSource(): HTMLElement | null {
+  const root = listRef.value
+  if (!root) return null
+  let node: HTMLElement | null = root.parentElement
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY
+    if (overflowY === 'auto' || overflowY === 'scroll') return node
+    node = node.parentElement
+  }
+  return root
+}
+
+function onScroll(event: Event): void {
+  refreshMetrics((event.currentTarget as HTMLElement | null) ?? null)
+}
+
+function unbindScrollSource(): void {
+  if (boundRootEl) {
+    boundRootEl.removeEventListener('scroll', onScroll)
+    boundRootEl = null
+  }
+  if (boundScrollEl) {
+    boundScrollEl.removeEventListener('scroll', onScroll)
+    boundScrollEl = null
+  }
+}
+
+/** 只在 virtual=true 时绑定监听：关闭态零监听、零重算（flag-off 等价性） */
+function bindScrollSource(): void {
+  unbindScrollSource()
+  if (!props.virtual) return
+  const root = listRef.value
+  if (!root) return
+  root.addEventListener('scroll', onScroll, { passive: true })
+  boundRootEl = root
+  const source = resolveScrollSource()
+  if (source && source !== root) {
+    source.addEventListener('scroll', onScroll, { passive: true })
+    boundScrollEl = source
+  }
+  refreshMetrics(source ?? root)
+}
+
+onMounted(bindScrollSource)
+
+watch(
+  () => props.virtual,
+  () => {
+    void nextTick(bindScrollSource)
+  },
+)
+
+// 消息增删会改变滚动源的内容高度与可视高度（首帧量到 0），布局稳定后补量一次。
+// virtual=false 直接跳过：关闭态连"补量"这步都不做（flag-off 零额外工作）。
+watch(
+  () => displayMessages.value.length,
+  () => {
+    if (!props.virtual) return
+    void nextTick(() => refreshMetrics(null))
+  },
+)
+
+onBeforeUnmount(unbindScrollSource)
 </script>
 
 <style scoped>
