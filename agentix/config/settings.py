@@ -1485,12 +1485,20 @@ class Settings(BaseSettings):
         default=False,
         description="Enable agentic RAG query-rewrite retries (<=2) on empty knowledge retrieval; default off",
     )
-    # Phase H·W1：复杂度感知 fast-path——高置信确定性输入（寒暄、单条数据条目
-    # 直取）前置短路，跳过 LLM 意图分类器（零模型构造、零分类调用）。
-    # 关（默认）⇒ 路由链与基线逐位等价；命中记 llm_calls_saved_total。
+    # Phase H·W1：复杂度感知 fast-path——高置信确定性输入前置短路，跳过 LLM 意图
+    # 分类器（零模型构造、零分类调用）。命中 reason 是封闭五元（与
+    # ``router.FASTPATH_REASONS`` 逐字同源）：``chit_chat``（寒暄/问候，以及
+    # ``谢谢`` / ``收到`` / ``好的`` / ``你是谁`` 一类短句——
+    # 它先于 capability / identity / ack 分支求值）、``statute_direct``（短句单条数据条目直取，无推理词）、
+    # ``capability_meta``（助理能力："你有哪些功能"）、``identity_meta``（助理身份：
+    # "你是AI吗"）、``ack_meta``（收尾确认与致谢："明白了 / 谢谢你的解答"）。
+    # T8 扩面新增的三类元问题（capability_meta / identity_meta / ack_meta）
+    # **一律只落 `general-query`**，不改其他意图的判定（statute_direct 仍落
+    # graphrag-query）。
+    # 关（默认）⇒ 路由链与基线逐位等价；命中记 llm_calls_saved_total{reason}。
     ROUTING_FASTPATH_ENABLED: bool = Field(
         default=False,
-        description="Skip the LLM intent classifier on high-confidence deterministic inputs (greetings/single-statute); default off",
+        description="Skip the LLM intent classifier on high-confidence deterministic inputs (chit_chat covers greetings and short acks such as 谢谢/收到/好的 before the capability/identity/ack branches; the three meta kinds only route to general-query; statute_direct still graphrag-query); default off",
     )
     # T8：路由结果跨请求缓存（进程内、有界 LRU + TTL，见
     # ``agentix/application/agents/routing_cache.py``）。命中即跳过整次 LLM 意图

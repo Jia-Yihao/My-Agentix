@@ -823,3 +823,55 @@ class TestCacheDoesNotShadowEarlierBranches:
         assert len(_cache_mod().get_routing_cache()) == 0
         assert "routing cache" not in recorder.text()
         assert "routing fast-path hit" in recorder.text()
+
+    @pytest.mark.asyncio
+    async def test_multi_turn_history_neither_reads_nor_writes_cache(self, monkeypatch):
+        """历史窗口 >1 条 ⇒ 既不查也不写；末句相同也不得共用结论。
+
+        键只覆盖末句，而分类器输入是 ``[system] + state.messages``：两段历史不同、
+        末句相同的请求若共用一条结论，上一轮的 ``logic`` 会被拼进这一轮的 system
+        prompt。写侧漏判同样致命——多轮请求写进来的条目会被后面的单轮同问句命中。
+        因此本用例**两个方向都断言**：写侧由「多轮不写、缓存为 0」钉住；查侧由
+        「单轮写过同问句之后、多轮同末句不得命中」钉住（下面最后一段）。
+        """
+        monkeypatch.setattr(app_settings, "ROUTING_FASTPATH_ENABLED", False)
+        monkeypatch.setattr(app_settings, "ROUTING_CACHE_ENABLED", True)
+        model = _StubStructuredModel(Router(type="graphrag-query", logic="llm: turn1"))
+        monkeypatch.setattr(router_mod, "get_llm_client", lambda **kwargs: model)
+        cache = _cache_mod().get_routing_cache()
+        question = "刑法第264条为什么这么规定"
+
+        first_history = AgentState(
+            messages=[HumanMessage(content="我在研究盗窃罪"), HumanMessage(content=question)]
+        )
+        await analyze_and_route_query(first_history, config={})
+        assert model.calls == 1
+        assert len(cache) == 0, "多轮请求不得写缓存：键只覆盖末句，历史不进键"
+
+        # 历史不同、末句相同：必须重新问模型，不得命中上一条结论
+        second_history = AgentState(
+            messages=[HumanMessage(content="我在研究诈骗罪"), HumanMessage(content=question)]
+        )
+        await analyze_and_route_query(second_history, config={})
+        assert model.calls == 2, "历史不同、末句相同不得共用缓存结论"
+        assert len(cache) == 0
+
+        # 单轮同一问句仍照常写 + 命中（缓存只服务单轮）
+        await analyze_and_route_query(_state(question), config={})
+        assert model.calls == 3
+        assert len(cache) == 1, "单轮请求仍应写入缓存"
+        monkeypatch.setattr(router_mod, "get_llm_client", _boom)
+        hit = await analyze_and_route_query(_state(question), config={})
+        assert hit["router"].type == "graphrag-query"
+        assert model.calls == 3, "单轮命中必须跳过模型"
+
+        # 查侧判据：单轮已写入同问句条目，多轮同末句请求仍不得命中它
+        # （缓存此刻非空——查侧判据若缺失，这次会直接回放缓存、模型零调用）
+        model.calls = 0
+        monkeypatch.setattr(router_mod, "get_llm_client", lambda **kwargs: model)
+        same_tail_history = AgentState(
+            messages=[HumanMessage(content="我在研究盗窃罪"), HumanMessage(content=question)]
+        )
+        await analyze_and_route_query(same_tail_history, config={})
+        assert model.calls == 1, "多轮同末句不得命中单轮写入的缓存"
+        assert len(cache) == 1, "多轮请求仍不得写缓存"

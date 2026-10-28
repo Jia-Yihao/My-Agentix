@@ -444,8 +444,12 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
     # T8：路由结果跨请求缓存（ROUTING_CACHE_ENABLED，默认关）。**位置固定在
     # 消融分支与 fast-path 之后**：消融是治理层的整体绕过、fast-path 是零成本
     # 确定性命中，两者都不该被缓存挡在前面（判定也不许复制第二份）。
+    # **只服务单轮请求**：键只覆盖末句，而分类器输入是 ``[system] + state.messages``
+    # （含窗口历史）——两段历史不同、末句相同的请求共用一条结论，会把上一轮的
+    # ``logic`` 拼进这一轮的 system prompt。历史窗口 >1 条时既不查也不写
+    # （只加查不加写，多轮请求仍会把缓存写脏，后面的单轮请求照样命中它）。
     # flag-off ⇒ 不 import 缓存模块、不读不写、不打日志、不记指标（逐位等价）。
-    if bool(getattr(settings, "ROUTING_CACHE_ENABLED", False)):
+    if len(state.messages) == 1 and bool(getattr(settings, "ROUTING_CACHE_ENABLED", False)):
         cached_router = await _lookup_routing_cache(question_text)
         if cached_router is not None:
             return {"router": cached_router}
@@ -524,7 +528,9 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
 
     # T8：**成功拿到白名单内结果**才写缓存（兜底出口刻意不写，见 _store_routing_cache）。
     # 位置在决策属性之后：flag-off 时这一行只是判一个 settings 布尔，不产生任何副作用。
-    if bool(getattr(settings, "ROUTING_CACHE_ENABLED", False)):
+    # 与查缓存同一判据（单轮才写）：多轮请求写进来的是「按末句算出的结论」，
+    # 后面的单轮同问句会命中它——写侧漏判等于把脏条目留给下一个请求。
+    if len(state.messages) == 1 and bool(getattr(settings, "ROUTING_CACHE_ENABLED", False)):
         _store_routing_cache(question_text, sanitized_router)
 
     logger.info("Analyze user query type completed, result: {}", sanitized_router)

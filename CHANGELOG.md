@@ -12,6 +12,39 @@
 
 ## [Unreleased]
 
+### 路由层 · T8 路由结果跨请求缓存 + fast-path 扩面（默认关）（2026-10-28）
+
+意图分类每来一个问题都要构造一次 `router` 角色客户端并发一次分类请求；同一问句在缓存 TTL 内
+被反复问（前端重试、同一 FAQ 被多人问、评测集回放）时这部分成本是纯重复。这一轮加一条**默认
+关闭**的进程内缓存，并把确定性 fast-path 从「寒暄 / 单条法条」扩到五类封闭 reason。
+
+- **[新增开关] `ROUTING_CACHE_ENABLED`（默认 `false`）**：flag-off **逐位等价**（纪律 1）——缓存
+  模块**不 import**（`sys.modules` 里查不到）、`routing_cache_total` 三个取值**零增量**、路由节点
+  日志与提示词**逐字节相同**；命中才省掉**一整次模型调用**（零客户端构造、零请求）。
+- **[可观测]** 命中计数 `routing_cache_total{result}`（`result` 封闭 `hit` / `miss` / `error`，已进
+  p100 标签白名单），并在 trajectory 落一步 `route.cache_hit`（`cached=True` + 有界 `route_type`）
+  ——轨迹因此能证明「这次真的没调模型」，不必只信指标。
+- **[数据口径]** 键 = `sha256(归一化问句)` + 换代令牌（8 位十六进制）；值**只存** `type`（封闭枚举）/
+  `logic` / `decision`（模型生成的短文本）/ `confidence`（数值），**不存问答原文、不存 `reasoning`**
+  （后者是模型叙述文本，可能整段复述问句，且生产侧没有消费点）。键只存归一化问句的 sha256，
+  不含问句原文；命中时用**当前这次请求的原文**回填 `question`。
+- **[失效]** 换代 = router 提示词**实际生效文本** / 实际使用的 Router 类 / `LLM_MODEL` /
+  `router_enabled` 消融开关任一变化（四项复用既有判定的唯一来源，不另立快照——纪律 6 ④），
+  另加 TTL 300 秒到期与进程重启；语料换代**不**失效（Q1 未裁决时的保守口径）。
+- **[边界·只服务单轮请求]** 查、写两处**同一判据**：仅当 `state.messages` 恰好 1 条时才查/写。
+  键只覆盖末句，而分类器输入是 `[system] + state.messages`（含窗口历史）——两段历史不同、末句
+  相同的请求共用一条结论会把上一轮的 `logic` 拼进这一轮的 system prompt；只加查侧判据不够，
+  多轮请求照样会写脏缓存让后面的单轮请求命中它。
+- **[fast-path 扩面]** 确定性规则从「寒暄 / 单条法条直取」扩到 **5 类封闭 reason**：`chit_chat`
+  （寒暄/问候，以及 `谢谢` / `收到` / `好的` / `你是谁` 一类短句——它先于 capability / identity / ack 分支求值）、
+  `statute_direct`（短句单条数据条目直取，无推理词）、`capability_meta`（助理能力："你有哪些功能"）、
+  `identity_meta`（助理身份："你是AI吗"）、`ack_meta`（收尾确认与致谢："明白了 / 谢谢你的解答"）。
+  新增的三类元问题**一律只落 `general-query`**，`statute_direct` 仍落 `graphrag-query`；且每条都要求
+  **整句**落在封闭句式内（`fullmatch`），"元问题 + 实质内容"的混合句与 >60 字输入一律落回 LLM；
+  reason 词表由 `router.FASTPATH_REASONS` 单源给出。
+- **[回滚]** 置回 `ROUTING_CACHE_ENABLED=false`：立刻退回「每个问句都走分类器」的基线，
+  缓存模块不再加载；无残留任务、无指标新增序列。
+
 ### 前端 · T14 消息列表虚拟滚动（默认关，未接线）（2026-10-28）
 
 长会话的消息列表一直是全量渲染（超过 200 条时只有「折叠中段」这一种减负）。这一轮加一条**默认关闭**的虚拟滚动通道，并把它拆成「纯函数算窗口 + 组件只渲染」两段，让可判定性落在 vitest 上而不是浏览器手感上。
@@ -451,6 +484,24 @@ T3：`evals/legal_golden.jsonl` / `legal_golden_ext.jsonl` 已于 2026-10-26 随
 from_persistence` 序列化面被接通为逐字段投影（格式未改）；治理层拒绝语义不动（fail-closed）。
 新增 `tests/test_p136_hitl_pending_persistence.py`（sqlite 内存库，不依赖真 Postgres）。
 回滚：关 flag + `DROP TABLE hitl_pending_approvals`。
+
+### T18 口径修正 · 节点错误补偿的记录写不写由 `HITL_PENDING_PERSIST_ENABLED` 决定（2026-10-28）
+
+**只改口径，不改行为**：`6ad80f4` 把补偿记录的 store 装配统一到
+`agentix/policies/hitl/hitl_bridge.py::resolve_pending_store`，`policies.py::node_error_handler`
+不再兜底建表。于是 `NODE_ERROR_HANDLER_ENABLED=true` 而 `HITL_PENDING_PERSIST_ENABLED=false`
+（**后者默认 false**）时，补偿记录**一条都不写**，只留 `logger.warning` 与「补偿记录未写
+（补偿存储未装配）」失败回执。此前三处文档都写「开 = 向 `hitl_pending_approvals` 写一条已闭合
+补偿记录」，**漏了这个前置键**——按字面打开 `NODE_ERROR_HANDLER_ENABLED` 的部署会以为自己在留
+补偿证据，实际只有回执。
+
+- **[口径]** 补偿记录的存储装配**唯一判据**是 `hitl_bridge.resolve_pending_store()`（纪律 6 ④，
+  handler 内不另判 flag、不兜底自建表）⇒ **需 `HITL_PENDING_PERSIST_ENABLED=true` 才写记录**；
+  该键关或装配失败时只给失败回执 + `logger.warning`，失败收尾照常（fail-open 不变）。
+  `NODE_ERROR_HANDLER_ENABLED` 的承诺因此收窄为「失败不再整轮 500」，**不**包含「一定有记录」。
+- **[文档同步]** `.env.example` 的 `NODE_ERROR_HANDLER_ENABLED` 注释块、
+  `docs/architecture/配置管理.md` §5 该键行、本文件。
+- **[未改]** 代码与默认值零改动，不新增配置键。
 
 ### code exec 加固批次 · 独立审查一般项 N1–N7 收口（2026-10-26）
 
