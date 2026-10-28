@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 from dataclasses import dataclass, field
-from typing import Annotated, Any, Dict, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 
@@ -91,6 +91,45 @@ class TaskCodeRouter(TaskRouter):
         "task-query",
         "code-query",
     ] = "kb-query"
+
+
+class _KbChannelParams(BaseModel):
+    """T30-2（单层路由）：KB 检索通道参数，语义照搬 A3 的 ``KBRouteDecision``。
+
+    取值域与 ``kb_states.KBRouteDecision`` 的 ``route`` / ``tools`` 逐字一致
+    （``local``/``external``/``hybrid`` × ``milvus``/``postgres``）——**不另立
+    第三套通道语义**，否则钳制与安全边界要按两套词汇各写一遍。
+
+    缺省值刻意是"没给参数"（``None`` / 空列表）而不是某个通道：兜底出口、
+    fast-path、缓存命中都不产通道，此时 A3 照常自己决策（跳数回到基线）。
+    """
+
+    kb_route: Optional[Literal["local", "external", "hybrid"]] = None
+    kb_tools: List[Literal["milvus", "postgres"]] = []
+
+
+# T30-2 单层路由的四个变体：task/code 两闸的四种组合各一个，与既有四类一一对应。
+#
+# 为什么写成**显式子类**而不是 ``create_model`` 动态造类：
+# 1. ``routing_cache.generation_token()`` 拿 ``__name__`` 当换代成分——类名必须
+#    稳定可预期，显式声明让四个名字在文件里可直接读到，动态造名容易与令牌漂移；
+# 2. 混入 ``_KbChannelParams`` 后 ``type`` 白名单**继承自对应基线类**，不必再抄
+#    四份 8 项 ``Literal``（纪律 6 ④：同一个判定不许两个源——白名单也一样）；
+# 3. 结构化输出的 JSON schema 由字段声明决定，显式类对审查者是静态可读的。
+class SingleLayerRouter(_KbChannelParams, Router):
+    """单层路由基线变体：基线 7 类意图 + KB 通道参数。"""
+
+
+class TaskSingleLayerRouter(_KbChannelParams, TaskRouter):
+    """``TASK_EXEC_ENABLED`` 同开时的单层变体（追加 task-query）。"""
+
+
+class CodeSingleLayerRouter(_KbChannelParams, CodeRouter):
+    """``CODE_EXEC_ENABLED`` 同开时的单层变体（追加 code-query）。"""
+
+
+class TaskCodeSingleLayerRouter(_KbChannelParams, TaskCodeRouter):
+    """两个执行闸同开时的单层变体（追加 task-query + code-query）。"""
 
 
 @dataclass(kw_only=True)

@@ -29,11 +29,15 @@
     没有消费者的原文派生字段"。
 * **换代失效（Q1 未裁决时的保守口径）**：generation token 由四项拼起来取 CRC32
   ——① router 提示词**实际生效文本**（含 ``TASK_EXEC_ROUTE_BLOCK`` /
-  ``CODE_EXEC_ROUTE_BLOCK`` 是否拼入）；② 实际使用的 router 类名（``Router`` /
-  ``TaskRouter`` / ``CodeRouter`` / ``TaskCodeRouter``，由既有 ``_router_class``
-  决定）；③ 主模型标识（``settings.LLM_MODEL``，只读配置，**不为此构造 LLM
-  客户端**）；④ ``ablation.is_enabled("router_enabled")``。任一变化 ⇒ 键变了
-  ⇒ 旧条目再也命中不到（随后被 LRU / TTL 回收）。
+  ``CODE_EXEC_ROUTE_BLOCK`` / ``SINGLE_LAYER_ROUTE_BLOCK`` 是否拼入）；② 实际使用的
+  router 类名（基线四类 ``Router`` / ``TaskRouter`` / ``CodeRouter`` /
+  ``TaskCodeRouter``，或 T30-2 单层闸开时的四个 ``*SingleLayerRouter`` 变体，
+  由既有 ``_router_class`` 决定）；③ 主模型标识（``settings.LLM_MODEL``，只读配置，
+  **不为此构造 LLM 客户端**）；④ ``ablation.is_enabled("router_enabled")``。
+  任一变化 ⇒ 键变了 ⇒ 旧条目再也命中不到（随后被 LRU / TTL 回收）。
+  **注意值侧的边界**：缓存里**不存**单层参数（``kb_route`` / ``kb_tools``），
+  ``_CACHED_FIELDS`` 仍是四个基线字段——命中请求因此拿不到单层通道，KB 子图内的
+  检索路由照常自己决策（跳数回到基线，不省但不错）。
 * **适用范围（已知边界）：只服务单轮请求**。调用点只在 ``state.messages`` 恰好
   1 条时才查、才写；历史窗口 >1 条时既不查也不写。原因是**键只覆盖末句**，而
   分类器输入是 ``[system] + state.messages``（含窗口历史）——两段历史不同、末句
@@ -112,10 +116,10 @@ def generation_token() -> str:
     # 函数内可避免模块级循环依赖。
     from agentix.application.agents import router as router_module
 
-    task_exec_on, code_exec_on = router_module._exec_flags()
+    task_exec_on, code_exec_on, single_layer_on = router_module._exec_flags()
     parts = (
-        router_module._router_prompt_text(task_exec_on, code_exec_on),
-        router_module._router_class(task_exec_on, code_exec_on).__name__,
+        router_module._router_prompt_text(task_exec_on, code_exec_on, single_layer_on),
+        router_module._router_class(task_exec_on, code_exec_on, single_layer_on).__name__,
         str(getattr(settings, "LLM_MODEL", "") or ""),
         "1" if ablation.is_enabled("router_enabled") else "0",
     )

@@ -166,6 +166,7 @@ def _record_rewrite_attempt(attempt: int, *, status: str, hits: int, error: str 
         logger.warning("agentic_rag trajectory record failed (non-fatal)")
 
 
+# 单层参数未接此处转发（G-1，见规划 §8.2 表 M）：重写重试仍由 A3 自判路由 ⇒ 该路径 flag-on 仍有子图模型调用，属已登记缺口
 async def _retry_kb_query_with_rewrite(
     *,
     llm: Any,
@@ -277,13 +278,27 @@ async def create_kb_query(state: AgentState, *, config: RunnableConfig) -> Dict[
 
         # P1-4：把 config 透传进 KB 子图，子图 finalize 节点再转发给 LLM，
         # 形成「主图 create_kb_query → 子图 finalize → chat model」的事件链。
-        response = await workflow.ainvoke(
-            {
-                "question": last_message,
-                "history": history_payload,
-            },
-            config=config,
-        )
+        workflow_input: Dict[str, Any] = {
+            "question": last_message,
+            "history": history_payload,
+        }
+        # T30-2（单层路由）：L1 那次调用**给了**检索通道参数 ⇒ 一并转发给子图，
+        # A3 节点据此跳过第二次模型调用。这里读的是「L1 有没有产出参数」，
+        # **不重读 flag**：flag 的判定源只有 ``router._exec_flags`` 一处（纪律 6 ④）。
+        # 判据取"这个 router 的 schema 里是否**声明过** kb_route"：只有单层变体
+        # （``*SingleLayerRouter``）声明过它，基类 ``Router`` 上 ``extra="allow"``
+        # 万一带回同名键也不算 L1 的决策产物——这样 flag-off 连加键的可能都不存在，
+        # 等价性是结构性的而不是靠约定。
+        # 兜底出口 / fast-path / 缓存命中都不产参数，此时两个键连加都不加，
+        # A3 照常自己决策（跳数回到基线，**不伪造默认通道**）。
+        kb_router = getattr(state, "router", None)
+        if "kb_route" in getattr(type(kb_router), "model_fields", {}):
+            kb_route_param = getattr(kb_router, "kb_route", None)
+            if kb_route_param is not None:
+                workflow_input["route"] = kb_route_param
+                workflow_input["kb_tools"] = list(getattr(kb_router, "kb_tools", None) or [])
+
+        response = await workflow.ainvoke(workflow_input, config=config)
 
         # Phase 24（Ch3 Agentic RAG，AGENTIC_RAG_ENABLED 默认关）：
         # 空检索 → 查询改写重试 ≤2 次；仍空保留 finalize 诚实文案。

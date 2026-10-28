@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from operator import add
 
 try:  # pragma: no cover - prefer typing_extensions for Pydantic compatibility
-    from typing_extensions import Annotated, TypedDict  # type: ignore
+    from typing_extensions import Annotated, NotRequired, TypedDict  # type: ignore
 except ImportError:  # pragma: no cover - minimal stdlib fallback
-    from typing import Annotated, TypedDict
+    from typing import Annotated, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -31,8 +31,20 @@ class KBRouteDecision(BaseModel):
 
 
 class KBInputState(TypedDict):
+    """KB 子图的**输入面**（``StateGraph(..., input=KBInputState)`` 按它过滤入参）。
+
+    T30-2（单层路由）多出的两个键是 **``NotRequired``**：L1 给出了检索通道时，
+    ``create_kb_query`` 才把它们一并传进来（A3 据此跳过模型调用）；不传时它们
+    根本不在入参 dict 里，A3 照常自己决策。
+    这两个键**必须**在这里声明——框架只把输入 schema 认识的键写进状态通道，
+    只在 ``KBWorkflowState`` 上有键是不够的：实测入参里的 ``route``/``kb_tools``
+    会被输入面**静默丢弃**（不报错），单层化就只剩"多一段提示词"。
+    """
+
     question: str
     history: List[Dict[str, str]]
+    route: NotRequired[str]
+    kb_tools: NotRequired[List[str]]
 
 
 class KBWorkflowState(TypedDict):
