@@ -28,7 +28,11 @@ from agentix.observability.spans import record_resume_from_checkpoint
 from agentix.observability.metrics import record_graph_resume
 from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
 from agentix.orchestration.langgraph.lg_states import AgentState, GradeHallucinations
-from agentix.orchestration.langgraph.policies import node_timeout, readonly_retry_policy
+from agentix.orchestration.langgraph.policies import (
+    node_error_handler,
+    node_timeout,
+    readonly_retry_policy,
+)
 from agentix.application.agents.lg_prompts import (
     CHECK_HALLUCINATIONS,
 )
@@ -385,6 +389,22 @@ def _node_timeout_kwargs() -> Dict[str, Any]:
     return {"timeout": policy} if policy is not None else {}
 
 
+def _node_error_handler_kwargs() -> Dict[str, Any]:
+    """LG-3-5：有副作用节点的原生错误补偿实参；**未启用时返回空 dict**。
+
+    返回空 dict 而不是 ``{"error_handler": None}`` 是本项的口径：开关关闭时
+    ``add_node`` 完全不传该形参，注册出来的图与基线逐位等价（纪律 1）。
+    handler 本体由 ``policies.node_error_handler`` 构造（LG-0-3 集中点）。
+
+    只挂 ``execute_task`` / ``code_agent``：它们是**有副作用**的节点，失败时
+    整轮 500 等于把「哪些副作用已经发生」丢给调用方猜。补偿 handler 只写记录
+    并收尾，**不重跑节点**，所以与 LG-1-1「这两个节点不挂 retry_policy」不冲突。
+    """
+    if not settings.NODE_ERROR_HANDLER_ENABLED:
+        return {}
+    return {"error_handler": node_error_handler()}
+
+
 def build_graph(checkpointer=None):
     """构建并编译主图；checkpointer 由启动期注入（Redis 实例或 None/MemorySaver）。
 
@@ -406,13 +426,18 @@ def build_graph(checkpointer=None):
     # `NodeTimeoutError` 已在领域分类里判为不可重试，不会与上面的 retry_policy
     # 叠成「超时→重试→再超时」（LG-3-2 验收第 ④ 条）。
     node_timeout_kwargs = _node_timeout_kwargs()
+    # LG-3-5：有副作用节点的原生错误补偿（langgraph 1.x 的 `add_node(error_handler=)`）。
+    # flag-off（默认）⇒ 空 dict ⇒ 完全不传该形参（纪律 1）；开时仅在
+    # execute_task / code_agent 上挂 handler（见 _node_error_handler_kwargs 的边界说明）。
+    node_error_handler_kwargs = _node_error_handler_kwargs()
     # 策略形参口径（LG-0-3）：下面这些 add_node 若要挂 retry_policy / cache_policy /
     # error_handler / timeout，实参**只能**来自 agentix/orchestration/langgraph/policies.py
     # 的工厂；在本文件内联 `RetryPolicy(...)` / `TimeoutPolicy(...)` 由
     # tests/test_p147_policy_centralization.py 判违规（散落的字面量改一处漏一处且不报错）。
     # 接线进度：LG-1-1 已给 6 个只读节点挂 retry_policy（见上方 readonly_retry_kwargs）；
     # LG-3-2 已给全部 10 个节点挂 timeout（见 node_timeout_kwargs）；
-    # cache_policy / error_handler 仍未接线，归 LG-3-5。两个 kwargs 都用 `**` 展开，
+    # LG-3-5 已给 2 个有副作用节点挂 error_handler（见 node_error_handler_kwargs）；
+    # cache_policy 仍未接线（不在本轮范围）。三个 kwargs 都用 `**` 展开，
     # 关时完全不传形参——守卫（p147 判据 2）对 `**` 展开显式豁免的正是这一形态。
     # 注意：check_hallucinations 故意不在此注册（本块仅注册下列 10 个节点：
     # message_window / analyze_and_route_query / respond_to_general_query /
@@ -449,12 +474,20 @@ def build_graph(checkpointer=None):
     # F1e·A-P1-4：注册时包一层进环注入壳（节点名不变 = 绊线断言不受影响；
     # flag-off/3.10/未声明进环意图时纯透传）。
     builder.add_node(
-        "execute_task", _wrap_execute_task_in_loop(execute_task), **node_timeout_kwargs
+        "execute_task",
+        _wrap_execute_task_in_loop(execute_task),
+        **node_error_handler_kwargs,
+        **node_timeout_kwargs,
     )
     # P2（代码执行）：code_agent 无条件注册（route_query 的 Literal / ROUTE_HANDLERS
     # 需与节点集对齐，phase19 绊线断言两者相等）；可达性由 CODE_EXEC_ENABLED 在
     # 路由侧门控——flag-off 时任何路由决策都不会进入本节点，行为与基线等价。
-    builder.add_node("code_agent", create_code_query, **node_timeout_kwargs)
+    builder.add_node(
+        "code_agent",
+        create_code_query,
+        **node_error_handler_kwargs,
+        **node_timeout_kwargs,
+    )
 
     builder.add_edge(START, "message_window")
     builder.add_edge("message_window", "analyze_and_route_query")

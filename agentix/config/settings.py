@@ -595,6 +595,17 @@ class Settings(BaseSettings):
         ge=0,
         description="Per-attempt wall-clock cap for main-graph nodes (seconds); 0 = off (timeout kwarg not passed)",
     )
+    # LG-3-5：有副作用节点（execute_task / code_agent）的原生错误补偿
+    # （langgraph 1.x 的 `add_node(error_handler=)`）。默认关 ⇒ 注册处**完全不传**
+    # `error_handler`，与基线逐位等价（纪律 1）。开 = 节点重试耗尽（无 retry_policy
+    # 时即首次失败）后不再是整轮 500：handler 往 hitl_pending_approvals 写一条
+    # 已闭合的补偿记录（decided_by=system:node_error_handler），并把一条如实的
+    # 失败回执写进 messages 后路由到 END。handler **不重跑节点**（副作用铁律）。
+    # 记录写失败按纪律 2 fail-open：只告警，失败收尾照常。
+    NODE_ERROR_HANDLER_ENABLED: bool = Field(
+        default=False,
+        description="Attach native error_handler compensation to side-effecting nodes (execute_task/code_agent); default off",
+    )
     # RETRY_BUDGET_ENABLED：run 级共享重试预算桶（task/tool/retrieval 三层
     # 共用 token，防 3×3×3 放大）+ 工具/检索层可重试性分类审计闸；
     # 默认关 = 各层现行为逐位等价。LG-1-4 只在部署面写推荐值 true
