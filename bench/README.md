@@ -111,3 +111,4 @@ langchain-openai/langgraph/fastapi，未安装记 null）、`temperature`
 | `aggregate.py` | 跨轮池化摘要（分位数委托唯一实现） |
 | `targets.py` | 被收纳对象登记表（原接口调用 + 返回形态分流） |
 | `results.py` | 落盘闸：无指纹不写出 |
+| `adaptive_ab.py` | **T17 的独立入口**（`python -m bench.adaptive_ab --arm <arm>`）：Adaptive 七项 + token 窗口的九臂 A/B（`admission` / `bulkhead` / `fastpath` / `load_shedding` / `probe` / `retry_budget` / `singleflight` / `tier_routing` / `token_window`）。`--arm` **必填**且一次只跑一条（进程级单例 + 全局 lag 会跨臂污染）；产物落 gitignored 的 `bench/results/`。读数与边界见 `docs/runbooks/Adaptive七项A-B取证.md` |
