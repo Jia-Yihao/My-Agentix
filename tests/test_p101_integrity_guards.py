@@ -10,8 +10,8 @@
    ``pip install -e . --no-deps`` 且从不调用该命令，**全绿也照样红给用户看**。
    守卫：逐个 import 每个入口目标并断言可调用。
 
-2. **文档相对链接悬空**——``docs/VERSIONING.md`` 曾把 ``CHANGELOG.md`` 等
-   根目录文件按同级链接（实际需 ``../``），``docs/guides/QUICK_START.md`` 曾
+2. **文档相对链接悬空**——``docs/版本管理策略.md`` 曾把 ``CHANGELOG.md`` 等
+   根目录文件按同级链接（实际需 ``../``），``docs/guides/快速启动.md`` 曾
    引用 ``INTEGRATION_SUMMARY.md`` / ``CLAUDE.md`` 等**从未存在**的文件。
    守卫：扫 README / CHANGELOG / docs/**/*.md 的相对链接，逐个验存在性。
 

@@ -3,7 +3,7 @@
 只在 ``RETRIEVAL_HYBRID_ENABLED=true`` 时被 ``retrieve_scoped_docs_cached``
 调用（总闸默认关 ⇒ flag-off 与现基线字节等价；总纲：P1 全部 flag 门控）。
 
-阶段职责（rag-optimization.md §5）：
+阶段职责（检索增强深度优化.md §5）：
 
 - **rewrite**：问题归一（计时；由调用方传入 ``rewrite_ms``）；
 - **dense**：既有 ``retrieve_docs_with_retry`` 向量路（fetch_k/阈值/有效性过滤口径不变，
@@ -167,7 +167,7 @@ async def retrieve_hybrid_docs(
     if settings.RETRIEVAL_SPARSE_ENABLED:
         if session is None:
             sparse_skipped = "no_session"
-            logger.warning("hybrid sparse skipped: no session provided (kb=%s)", kb_id)
+            logger.warning("hybrid sparse skipped: no session provided (kb={})", kb_id)
         else:
             sparse_task = asyncio.create_task(_retrieve_sparse())
 
@@ -266,7 +266,7 @@ async def retrieve_hybrid_docs(
                     question, candidates, getattr(settings, "RERANKER_MODEL", None)
                 )
             except Exception as exc:  # noqa: BLE001 - 双保险 fail-open（rerank_documents 内部已兜底）
-                logger.warning("hybrid rerank degraded (fail-open): %s", exc)
+                logger.warning("hybrid rerank degraded (fail-open): {}", exc)
                 ordered = candidates
                 rerank_applied = False
         finally:
@@ -328,10 +328,10 @@ async def retrieve_hybrid_docs(
         async with span("rag.hybrid_stages", **attrs):
             pass
     except Exception as exc:  # noqa: BLE001 - 观测失败不影响已成功的检索
-        logger.debug("hybrid stage span degraded: %s", exc)
+        logger.debug("hybrid stage span degraded: {}", exc)
 
     logger.info(
-        "hybrid retrieval kb=%s dense=%d sparse=%s fused=%d rerank=%s docs=%d",
+        "hybrid retrieval kb={} dense={} sparse={} fused={} rerank={} docs={}",
         kb_id,
         len(dense_docs),
         report["sparse"],

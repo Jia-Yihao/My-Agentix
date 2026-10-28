@@ -291,6 +291,8 @@ class TestDocumentedConfigKeys:
             "FAILURE_BOUNDARY_ENABLED",
             "CRON_ENABLED",
             "CRON_TICK_SECONDS",
+            # T26：队列 worker（PEL 认领）默认关 = 不建任务、不建连
+            "TASK_QUEUE_WORKER_ENABLED",
             "MEMORY_FANOUT_ENABLED",
             "MEMORY_REVIEW_ENABLED",
             "MEMORY_TOOLS_ENABLED",
@@ -313,6 +315,7 @@ class TestDocumentedConfigKeys:
             "AGENT_TOOL_ROUND_CONCURRENCY",
             "HITL_IN_LOOP_ENABLED",
             "HITL_PENDING_PERSIST_ENABLED",
+            "RUN_STATE_PERSIST_ENABLED",
             "CONTEXT_PRECOMPACT_REINJECT_ENABLED",
             "MEMORY_PROFILE_SCOPE_ENABLED",
             "TEXT2SQL_DRY_RUN_ENABLED",
@@ -325,6 +328,7 @@ class TestDocumentedConfigKeys:
             "LATENCY_TOTAL_BUDGET_MS",
             "EVENT_LOOP_LAG_METRIC_ENABLED",
             "ROUTING_FASTPATH_ENABLED",
+            "ROUTING_CACHE_ENABLED",
             "LLM_TIER_ROUTING_ENABLED",
             "LLM_ROLE_TIER_MAP",
             "VERIFICATION_MAX_LLM_CALLS",
@@ -388,8 +392,13 @@ class TestDocumentedConfigKeys:
             "SETTINGS_AUTHZ_ENABLED",
             # Phase K（checkpointer fail-closed 开关）
             "CHECKPOINTER_FAIL_CLOSED",
+            # T22（checkpointer 降级后按可配节奏重试升级；间隔默认 0 = 关 = 基线等价）
+            "CHECKPOINTER_RETRY_INTERVAL_S",
+            "CHECKPOINTER_RETRY_MAX_ATTEMPTS",
             # LG-2-6：图执行 durability（sync / async / exit，默认 async）
             "GRAPH_DURABILITY",
+            # T19：审批等待 deadline（默认 0 = 关 = 不建扫描任务、不读库）
+            "HITL_APPROVAL_DEADLINE_S",
         ):
             assert key in documented, f"{key} 未在配置文档中说明"
 

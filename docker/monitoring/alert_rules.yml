@@ -1,7 +1,10 @@
 # My Agentix 告警规则（企业化 P0-2，起步 4 条）
-# 全部基于 observability/metrics.py 实际暴露的指标：
+# 第 1–8 条全部基于 observability/metrics.py 实际暴露的指标：
 #   http_requests_total{method,endpoint,status} / http_request_duration_seconds_bucket
 #   up{}（Prometheus 内置抓取探针）/ rate_limit_triggered_total（P0-3 新增）
+# 第 9–10 条（T15 队列积压）是**唯一例外**：指标 celery_queue_length 来自 broker 侧的
+# celery-exporter，不在本仓暴露面也不在现有抓取面内——前置与阈值推导见文件末尾
+# 「队列规则前置说明」，不要把它读成「已经能看到积压」。
 groups:
   - name: agentix-availability
     rules:
@@ -94,3 +97,76 @@ groups:
         annotations:
           summary: "15 分钟内 Gateway fallback 触发超过 5 次"
           description: "主模型失败后由 fallback 链兜底成功（成本与延迟上升）。检查主模型可用性、API 配额与网络；观察 {{ $labels.primary_model }} → {{ $labels.fallback_model }}。"
+
+  # 队列积压（T15）。前置见文件末尾「队列规则前置说明」：
+  # celery_queue_length 来自 broker 侧的 celery-exporter，**不在**本仓
+  # observability/metrics.py 的暴露面里，也不在 prometheus.yml 现有抓取面里
+  # ⇒ 不部署 exporter 时这两条规则恒为「无数据」（不触发、也不报错）。
+  - name: agentix-queue
+    rules:
+      # 9) 队列积压深度：阈值 20 的推导（不是线上分位数，本仓无该数据）
+      #    默认容量 = RETRIEVAL_WORKER_REPLICAS(1) × --concurrency(2) = 每波 2 个作业；
+      #    20 = 10 个串行波次。若作业打满 INDEX_JOB_TIMEOUT_SECONDS(1800s)，
+      #    队尾最坏等待 = 10 × 1800s = 5h ⇒ 已远超「一次批量入库能等」的量级。
+      #    改副本/并发后按同一式子重算阈值，不要凭感觉调。
+      - alert: My AgentixCeleryQueueBacklog
+        # 刻意不带 {queue="celery"} 选择器：exporter 的队列标签名可能是 queue 或
+        # queue_name，选错时 Prometheus 拿到空向量 ⇒ 规则形状正确但永不触发
+        # （静默失效比不写更难发现）。当前 celery_app 未配 task_routes、任务装饰器
+        # 也未指定 queue ⇒ 全部进默认队列，求和与按队列拆分在此部署下等价。
+        expr: sum(celery_queue_length) > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery 队列积压超过 20 条（持续 10 分钟）"
+          description: "阈值 20 = 默认容量（replicas=1 × concurrency=2）的 10 个串行波次；按 INDEX_JOB_TIMEOUT_SECONDS=1800s 估算队尾最坏等待 5 小时。先看 retrieval-worker 副本数/存活，再看作业是否卡在 Milvus/MinIO 依赖上；扩副本前确认 Redis broker 与索引写锁没有互相争抢。"
+
+      # 10) 队列不排空：窗口取作业硬上限本身——INDEX_JOB_TIMEOUT_SECONDS=1800s
+      #     即 30 分钟。但「连续 30 分钟非空」只能推出**持续积压**，推不出单一成因：
+      #     两种形状在同一个表达式下完全一样——
+      #       ① 消费停摆（worker 掉线 / 卡死 / broker 不可达）：入队照旧、出队为 0；
+      #       ② 持续饱和（入队速率长期高于消费吞吐）：worker 一直在消费，只是单作业
+      #          耗时长于到达间隔，队列稳定停在非零水位。
+      #     区分动作见 description；本条与阈值 9 的分工只是窗口长短，不是「量大 vs 停摆」。
+      - alert: My AgentixCeleryQueueNotDraining
+        expr: sum(celery_queue_length) > 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Celery 队列连续 30 分钟非空（消费端可能已停摆）"
+          description: "30 分钟 = INDEX_JOB_TIMEOUT_SECONDS(1800s)，即单个作业的硬上限。连续 30 分钟非空说明是持续积压（可能是消费停摆，也可能是入队速率长期高于消费吞吐），两种成因不能从表达式区分。前者查 retrieval-worker 容器状态与 celery inspect ping、Redis db1 连通性，以及 acks_late 下的重复投递（visibility_timeout）；后者看副本数（RETRIEVAL_WORKER_REPLICAS）与单作业耗时是否已接近 1800s。停摆时扩副本无效，先恢复 worker/broker。"
+
+# ---------------------------------------------------------------------------
+# 队列规则前置说明（T15；不部署前置时上面两条规则恒为「无数据」，
+# 不触发也不报错——这是「规则在、指标不在」的静默态，务必与运维对齐）
+#
+# 1. 指标来源：celery_queue_length 由 **celery-exporter** 从 broker 侧导出
+#    （danihodovic/celery-exporter，惯例容器名 celery-exporter、端口 9808）。
+#    本仓事实：agentix/observability/metrics.py 不暴露任何队列长度指标；
+#    docker/monitoring/prometheus.yml 目前只有 job=agentix-backend（backend:8000/metrics）
+#    / prometheus-self / alertmanager-self 三个抓取目标，其中没有 exporter。
+#    ⇒ 本文件**不**新增 fake 指标名，也不假装已被抓取。
+#
+# 2. 让规则真正可评估的前置（三件都要做，缺任一条目仍不会触发）：
+#    ① 部署 celery-exporter，BROKER_URL 指向 retrieval-worker 用的同一个 broker
+#       （CELERY_BROKER_URL 默认 redis://redis:6379/1）；
+#    ② 在 prometheus.yml 增加抓取目标：
+#         - job_name: celery-exporter
+#           static_configs: [{targets: ["celery-exporter:9808"]}]
+#    ③ 该 exporter 依赖 worker 发送事件：worker 需以 -E/--events 启动
+#       （compose 的 retrieval-worker command 目前**没有** -E）；
+#       或改用直接读 Lua/Redis 的 exporter，按所选 exporter 的文档确认。
+#
+# 3. 阈值口径：20 / 0 都不是线上分位数（本仓无该数据），而是从**声明过的容量**
+#    推导：replicas=1（RETRIEVAL_WORKER_REPLICAS 默认）× concurrency=2
+#    （compose command）× INDEX_JOB_TIMEOUT_SECONDS=1800s（retrieval/settings.py）。
+#    容量或超时一改，阈值必须按同一式子重算。
+#
+# 4. 读数口径（与 broker 实现相关，读码可得）：celery_queue_length 读的是 **broker 队列键**
+#    的长度。本仓 task_acks_late=True（agentix/retrieval/infra/tasks/celery_app.py），
+#    已被 worker 预取但未 ack 的作业记在 broker 的未确认集合（Redis 的 PEL）里、
+#    **不**在队列键里 ⇒「队列长度 0」不等于「没有作业在跑或卡住」：worker 卡在一个长作业
+#    上时长度可以一直是 0，直到 visibility_timeout（≥2×1800s）到期重投才回升。
+#    broker 侧固定用 redis/redis-stack-server:7.4.0-v2（compose），读写同一实例 db1。

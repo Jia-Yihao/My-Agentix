@@ -656,7 +656,7 @@ class TestKeySync:
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1]
-        text = (root / "docs" / "architecture" / "configuration.md").read_text(
+        text = (root / "docs" / "architecture" / "配置管理.md").read_text(
             encoding="utf-8"
         )
         assert "`MULTIAGENT_SUBAGENT_ISOLATION_ENABLED`" in text

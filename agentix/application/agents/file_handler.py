@@ -53,14 +53,14 @@ async def create_file_query(state: AgentState, *, config: RunnableConfig) -> Dic
     safe_path = resolve_within_root(settings.UPLOAD_DIR, file_path)
     if safe_path is None:
         logger.warning(
-            "Rejected out-of-root file_path (must be under UPLOAD_DIR=%s): %r",
+            "Rejected out-of-root file_path (must be under UPLOAD_DIR={}): {!r}",
             settings.UPLOAD_DIR, file_path,
         )
         return {"messages": [AIMessage(content=FILE_NOT_FOUND_MESSAGE)]}
 
     p = safe_path
     if not p.exists() or not p.is_file():
-        logger.warning("User Upload File Not Found: %s", file_path)
+        logger.warning("User Upload File Not Found: {}", file_path)
         return {"messages": [AIMessage(content=FILE_NOT_FOUND_MESSAGE)]}
 
     try:
@@ -137,7 +137,7 @@ async def create_file_query(state: AgentState, *, config: RunnableConfig) -> Dic
             # 这里显式分流，既保住准确文案，也把接线保留给将来实现。
             logger.warning(
                 "text ingestion unavailable (KnowledgeGateway.add_document is a stub): "
-                "suffix=%s doc_id=%s err=%s",
+                "suffix={} doc_id={} err={}",
                 suffix, doc_id, exc,
             )
             return {"messages": [AIMessage(
@@ -157,5 +157,5 @@ async def create_file_query(state: AgentState, *, config: RunnableConfig) -> Dic
         answer_text = kb_result.get("answer") or f"文件《{title}》已上传并加入知识库，可直接对我提问相关内容。"
         return {"messages": [AIMessage(content=answer_text)]}
     except Exception as exc:
-        logger.exception("Failed to ingest uploaded file: %s", exc)
+        logger.exception("Failed to ingest uploaded file: {}", exc)
         return {"messages": [AIMessage(content=FILE_INGEST_ERROR_MESSAGE)]}

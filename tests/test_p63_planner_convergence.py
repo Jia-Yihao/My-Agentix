@@ -78,7 +78,7 @@ class TestFlagDefaultsAndFiveSync:
     def test_text2sql_dead_flag_removed_from_config_surfaces(self):
         selfcheck_src = (PROJECT_ROOT / "agentix" / "config" / "selfcheck.py").read_text(encoding="utf-8")
         env_example = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
-        project_spec = (PROJECT_ROOT / "docs" / "PROJECT_SPEC.md").read_text(encoding="utf-8")
+        project_spec = (PROJECT_ROOT / "docs" / "项目实现手册.md").read_text(encoding="utf-8")
         assert "TEXT2SQL_ENABLED" not in selfcheck_src
         assert "TEXT2SQL_ENABLED" not in env_example
         assert "TEXT2SQL_ENABLED" not in project_spec
@@ -94,13 +94,13 @@ class TestFlagDefaultsAndFiveSync:
         from agentix.config.selfcheck import DEFAULT_IGNORED_MISSING
 
         env_example = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
-        config_md = (PROJECT_ROOT / "docs" / "architecture" / "configuration.md").read_text(encoding="utf-8")
+        config_md = (PROJECT_ROOT / "docs" / "architecture" / "配置管理.md").read_text(encoding="utf-8")
         for key in ("KG_PLANNER_SHADOW_ENABLED", "KG_PLANNER_UNIFIED_ENABLED"):
             assert hasattr(settings_instance, key)
             assert key in DEFAULT_IGNORED_MISSING
             assert f"{key}=false" in env_example
-            # configuration.md 分组表 + 详情表两处落表（p41 键抽取正则吃详情行首列）
-            assert config_md.count(f"`{key}`") >= 2, f"{key} 未在 configuration.md 表+详情双落"
+            # 配置管理.md 分组表 + 详情表两处落表（p41 键抽取正则吃详情行首列）
+            assert config_md.count(f"`{key}`") >= 2, f"{key} 未在 配置管理.md 表+详情双落"
 
 
 class TestFlagOffBaseline:

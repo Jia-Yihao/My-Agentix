@@ -37,6 +37,7 @@ from agentix.observability.metrics import (
     record_cache_miss,
     # 企业化 P1：降级/熔断/并发/injection 指标
     record_degraded,
+    record_router_fallback,
     record_circuit_state,
     record_circuit_transition,
     record_llm_concurrency_occupied,
@@ -134,6 +135,7 @@ __all__ = [
     "record_cache_hit",
     "record_cache_miss",
     "record_degraded",
+    "record_router_fallback",
     "record_circuit_state",
     "record_circuit_transition",
     "record_llm_concurrency_occupied",

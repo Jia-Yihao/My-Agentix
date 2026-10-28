@@ -39,7 +39,7 @@ from agentix.application.services.cron_jobs import (
 from agentix.config import settings
 
 # ---------------------------------------------------------------------------
-# 基线断言：flag 默认关（flag 治理；见 configuration.md §5）
+# 基线断言：flag 默认关（flag 治理；见 配置管理.md §5）
 # ---------------------------------------------------------------------------
 
 assert settings.CRON_ENABLED is False, "P5 基线：cron 调度默认关"

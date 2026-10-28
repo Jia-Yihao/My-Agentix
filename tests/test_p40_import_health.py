@@ -139,7 +139,7 @@ class TestImportHealth:
         """回归守卫：批次 13 修好的模块必须保持可导入。
 
         ``search_service`` 曾在本守卫内（断链 import 已修），后按
-        ``evolution-assessment.md`` §4 死代码两步流程**整体删除**
+        ``架构演进评估.md`` §4 死代码两步流程**整体删除**
         （零调用面 + 修复后仍 0 覆盖），现由下面的防复活守卫覆盖。
         """
         importlib.import_module(

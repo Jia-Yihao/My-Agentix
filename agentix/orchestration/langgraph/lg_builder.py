@@ -402,7 +402,11 @@ def _node_error_handler_kwargs() -> Dict[str, Any]:
     """
     if not settings.NODE_ERROR_HANDLER_ENABLED:
         return {}
-    return {"error_handler": node_error_handler()}
+    # 补偿记录落库与 T18 共用同一装配判据（hitl_bridge.resolve_pending_store），
+    # 不在此另判 flag；import 留在函数内，flag-off 时连 sqlalchemy 都不拉。
+    from agentix.policies.hitl.hitl_bridge import resolve_pending_store
+
+    return {"error_handler": node_error_handler(store=resolve_pending_store())}
 
 
 def build_graph(checkpointer=None):

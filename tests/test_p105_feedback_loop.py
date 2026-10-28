@@ -275,11 +275,25 @@ class TestFeedbackExport:
         ]
         log.write_text("\n".join(lines) + "\n", encoding="utf-8")
         out = tmp_path / "down.jsonl"
+        # 缺省题集 legal_golden.jsonl 已于 2026-10-26 删除，feedback_ingest 现在
+        # 在"没传 --golden 且默认文件不存在"时响亮退出（T3）⇒ 这里显式给一份**空的**
+        # 现有评估集：候选 id 起始序号仍是 C001，与本用例原本要验的管道行为一致。
+        existing_golden = tmp_path / "existing_golden.jsonl"
+        existing_golden.write_text("", encoding="utf-8")
         buf = io.StringIO()
         with redirect_stdout(buf):
             assert feedback_export.run(log, out) == 0
             # 导出产物 → feedback_ingest 主流程（应产出候选文件而非报错）
-            rc = feedback_ingest.main(["--input", str(out), "--out-dir", str(tmp_path / "cand")])
+            rc = feedback_ingest.main(
+                [
+                    "--input",
+                    str(out),
+                    "--out-dir",
+                    str(tmp_path / "cand"),
+                    "--golden",
+                    str(existing_golden),
+                ]
+            )
         assert rc == 0
         candidates = list((tmp_path / "cand").glob("*.candidates.jsonl"))
         assert len(candidates) == 1
@@ -292,7 +306,7 @@ class TestFeedbackExport:
 
 class TestSyncRatchet:
     def test_five_place_sync(self):
-        """settings / selfcheck / .env.example / configuration.md / p41 清单。"""
+        """settings / selfcheck / .env.example / 配置管理.md / p41 清单。"""
         from agentix.config import selfcheck
 
         for key in ("FEEDBACK_ENABLED", "FEEDBACK_PII_REDACT"):
@@ -300,7 +314,7 @@ class TestSyncRatchet:
             assert key in selfcheck.DEFAULT_IGNORED_MISSING
             assert key in (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8-sig")
             assert f"| `{key}`" in (
-                PROJECT_ROOT / "docs/architecture/configuration.md"
+                PROJECT_ROOT / "docs/architecture/配置管理.md"
             ).read_text(encoding="utf-8")
             assert f'"{key}"' in (
                 PROJECT_ROOT / "tests/test_p41_doc_consistency.py"

@@ -4,7 +4,7 @@
 
 1. **三键治理**：``KG_SCHEMA_AWARE_GENERATION_ENABLED`` /
    ``EVIDENCE_POOL_ENABLED`` / ``VERIFIER_GROUNDING_ENABLED`` 默认 False，
-   且五处同步（settings / selfcheck / .env.example / configuration.md
+   且五处同步（settings / selfcheck / .env.example / 配置管理.md
    分组行+详情行双落 / p41 手写清单），rag-optimization 状态注记在案；
 2. **schema 感知生成**：flag-off = 裸 ``graph.schema`` 逐位等价；flag-on =
    与校验同源的「法律域文档摘要 + 发现态 schema」渲染
@@ -112,7 +112,7 @@ class TestKeyGovernance:
             ), f"{key} 缺少 .env.example 活行"
 
     def test_configuration_doc_double_entry(self):
-        text = _read(PROJECT_ROOT / "docs" / "architecture" / "configuration.md")
+        text = _read(PROJECT_ROOT / "docs" / "architecture" / "配置管理.md")
         for key in _KEYS:
             assert text.count(f"`{key}`") >= 2, f"{key} 需分组行+详情行双落"
 
@@ -122,7 +122,7 @@ class TestKeyGovernance:
             assert f'"{key}"' in text, key
 
     def test_rag_optimization_annotation_present(self):
-        text = _read(PROJECT_ROOT / "docs" / "design" / "rag-optimization.md")
+        text = _read(PROJECT_ROOT / "docs" / "design" / "检索增强深度优化.md")
         assert "R-P2-3 Graph 动态化已落地" in text
         assert "R-P2-5 混合检索归因报告已落地" in text
         assert "P2×5 全部落地" in text
@@ -150,7 +150,7 @@ class TestSchemaAwareGeneration:
         assert "[n:Law(name STRING)]" in rendered
         # 非裸格式权威源
         assert rendered != "RAW_GRAPH_SCHEMA"
-        # 法律域文档摘要前置（docs/design/legal_domain_schema.md 在仓）
+        # 法律域文档摘要前置（docs/design/测试数据域-本体Schema.md 在仓）
         assert "Legal KG node types" in rendered
 
     def test_flag_on_render_failure_falls_back_to_raw(self, monkeypatch, caplog):

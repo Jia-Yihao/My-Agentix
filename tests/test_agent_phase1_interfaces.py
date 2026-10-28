@@ -3,7 +3,7 @@
 覆盖：
 1. domain.agent_types 纯 stdlib、dataclass 字段可序列化；
 2. domain.ports.agent_core 七端口 runtime_checkable 且结构化满足；
-3. Harness 五职责 ↔ 端口对照文档存在（interfaces.md）。
+3. Harness 五职责 ↔ 端口对照文档存在（接口与契约.md）。
 """
 
 from __future__ import annotations
@@ -185,7 +185,7 @@ class TestSevenPorts:
 
 class TestHarnessDoc:
     def test_interfaces_md_has_harness_table(self):
-        text = (PROJECT_ROOT / "docs" / "architecture" / "interfaces.md").read_text(
+        text = (PROJECT_ROOT / "docs" / "architecture" / "接口与契约.md").read_text(
             encoding="utf-8"
         )
         for needle in (
@@ -197,4 +197,4 @@ class TestHarnessDoc:
             "RollbackPort",
             "agent_core",
         ):
-            assert needle in text, f"interfaces.md 缺少 {needle} 对照说明"
+            assert needle in text, f"接口与契约.md 缺少 {needle} 对照说明"

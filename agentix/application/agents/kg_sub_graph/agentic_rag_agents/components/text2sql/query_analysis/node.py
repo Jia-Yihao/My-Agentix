@@ -46,7 +46,7 @@ def create_query_analysis_node(
         rendered_markdown = render_analysis_markdown(analysis, None)
 
         logger.info(
-            "查询分析完成，涉及表：%s", ", ".join(analysis.required_tables or [])
+            "查询分析完成，涉及表：{}", ", ".join(analysis.required_tables or [])
         )
 
         return {

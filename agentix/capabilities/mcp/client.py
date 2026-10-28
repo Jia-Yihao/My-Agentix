@@ -6,7 +6,11 @@
   通信：``initialize`` 握手 → ``tools/list`` → ``tools/call``；
 - :meth:`MCPStdioClient.register_into`——把远端工具注册进统一
   :class:`ToolExecutor`，Agent 即可像调用本地工具一样调用 MCP 工具
-  （继续享受超时/风险/权限治理，MCP 只是传输层）。
+  （继续享受超时/风险/权限治理，MCP 只是传输层）；
+- **T25 断连自愈**：子进程异常死亡（传输断流/管道损坏）后按**有界重连**恢复
+  （计次上限 + 指数退避 + 日志留痕）；耗尽后进入降级冷却窗口，调用方拿到
+  可判读的 :class:`MCPReconnectExhaustedError` 而非无解释的挂起（口径见
+  docs/design/审批与中断恢复优化规划.md T25 卡）。
 
 安全边界（**2026-09 修订**）：远端工具的来源与能力**未经审核**，因此按
 **默认不信任**建模——未显式声明的工具取 ``default_risk_level="L2"`` 且
@@ -23,12 +27,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from agentix.config import settings
+from agentix.domain.tool.exec_env import OS_ENV_ALLOWLIST as _SHARED_OS_ENV_ALLOWLIST
+from agentix.domain.tool.exec_env import scrub_env
 from agentix.tools.definitions import ToolSpec
 from agentix.tools.gateway.executor import ToolExecutor
 from agentix.capabilities.mcp.protocol import (
@@ -37,24 +44,34 @@ from agentix.capabilities.mcp.protocol import (
     MCPError,
 )
 
-__all__ = ["MCPStdioClient", "MCPTimeoutError", "scrub_subprocess_env"]
+__all__ = [
+    "MCPStdioClient",
+    "MCPTimeoutError",
+    "MCPTransportGoneError",
+    "MCPReconnectExhaustedError",
+    "scrub_subprocess_env",
+]
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_REQUEST_TIMEOUT_S = 15.0
 
-#: G2：MCP server 是**任意第三方命令**，默认继承父进程全环境等于把 LLM/SERPAPI/DB 密钥
-#: 交给它。这里只保留「起进程 + 找到本包 + 正确编码」所需的最小集合。
-OS_ENV_ALLOWLIST = frozenset(
-    {
-        # 进程与解释器本身
-        "PATH", "PATHEXT", "COMSPEC", "SYSTEMROOT", "WINDIR", "TEMP", "TMP",
-        "PYTHONPATH", "PYTHONHOME", "PYTHONIOENCODING", "PYTHONUTF8", "VIRTUAL_ENV",
-        # POSIX 运行时
-        "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TZ", "TERM", "LD_LIBRARY_PATH",
-        # 证书与代理（TLS 出网必需，但不含凭据）
-        "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
-        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-    }
-)
+# T25 有界重连常量。**刻意不进 Settings**：本批次 `agentix/config/settings.py`
+# 被另一任务独占（禁新增配置键，避免撞车）；若后续解禁，这三个常量应迁往
+# Settings 并按纪律 4 五处同步——迁移前以本处为唯一真源。
+#: 单次断连触发的重连 spawn 尝试上限（防重连风暴：进程起停循环必须有封顶）。
+MCP_RECONNECT_MAX_ATTEMPTS = 3
+#: 指数退避基数（秒）：第 n 次重连尝试前 sleep ``base * 2**(n-1)``（0.5 / 1.0 / 2.0）。
+MCP_RECONNECT_BACKOFF_BASE_S = 0.5
+#: 耗尽后的降级冷却窗口（秒）：窗口内新调用**即刻**拿到明示降级拒绝——既不反复
+#: spawn 放大风暴，也不把"辅助子系统故障"变成新的挂起或主链拒绝路径（纪律 2）。
+MCP_RECONNECT_DEGRADED_COOLDOWN_S = 30.0
+
+#: G2 的白名单判据**只有一个真源**：`agentix.domain.tool.exec_env.OS_ENV_ALLOWLIST`。
+#: 这里保留旧名字做再导出（`tests/test_p107_sandbox_hardening.py` 从本模块取符号），
+#: 因为 §24.3 T2 ⑮ 的 `subprocess` 沙箱要裁的是同一件事——两处各抄一份白名单，
+#: 迟早只关一条（AGENTS.md §15.9）。
+OS_ENV_ALLOWLIST = _SHARED_OS_ENV_ALLOWLIST
 
 
 def scrub_subprocess_env(
@@ -62,22 +79,16 @@ def scrub_subprocess_env(
     *,
     project_root: Optional[str] = None,
 ) -> Dict[str, str]:
-    """把要交给子进程的环境裁到白名单；白名单外的键（含一切密钥）不进子进程。"""
-    base = dict(os.environ if source is None else source)
-    extra = {
-        key.strip().upper()
-        for key in (settings.MCP_SUBPROCESS_ENV_EXTRA_KEYS or "").split(",")
-        if key.strip()
-    }
-    keep = OS_ENV_ALLOWLIST | extra
-    scrubbed = {k: v for k, v in base.items() if k.upper() in keep}
-    if "PATH" not in scrubbed and "PATH" in base:
-        scrubbed["PATH"] = base["PATH"]
-    # 白名单裁掉 PYTHONPATH 后 `python -m agentix...` 会找不到包，显式补回仓库根。
-    if "PYTHONPATH" not in scrubbed:
-        root = project_root or str(Path(agentix_package_root()).parent)
-        scrubbed["PYTHONPATH"] = root
-    return scrubbed
+    """把要交给子进程的环境裁到白名单；白名单外的键（含一切密钥）不进子进程。
+
+    判据本体在域层（`exec_env.scrub_env`）；本函数只补 MCP 特有的两件事：
+    读 ``MCP_SUBPROCESS_ENV_EXTRA_KEYS``，以及 ``project_root`` 缺省时回落本包仓库根。
+    """
+    return scrub_env(
+        source,
+        extra_keys=settings.MCP_SUBPROCESS_ENV_EXTRA_KEYS,
+        project_root=project_root or str(Path(agentix_package_root()).parent),
+    )
 
 
 def agentix_package_root() -> str:
@@ -89,6 +100,33 @@ class MCPTimeoutError(MCPError):
         super().__init__(INTERNAL_ERROR, f"mcp request timeout after {timeout_s}s: {method}")
 
 
+class MCPTransportGoneError(MCPError):
+    """传输层断流（子进程死亡/管道损坏）——有界重连的**唯一**触发信号。
+
+    做成 :class:`MCPError` 子类：既有按 ``MCPError`` 兜底捕获的调用方语义不变；
+    自愈只是在错误之下多了一层尝试，不是错误类型变更。
+    """
+
+    def __init__(self, method: str, reason: str) -> None:
+        super().__init__(INTERNAL_ERROR, f"mcp server closed stream during {method}: {reason}")
+
+
+class MCPReconnectExhaustedError(MCPError):
+    """有界重连耗尽后的**明示降级**信号（验收③）：失败原因可判读、调用不挂起。
+
+    ``data`` 携带 ``degraded``/``reconnect_attempts`` 供上层结构化判读；
+    消息本体含 "reconnect exhausted" 或 "degraded window"（冷却窗口内的快速拒绝）。
+    """
+
+    def __init__(self, attempts: int, last_reason: str, cooldown_s: float) -> None:
+        super().__init__(
+            INTERNAL_ERROR,
+            f"mcp subprocess reconnect exhausted after {attempts} attempts; "
+            f"tool surface degraded for {cooldown_s:.1f}s: {last_reason}",
+            data={"degraded": True, "reconnect_attempts": attempts},
+        )
+
+
 class MCPStdioClient:
     """与一个 MCP server 子进程的会话（async 上下文管理器）。"""
 
@@ -98,6 +136,9 @@ class MCPStdioClient:
         *,
         cwd: Optional[str] = None,
         request_timeout_s: float = DEFAULT_REQUEST_TIMEOUT_S,
+        reconnect_max_attempts: Optional[int] = None,
+        reconnect_backoff_base_s: Optional[float] = None,
+        reconnect_cooldown_s: Optional[float] = None,
     ) -> None:
         # 缺省拉起本仓库自带 server（零依赖，任何装了本包的解释器都能跑）
         self._command = command or [sys.executable, "-m", "agentix.capabilities.mcp.server"]
@@ -109,6 +150,31 @@ class MCPStdioClient:
         # 串行化 JSON-RPC 请求：两个协程并发 _request 会各自 readline 同一
         # stdout，响应可能被对方读走并因 id 不匹配被丢弃 → 挂到超时/错配结果。
         self._request_lock = asyncio.Lock()
+        # -- T25 有界重连状态（缺省取模块常量；构造参数只为测试/特殊场景可注入，
+        #    刻意不新开 Settings 键——见模块常量处的说明） --
+        self._reconnect_max_attempts = (
+            MCP_RECONNECT_MAX_ATTEMPTS if reconnect_max_attempts is None else int(reconnect_max_attempts)
+        )
+        self._reconnect_backoff_base_s = (
+            MCP_RECONNECT_BACKOFF_BASE_S
+            if reconnect_backoff_base_s is None
+            else float(reconnect_backoff_base_s)
+        )
+        self._reconnect_cooldown_s = (
+            MCP_RECONNECT_DEGRADED_COOLDOWN_S
+            if reconnect_cooldown_s is None
+            else float(reconnect_cooldown_s)
+        )
+        # 曾成功 spawn 过：区分"从未 start"（基线 RuntimeError）与"start 过但传输
+        # 已死"（进入有界自愈）。
+        self._ever_started = False
+        # 用户显式 aclose 过：显式关闭不是"异常断连"，不得触发自愈（保守边，
+        # 保持与基线一致——关掉的客户端再调用仍报 not started）。
+        self._user_closed = False
+        # 耗尽后的降级窗口截止时刻（loop.time() 基准）；None = 未处于降级。
+        self._degraded_until: Optional[float] = None
+        # 退避 sleep 的可注入点：测试断言退避时序而不真等；生产恒为 asyncio.sleep。
+        self._sleep = asyncio.sleep
 
     # -- 生命周期 -----------------------------------------------------------
 
@@ -116,6 +182,16 @@ class MCPStdioClient:
         """启动子进程并完成 initialize 握手，返回 serverInfo。"""
         if self._proc is not None:
             raise RuntimeError("client already started")
+        # 显式 start 撤销"用户已关闭"标记：重启是明确意图，重连守卫随之复位。
+        self._user_closed = False
+        # 同一理由适用于降级冷却窗口：显式 start 是明确意图——调用方修复根因后重启，
+        # 握手成功（会话明确健康）后的第一次调用不得再被上一轮的窗口误拒为
+        # "degraded window active"，否则就是与事实相反的降级声明。
+        self._degraded_until = None
+        return await self._spawn_and_handshake()
+
+    async def _spawn_and_handshake(self) -> Dict[str, Any]:
+        """拉起子进程 + initialize 握手（start 与重连自愈共用的原子步骤）。"""
         child_env: Optional[Dict[str, str]] = None
         if settings.MCP_SUBPROCESS_ENV_SCRUB:
             child_env = scrub_subprocess_env(project_root=self._cwd)
@@ -127,7 +203,8 @@ class MCPStdioClient:
             cwd=self._cwd,
             env=child_env,
         )
-        result = await self._request(
+        self._ever_started = True
+        result = await self._request_raw(
             "initialize",
             {
                 "protocolVersion": "2024-11-05",
@@ -141,6 +218,7 @@ class MCPStdioClient:
         return result
 
     async def aclose(self) -> None:
+        self._user_closed = True
         proc = self._proc
         self._proc = None
         if proc is None:
@@ -266,38 +344,157 @@ class MCPStdioClient:
 
     async def _request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
-            raise RuntimeError("client not started: await start() first")
-        # 同一时刻只允许一个 in-flight 请求（见 _request_lock 注释）
-        async with self._request_lock:
-            if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
+            if not self._ever_started or self._user_closed:
+                # 基线语义保留：从未 start（或用户显式关过）的调用不是"异常断连"，
+                # 不触发自愈，照旧快速失败。
                 raise RuntimeError("client not started: await start() first")
-            self._next_id += 1
-            req = {"jsonrpc": JSONRPC_VERSION, "id": self._next_id, "method": method, "params": params}
+        async with self._request_lock:
+            return await self._request_with_reconnect(method, params)
+
+    async def _request_with_reconnect(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """重连循环的**退出收尾包装**（T25 返工严重①）：任何非成功退出都回收本次子进程。
+
+        为什么必须有这层：工具级超时（bulkhead 的 ``asyncio.wait_for``，
+        agentix/reliability/bulkhead.py:97-106）会在下一个 await 点把协程
+        ``CancelledError`` 掉，而下面的循环体只捕 ``MCPError/OSError/RuntimeError``
+        与 ``MCPTransportGoneError``——取消直接外抛。若不顺手回收：① ``_proc``
+        指向的半初始化孤儿子进程泄漏；② 下一次调用因 ``_proc`` 非空走 step 0
+        直发，只会拿到超时/断流错误，**自愈能力此后永久失效**（跨请求风暴守卫
+        也从未生效）。回收后 ``_proc = None``，下一次调用重新进入 step 1 重连。
+
+        刻意**不**为取消路径武装降级窗口：取消是调用方侧的预算裁决，不是"服务
+        端已死"的证据；风暴守卫的语义是"每次触发 spawn 计数封顶"，取消后的重新
+        自愈仍受同一上限约束，不存在无界风暴。
+        """
+        try:
+            return await self._reconnect_loop(method, params)
+        except BaseException:  # noqa: BLE001 - 必须含 CancelledError（BaseException 派生）在内的所有外抛路径回收子进程；动作只有回收+原样重抛，异常不被吞、失败仍能被观察到
+            self._reap_zombie()
+            raise
+
+    async def _reconnect_loop(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """持锁下的有界重连发送循环（T25 验收①②③的执行体）。
+
+        预算：一次触发最多 ``_reconnect_max_attempts`` 次重连 spawn，每次 spawn 前
+        指数退避 ``base * 2**(n-1)``；spawn 尝试次数封顶即"计次上限防风暴"。
+        超时不在此列（保守边：挂住 ≠ 死亡，本轮不重连，仍走 MCPTimeoutError）。
+        """
+        if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
+            if not self._ever_started or self._user_closed:
+                raise RuntimeError("client not started: await start() first")
+
+        # 降级冷却窗口：耗尽窗口内即刻拒绝——不重复 spawn（窗口本身就是风暴守卫的
+        # 跨请求形态），也不进入任何等待路径（验收③：不吃无解释的挂起）。
+        if self._degraded_until is not None:
+            remaining = self._degraded_until - asyncio.get_running_loop().time()
+            if remaining > 0:
+                raise MCPReconnectExhaustedError(
+                    self._reconnect_max_attempts,
+                    f"degraded window active ({remaining:.1f}s remaining); "
+                    f"reconnect suppressed to avoid reconnect storm",
+                    self._reconnect_cooldown_s,
+                )
+            self._degraded_until = None  # 窗口已过：允许新一轮有界自愈
+
+        last_reason = "mcp subprocess not alive"
+        # step 0 = 直发（传输可能还活着）；step n≥1 = 先退避+重连再直发。
+        # 总 spawn 尝试 ≤ max_attempts，封顶。
+        for step in range(self._reconnect_max_attempts + 1):
+            if step:
+                wait_s = self._reconnect_backoff_base_s * (2 ** (step - 1))
+                logger.warning(
+                    "mcp reconnecting after transport loss (during %s): attempt %d/%d, backoff %.3fs; last error: %s",
+                    method, step, self._reconnect_max_attempts, wait_s, last_reason,
+                )
+                await self._sleep(wait_s)
+                try:
+                    await self._spawn_and_handshake()
+                except (MCPError, OSError, RuntimeError) as exc:
+                    # 重连尝试失败属于自愈循环内部：记录原因、回收残骸、进入下一次
+                    # 退避——不向上抛，否则"子进程单次死亡"被放大成主链异常（纪律 2）。
+                    last_reason = f"{type(exc).__name__}: {exc}"
+                    self._reap_zombie()
+                    continue
+                logger.info(
+                    "mcp subprocess reconnect succeeded: attempt %d/%d (during %s)",
+                    step, self._reconnect_max_attempts, method,
+                )
+            if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
+                continue  # 传输仍不可用：进入下一轮退避重连
+            try:
+                return await self._request_raw(method, params)
+            except MCPTransportGoneError as exc:
+                last_reason = f"{type(exc).__name__}: {exc}"
+                self._reap_zombie()
+                continue
+
+        # 耗尽：进入降级窗口 + ERROR 留痕 + 可判读的失败原因（不假装成功）。
+        self._degraded_until = asyncio.get_running_loop().time() + self._reconnect_cooldown_s
+        logger.error(
+            "mcp subprocess reconnect exhausted after %d attempts (during %s): "
+            "tool surface degraded for %.1fs; last error: %s",
+            self._reconnect_max_attempts, method, self._reconnect_cooldown_s, last_reason,
+        )
+        raise MCPReconnectExhaustedError(self._reconnect_max_attempts, last_reason, self._reconnect_cooldown_s)
+
+    def _reap_zombie(self) -> None:
+        """尽力清理已断连的子进程句柄（必须在请求锁内调用）。
+
+        断连场景下进程通常已自行退出（stdout EOF 即其信号）；kill/wait 只是兜底
+        残骸，失败没有补救对象——真实错误原因已由调用方记录（纪律 2：辅助回收
+        不得制造新故障点）。
+        """
+        proc = self._proc
+        self._proc = None
+        if proc is None:
+            return
+        if proc.stdin is not None:
+            try:
+                proc.stdin.close()
+            except Exception:  # noqa: BLE001 - 管道随进程死亡，关闭失败无动作可做；回收尽力而为，不影响已记录的主因
+                pass
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except Exception:  # noqa: BLE001 - 进程可能恰在此刻退出；杀不杀得掉都不改变"已断连"事实
+                pass
+
+    async def _request_raw(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """单次发送并等待响应；不做任何重连（供握手与自愈循环内部复用）。"""
+        if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
+            raise RuntimeError("client not started: await start() first")
+        self._next_id += 1
+        req = {"jsonrpc": JSONRPC_VERSION, "id": self._next_id, "method": method, "params": params}
+        try:
             self._proc.stdin.write((json.dumps(req, ensure_ascii=False) + "\n").encode("utf-8"))
             await self._proc.stdin.drain()
+        except OSError as exc:
+            # 管道写失败（BrokenPipeError/ConnectionResetError 等）= 子进程已死：
+            # 归入传输断流，交给有界重连，而不是各抛各的。
+            raise MCPTransportGoneError(method, f"stdin write failed: {exc}") from exc
 
-            request_id = self._next_id
-            while True:
-                try:
-                    line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=self._timeout)
-                except asyncio.TimeoutError as exc:
-                    raise MCPTimeoutError(method, self._timeout) from exc
-                if not line:
-                    raise MCPError(INTERNAL_ERROR, f"mcp server closed stream during {method}")
-                response = self._parse_line(line, method)
-                if response is None:
-                    continue  # 通知/噪声行，继续读
-                if response.get("id") != request_id:
-                    continue  # 过期/噪声响应，防御性跳过
-                if "error" in response:
-                    err = response["error"] or {}
-                    raise MCPError(
-                        int(err.get("code", INTERNAL_ERROR)),
-                        str(err.get("message", "unknown mcp error")),
-                        err.get("data"),
-                    )
-                result = response.get("result")
-                return result if isinstance(result, dict) else {}
+        request_id = self._next_id
+        while True:
+            try:
+                line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=self._timeout)
+            except asyncio.TimeoutError as exc:
+                raise MCPTimeoutError(method, self._timeout) from exc
+            if not line:
+                raise MCPTransportGoneError(method, "stdout closed by server")
+            response = self._parse_line(line, method)
+            if response is None:
+                continue  # 通知/噪声行，继续读
+            if response.get("id") != request_id:
+                continue  # 过期/噪声响应，防御性跳过
+            if "error" in response:
+                err = response["error"] or {}
+                raise MCPError(
+                    int(err.get("code", INTERNAL_ERROR)),
+                    str(err.get("message", "unknown mcp error")),
+                    err.get("data"),
+                )
+            result = response.get("result")
+            return result if isinstance(result, dict) else {}
 
     async def _notify(self, method: str, params: Dict[str, Any]) -> None:
         if self._proc is None or self._proc.stdin is None:

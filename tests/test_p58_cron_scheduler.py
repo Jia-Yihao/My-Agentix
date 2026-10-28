@@ -50,7 +50,7 @@ from agentix.tools.gateway.executor import get_tool_executor, reset_tool_executo
 from agentix.config import settings
 
 # ---------------------------------------------------------------------------
-# 基线断言：flag 默认关（flag 治理；见 configuration.md §5）
+# 基线断言：flag 默认关（flag 治理；见 配置管理.md §5）
 # ---------------------------------------------------------------------------
 
 assert settings.CRON_ENABLED is False, "P5 基线：cron 调度默认关"
@@ -648,7 +648,7 @@ class TestSourceWiring:
         assert "CRON_TICK_SECONDS=60" in text
 
     def test_configuration_md_documents_cron(self):
-        text = (PROJECT_ROOT / "docs" / "architecture" / "configuration.md").read_text(
+        text = (PROJECT_ROOT / "docs" / "architecture" / "配置管理.md").read_text(
             encoding="utf-8"
         )
         assert "`CRON_ENABLED`" in text and "`CRON_TICK_SECONDS`" in text

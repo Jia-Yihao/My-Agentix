@@ -63,7 +63,7 @@ def create_sql_generation_node(
                 "steps": ["sql_generation"],
             }
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("SQL 生成失败: %s", exc)
+            logger.exception("SQL 生成失败: {}", exc)
             return {
                 "sql_statement": "",
                 "steps": ["sql_generation_failed"],

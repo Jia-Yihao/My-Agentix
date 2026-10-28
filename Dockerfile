@@ -119,6 +119,12 @@ CMD ["uvicorn", "agentix.main:application", "--host", "0.0.0.0", "--port", "8000
 # ---------- Stage 3: neo4j_seeded（预导入法律 KG，保持原逻辑不变） ----------
 FROM neo4j:5.18 AS neo4j_seeded
 
+# neo4j-admin 的 JVM 用 **locale** 决定 argv 的解码字符集（sun.jnu.encoding）。
+# 镜像默认 locale 是 POSIX/ASCII，于是 `--nodes=法条=…` 里的中文在进 JVM 之前就
+# 变成 `?`：导入照样成功、库里的 label 却是 `??????`，运行时 `MATCH (f:法条)`
+# 恒 0 行且毫无报错。这一行是灌库链路能用的前提（实测取证见 .tmp/kg_preflight.py）。
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
 USER root
 # Use faster mirror and install Python
 RUN sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
@@ -148,13 +154,18 @@ USER root
 RUN rm -rf /data/databases /data/transactions && mkdir -p /data/databases /data/transactions && chown -R neo4j:neo4j /data
 
 USER neo4j
+# Label / 关系类型必须用 docs/design/测试数据域-本体Schema.md §1.1–1.2 的中文功能性
+# 标识符（法条/章节/法规/案由/司法解释/机关）。历史上这里是英文（Article/…），
+# 与运行时 Cypher 的 `MATCH (f:法条)` 各说一套：导入不报错、图也在，
+# 但每条图谱查询恒返 0 行，graphrag 静默退化。守卫见
+# tests/test_p122_kg_csv_referential_integrity.py。
 RUN neo4j-admin database import full --overwrite-destination=true --multiline-fields=true neo4j \
-    --nodes=Regulation=import_generated/regulation_nodes.csv \
-    --nodes=Article=import_generated/article_nodes.csv \
-    --nodes=Chapter=import_generated/chapter_nodes.csv \
-    --nodes=Cause=import_generated/cause_nodes.csv \
-    --nodes=JudicialInterpretation=import_generated/interpretation_nodes.csv \
-    --nodes=Authority=import_generated/authority_nodes.csv \
+    --nodes=法规=import_generated/regulation_nodes.csv \
+    --nodes=法条=import_generated/article_nodes.csv \
+    --nodes=章节=import_generated/chapter_nodes.csv \
+    --nodes=案由=import_generated/cause_nodes.csv \
+    --nodes=司法解释=import_generated/interpretation_nodes.csv \
+    --nodes=机关=import_generated/authority_nodes.csv \
     --relationships=属于=import_generated/rel_article_belongs_chapter.csv \
     --relationships=属于=import_generated/rel_chapter_belongs_regulation.csv \
     --relationships=引用=import_generated/rel_article_cites_article.csv \

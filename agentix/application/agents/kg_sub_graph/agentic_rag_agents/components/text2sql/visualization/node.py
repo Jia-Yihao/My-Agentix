@@ -56,13 +56,13 @@ def create_visualization_node(
 
         try:
             recommendation = await viz_llm.ainvoke(prompt.format_messages(**inputs))
-            logger.info("可视化推荐完成: %s", recommendation.chart_type)
+            logger.info("可视化推荐完成: {}", recommendation.chart_type)
             return {
                 "visualization": recommendation.model_dump(),
                 "steps": ["visualization"],
             }
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("可视化推荐失败: %s", exc)
+            logger.exception("可视化推荐失败: {}", exc)
             return {
                 "visualization": VisualizationRecommendation(
                     chart_type="table",

@@ -13,7 +13,9 @@
 
 1. **默认姿态**：flag 默认关、`ToolSpec.sandbox` 默认 `in_process`、阶梯顺序、
    「词汇表 − 实现集」的差集恰好是 `{subprocess, container}`（差集必须可见，
-   否则 ADR-0007 里"T2 还差什么"又变成文档里的一句话）。
+   否则 ADR-0007 里"T2 还差什么"又变成文档里的一句话）。⑮ 落地后这一条**仍以
+   flag-off 为准**，并成对钉一条"开了 `TOOL_SANDBOX_SUBPROCESS_ENABLED` 就差集
+   收窄到 `{container}`"——两侧都可查，"新开关默认关"才不是口头承诺。
 2. **声明期校验**：四档都**可以**声明（阶梯是词汇表），阶梯外的词当场 `ValueError`；
    拼写错与"还没实现"是两种错，不能混成一类。
 3. **端口形状与分层**：两个实现都真的满足 `ExecutionSandbox` 协议；
@@ -57,6 +59,7 @@ from agentix.tools.gateway.executor import ToolExecutor
 from agentix.tools.definitions import ToolSpec
 from agentix.tools.sandbox import (
     InProcessSandbox,
+    SubprocessSandbox,
     ThreadSandbox,
     implemented_kinds,
     invoke_in_process,
@@ -130,11 +133,32 @@ def test_ladder_is_ordered_from_least_to_most_isolated() -> None:
     assert SANDBOX_LADDER == ("in_process", "thread", "subprocess", "container")
 
 
-def test_unimplemented_rungs_are_exactly_the_future_items() -> None:
-    """差集可见：⑮/⑰ 没落地这件事在代码里就能被查出来，不靠文档一句话。"""
+def test_unimplemented_rungs_are_exactly_the_future_items(monkeypatch) -> None:
+    """差集可见：⑮/⑰ 没落地这件事在代码里就能被查出来，不靠文档一句话。
+
+    ⚠️ ⑮ 落地后这条**仍以 flag-off 为准**（纪律 1：关着时与 ⑭ 逐位等价），所以这里
+    显式把 `TOOL_SANDBOX_SUBPROCESS_ENABLED` 钉成 False 再断言——不钉的话，本机 .env
+    或 CI 变量一改，这条守卫就从"差集可见"退化成"看运气"。开着的差集另测一条。
+    """
+    monkeypatch.setattr(settings, "TOOL_SANDBOX_SUBPROCESS_ENABLED", False)
     gap = tuple(k for k in SANDBOX_LADDER if k not in implemented_kinds())
     assert gap == ("subprocess", "container")
     assert implemented_kinds() == ("in_process", "thread")
+
+
+def test_enabling_the_subprocess_tier_narrows_the_gap_to_container_only(
+    monkeypatch,
+) -> None:
+    """⑮ 的开着的形态：差集只剩 `container`，且 `subprocess` 可被解析到实现。
+
+    这条与上一条**成对**存在：只有"关着为空、开着收窄"两侧都可查，纪律 1 的
+    「新开关默认关」才不是一句口头承诺。
+    """
+    monkeypatch.setattr(settings, "TOOL_SANDBOX_SUBPROCESS_ENABLED", True)
+    gap = tuple(k for k in SANDBOX_LADDER if k not in implemented_kinds())
+    assert gap == ("container",)
+    assert implemented_kinds() == ("in_process", "subprocess", "thread")
+    assert isinstance(resolve_sandbox("subprocess"), SubprocessSandbox)
 
 
 # ---------------------------------------------------------------------------
@@ -254,14 +278,26 @@ def test_resolve_sandbox_maps_each_kind_to_its_own_implementation() -> None:
     assert isinstance(resolve_sandbox("thread"), ThreadSandbox)
 
 
-@pytest.mark.parametrize("kind", ["subprocess", "container"])
-def test_future_rungs_refuse_with_their_own_reason(kind: str) -> None:
+@pytest.mark.parametrize(
+    ("kind", "reason_phrase"),
+    # ⑮ 落地后两类不可用的**措辞必须继续分开**，因为修法不同：一个是"开开关"，
+    # 一个是"等 ⑰ / 改声明"。合成一句 = 运维照着报错改不动。
+    [("subprocess", "switched off"), ("container", "not implemented")],
+)
+def test_future_rungs_refuse_with_their_own_reason(
+    kind: str, reason_phrase: str, monkeypatch
+) -> None:
+    monkeypatch.setattr(settings, "TOOL_SANDBOX_SUBPROCESS_ENABLED", False)
     with pytest.raises(SandboxUnavailable) as caught:
         resolve_sandbox(kind)
     message = str(caught.value)
-    assert "not implemented" in message
+    assert reason_phrase in message
     assert kind in message
     assert "in_process" in message, "报错要给出真能跑的档位，否则改不动"
+    if kind == "subprocess":
+        assert (
+            "TOOL_SANDBOX_SUBPROCESS_ENABLED" in message
+        ), "这类拒绝要把开关名写进报错，否则只能靠猜"
 
 
 def test_a_word_outside_the_ladder_is_a_different_error() -> None:
@@ -293,25 +329,42 @@ async def test_declaration_is_inert_when_the_flag_is_off(sandbox_off) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unimplemented_rung_refuses_without_calling_handler(sandbox_on, caplog) -> None:
-    """fail-closed 的正身：**一次都没调用**，且不是退回进程内。"""
+@pytest.mark.parametrize(
+    ("kind", "reason_phrase"),
+    [("subprocess", "switched off"), ("container", "not implemented")],
+)
+async def test_unavailable_rung_refuses_without_calling_handler(
+    sandbox_on, caplog, kind: str, reason_phrase: str, monkeypatch
+) -> None:
+    """fail-closed 的正身：**一次都没调用**，且不是退回进程内。
+
+    ⚠️ ⑮ 落地后这条**仍要跑**：它现在钉的是"档位声明了但当前拿不到"这一类，
+    而拿不到的原因有两种（开关关着 / 还没实现），两种都必须拒在同一处、
+    同一形态。原先只钉 `subprocess` 一种，落地 ⑮ 后若不改就等于把 fail-closed
+    的证据换成了"开开关"的证据——⑰ 那条腿没人钉了。
+    """
+    monkeypatch.setattr(settings, "TOOL_SANDBOX_SUBPROCESS_ENABLED", False)
     calls: list[dict] = []
+    # 工具名必须**按档位区分**：`register_handler` 只在 registry 里还没有同名工具时登记
+    # spec，同名复用会静默拿到第一条的 spec（本文件第一轮参数化就是这样把 container
+    # 测成了 subprocess）。这是 registry 的既有语义，不是沙箱的。
+    tool_name = f"p114_refused_{kind}"
 
     def handler(args: dict) -> dict:
         calls.append(args)
         return {"did": "work"}
 
     ex = ToolExecutor()
-    ex.register_handler("p114_refused", handler, spec=_spec("p114_refused", sandbox="subprocess"))
+    ex.register_handler(tool_name, handler, spec=_spec(tool_name, sandbox=kind))
     with caplog.at_level(logging.WARNING):
-        result = await ex.execute("p114_refused", {"x": 1})
+        result = await ex.execute(tool_name, {"x": 1})
     assert calls == [], "声明跑不了的档位却仍执行 ⇒ 安全声明成了装饰"
     assert result.success is False
     assert result.metadata["reason"] == "sandbox_unavailable"
-    assert result.metadata["sandbox"] == "subprocess"
+    assert result.metadata["sandbox"] == kind
     assert result.retryable is False, "重试换不来一个实现"
-    assert "not implemented" in (result.error or "")
-    assert "p114_refused" in caplog.text
+    assert reason_phrase in (result.error or "")
+    assert tool_name in caplog.text
 
 
 @pytest.mark.asyncio
@@ -493,8 +546,8 @@ def _declares_key(text: str) -> bool:
     [
         ".env.example",
         "agentix/config/selfcheck.py",
-        "docs/architecture/configuration.md",
-        "docs/architecture/runtime-guardrails.md",
+        "docs/architecture/配置管理.md",
+        "docs/architecture/运行时护栏.md",
         "tests/test_p41_doc_consistency.py",
         "docker-compose.yml",
     ],
@@ -553,7 +606,7 @@ def _matrix_row(key: str, text: str) -> list[str]:
 
 def test_runbook_matrix_staging_claim_matches_the_override() -> None:
     """staging 打开这件事**必须**同时在 override 里真设：矩阵不是愿望清单。"""
-    text = (PROJECT_ROOT / "docs/runbooks/staging-environment.md").read_text(encoding="utf-8")
+    text = (PROJECT_ROOT / "docs/runbooks/预发环境与配置矩阵.md").read_text(encoding="utf-8")
     cells = _matrix_row(KEY, text)
     assert len(cells) == 4, f"矩阵行应 4 列：{cells}"
     claim = _matrix_claim(cells[2])
@@ -563,7 +616,7 @@ def test_runbook_matrix_staging_claim_matches_the_override() -> None:
 
 def test_matrix_guard_has_teeth() -> None:
     """反向钉子：把声明改成 false，上面那条比对就必须对不上。"""
-    text = (PROJECT_ROOT / "docs/runbooks/staging-environment.md").read_text(encoding="utf-8")
+    text = (PROJECT_ROOT / "docs/runbooks/预发环境与配置矩阵.md").read_text(encoding="utf-8")
     tampered = text.replace("| `EXECUTION_SANDBOX_ENABLED` | false | **true**", "| `EXECUTION_SANDBOX_ENABLED` | false | **false**", 1)
     assert tampered != text, "篡改锚点没命中，本钉子已失效"
     cells = _matrix_row(KEY, tampered)
@@ -572,18 +625,18 @@ def test_matrix_guard_has_teeth() -> None:
 
 def test_adr_0007_exists_and_is_indexed() -> None:
     """ADR 是这条决策的落点；写了文件不进索引 = 下一次没人找得到（编号规则见 adr/README）。"""
-    adr = PROJECT_ROOT / "docs/architecture/adr/0007-execution-sandbox-port.md"
+    adr = PROJECT_ROOT / "docs/architecture/adr/0007-执行沙箱端口.md"
     assert adr.exists()
     body = adr.read_text(encoding="utf-8")
     for section in ("## Context", "## Decision", "## Rationale", "## Consequences"):
         assert section in body, f"ADR-0007 缺 {section}（Nygard 格式）"
     assert "拒绝执行" in body and "不是" in body, "必须写清端口 ≠ 隔离"
     index = (PROJECT_ROOT / "docs/architecture/adr/README.md").read_text(encoding="utf-8")
-    assert "0007-execution-sandbox-port.md" in index
+    assert "0007-执行沙箱端口.md" in index
 
 
 def test_project_spec_links_the_port_and_keeps_t2_open() -> None:
     """台账不许把 ⑭ 的落地写成 T2 的完成。"""
-    text = (PROJECT_ROOT / "docs/PROJECT_SPEC.md").read_text(encoding="utf-8")
-    assert "0007-execution-sandbox-port.md" in text
+    text = (PROJECT_ROOT / "docs/项目实现手册.md").read_text(encoding="utf-8")
+    assert "0007-执行沙箱端口.md" in text
     assert "⑮" in text, "⑮（subprocess）仍未收口，台账必须这么说"

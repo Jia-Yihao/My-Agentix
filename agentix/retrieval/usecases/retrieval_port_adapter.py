@@ -2,7 +2,8 @@
 
 依据 design.md §2.4.4：
 - 位置：``agentix/retrieval/usecases/retrieval_port_adapter.py``
-- 职责：编排 ``get_active_index_artifact → build_retriever →
+- 职责：编排 ``get_active_index_artifact → get_or_build_retriever（默认直调
+  build_retriever，flag 开时复用进程内实例）→
   retrieve_scoped_docs_cached → rerank_documents → get_citations_from_docs``
   链路，将检索域用例适配为 ``RetrievalPort`` 协议返回结构。
 - 降级语义：Milvus 超时 / worker 崩 / 索引未就绪 → ``status="degraded"``；
@@ -81,8 +82,10 @@ class RetrievalPortAdapter:
         _require_tenant(tenant_id)  # R-P0-2：在任何存储访问之前 fail-closed
 
         from agentix.retrieval.infra.repos.index_repo import get_active_index_artifact
+        from agentix.retrieval.infra.vectorstore.retriever_cache import (
+            get_or_build_retriever,
+        )
         from agentix.retrieval.usecases.chat_service import (
-            build_retriever,
             get_citations_from_docs,
             retrieve_scoped_docs_cached,
         )
@@ -105,7 +108,10 @@ class RetrievalPortAdapter:
                 )
 
                 try:
-                    _, vectorstore = build_retriever(artifact.index_path)
+                    # R-P3：默认关 ⇒ 等价于 build_retriever；开启则复用进程内
+                    # 已构造的 (retriever, vectorstore)，省掉每次检索的客户端
+                    # 重建 + FAISS 反序列化（README §15.2 口径③）。
+                    _, vectorstore = get_or_build_retriever(artifact.index_path)
                 except FileNotFoundError:
                     return RetrievalResult(
                         status="degraded", chunks=[], error="index_not_found"

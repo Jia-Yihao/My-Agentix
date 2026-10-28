@@ -14,7 +14,7 @@ from langchain_core.tools import tool
 from sqlmodel import Session
 
 from agentix.retrieval.domain.policies.errors import sanitize_error
-from agentix.observability.spans import span
+from agentix.observability.spans import record_model_used, span
 from agentix.reliability.circuit_breaker import CircuitBreakerOpenError
 from agentix.retrieval.settings import settings
 
@@ -292,6 +292,10 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
                         ),
                     )
                     resp = gw_result.response
+                    # PhaseK 任务 5：回退后实际服务方上 span（model_used 产出后一直无人
+                    # 消费）。主模型名只从 ctx.model_name 取——与上方调用点同参数，
+                    # 不另经 settings/resolve_model 造第二判定源（纪律 6 ④）。
+                    record_model_used(gw_result.model_used, primary_model=ctx.model_name)
                 else:
                     fallbacks = gateway.fallback_chain(primary_model=ctx.model_name)
                     if fallbacks:
@@ -310,6 +314,10 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
                             ),
                         )
                         resp = gw_result.response
+                        # PhaseK 任务 5：同分支①——实际服务方上 span，主模型名同源
+                        # ctx.model_name（纪律 6 ④）；无 fallback 的原路径无 model_used
+                        # 可报，不调（规格口径）。
+                        record_model_used(gw_result.model_used, primary_model=ctx.model_name)
                     else:
                         llm = create_chat_llm(model_name=ctx.model_name, chat_mode=ctx.chat_mode)
                         resp = await invoke_with_breaker(llm, prompt)

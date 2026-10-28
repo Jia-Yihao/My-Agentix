@@ -31,16 +31,26 @@ services:
       - TOOL_SYNC_OFFLOAD_ENABLED=${TOOL_SYNC_OFFLOAD_ENABLED:-False}
       # §24.3 T1 ⑧：非协程 handler 的注册期点名告警（只打日志，不改执行语义）。
       - TOOL_HANDLER_CONTRACT_ENABLED=${TOOL_HANDLER_CONTRACT_ENABLED:-False}
+      # G14（§24.2）：同名工具重复注册的**严格模式**（默认关 = 只告警、仍按首次声明执行）。
+      # 告警本身没有开关——静默丢弃 spec 正是 G14 要根除的形态。
+      - TOOL_DUPLICATE_REGISTRATION_STRICT=${TOOL_DUPLICATE_REGISTRATION_STRICT:-False}
       # §24.3 T2 ⑭（ADR-0007）：执行位置端口。关 = 完全不查 `ToolSpec.sandbox`，与加固前
-      # 逐位等价；开 = 按声明选执行位置（当前只有 in_process / thread 两档能跑，
-      # 两档都**不是**隔离边界；subprocess/container 声明了会被拒绝执行，不静默降级）。
+      # 逐位等价；开 = 按声明选执行位置（in_process / thread 两档**不是**隔离边界；
+      # 声明了当前拿不到的档位会在执行点被拒绝执行，不静默降级）。
       - EXECUTION_SANDBOX_ENABLED=${EXECUTION_SANDBOX_ENABLED:-False}
+      # §24.3 T2 ⑮：阶梯第三档。关 = `subprocess` 仍在「词汇表 − 已实现」差集里
+      # （与 ⑭ 逐位等价）；开 = 一次调用一个子进程 + RLIMIT_* + 环境白名单 + 可杀进程组。
+      # ⚠️ 开着也不保证本机落得下闸：POSIX 能力探测在执行点判定，探测不过照样拒绝。
+      # 基线**不**在 staging 钉开：那是一次显式部署决定，不是随批默认翻绿的开关。
+      - TOOL_SANDBOX_SUBPROCESS_ENABLED=${TOOL_SANDBOX_SUBPROCESS_ENABLED:-False}
+      - TOOL_SANDBOX_SUBPROCESS_UID=${TOOL_SANDBOX_SUBPROCESS_UID:--1}
+      - TOOL_SANDBOX_SUBPROCESS_ENV_EXTRA_KEYS=${TOOL_SANDBOX_SUBPROCESS_ENV_EXTRA_KEYS:-}
       - MCP_SUBPROCESS_ENV_SCRUB=${MCP_SUBPROCESS_ENV_SCRUB:-False}
       - MCP_SUBPROCESS_ENV_EXTRA_KEYS=${MCP_SUBPROCESS_ENV_EXTRA_KEYS:-}
       - DB_ECHO=${DB_ECHO:-}
       # §24.3 T1 ⑪：/settings/{kb_id} 的租户归属（读）+ admin（写）校验。
       # 默认关 = 与加固前逐位等价。开之前需要「kb.tenant_id 已回填」且「租户内已有 admin」
-      # 两个前置，否则设置页整面 403（步骤见 docs/runbooks/staging-environment.md）。
+      # 两个前置，否则设置页整面 403（步骤见 docs/runbooks/预发环境与配置矩阵.md）。
       # 只有 backend 挂了这个路由，retrieval-worker 不需要该变量。
       - SETTINGS_AUTHZ_ENABLED=${SETTINGS_AUTHZ_ENABLED:-False}
       - REDIS_HOST=redis
@@ -189,7 +199,7 @@ services:
     # 上限取宽松值以免影响既有本地联调；要更紧或完全关掉，改这三个变量即可。
     # §24.3 T0 ⑤：容器运行身份。默认 `0:0` 与「不写 user:」逐位等价（server stage 没有
     # USER 指令，本来就以 root 起），所以这一行不是行为变更，只是把「要不要非 root」
-    # 变成可声明的旋钮。换值前必须先按 docs/runbooks/staging-environment.md 的
+    # 变成可声明的旋钮。换值前必须先按 docs/runbooks/预发环境与配置矩阵.md 的
     # 「容器降权」节处理挂载目录属主——`./data`（LightRAG bootstrap 的 mkdir/cp、
     # tiktoken 缓存、日志）与 `./uploads` 不可写时，backend 会在 entrypoint 里
     # `set -e` 直接退出并进入 restart 崩溃循环。
@@ -460,7 +470,7 @@ services:
     env_file:
       - .env
     environment:
-      # G12（docs/PROJECT_SPEC.md §24.2）：MySQL 连接串闸门。默认关 = 与加固前逐位等价；
+      # G12（docs/项目实现手册.md §24.2）：MySQL 连接串闸门。默认关 = 与加固前逐位等价；
       # 开启后只接受 mysql[+driver] scheme + 必须有主机名，配置了白名单时再按主机收紧。
       KB_MYSQL_URL_GUARD: ${KB_MYSQL_URL_GUARD:-false}
       KB_MYSQL_ALLOWED_HOSTS: ${KB_MYSQL_ALLOWED_HOSTS:-}

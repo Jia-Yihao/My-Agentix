@@ -1,6 +1,6 @@
 """B1 · 32-P0 记忆收敛守卫（M-P0-1/3/4/5，v2 Stage B1 → p67）。
 
-覆盖（对齐 docs/design/memory-optimization.md §4 + §7 验收）：
+覆盖（对齐 docs/design/记忆域深度优化.md §4 + §7 验收）：
 
 - ① 序列化只增：双卡 schema 版本单源、旧 dict 读入给默认、to_dict 只增键、
   冲突行 shape 统一 ``{"key","values"}``；

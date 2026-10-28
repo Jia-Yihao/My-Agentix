@@ -121,7 +121,7 @@ else:
 PY
 }
 
-# KB 语料入库已由 kb_ingest 服务承接（见 docs/design/phase5_brand_switch.md：旧脚本
+# KB 语料入库已由 kb_ingest 服务承接（见 docs/design/阶段五-品牌切换验证记录.md：旧脚本
 # scripts/init_kb_milvus.py 已删除）。此处原先仍调用该脚本，导致每次启动都打印
 # "ingestion failed" 且哨兵永不写入 —— 现改为直接提示走 kb_ingest。
 run_milvus_ingest() {

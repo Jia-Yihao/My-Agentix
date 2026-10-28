@@ -7,7 +7,7 @@
 ④ 环境变量名解析：api_key_env → os.environ 读值；未设置 ⇒ api_key=None
 ⑤ _build_fallback_client 消费点：跨端点三元组构造 ChatOpenAI 断言
    base_url/api_key；仅模型名条目与 primary（str）走主链路同构路径
-⑥ 五处同步棘轮：settings / selfcheck / .env.example / configuration.md / p41 清单
+⑥ 五处同步棘轮：settings / selfcheck / .env.example / 配置管理.md / p41 清单
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def test_build_fallback_client_cross_endpoint_spec_mapping(monkeypatch):
 # ---------- ⑥ 五处同步棘轮 ----------
 
 def test_five_place_sync():
-    """settings / selfcheck / .env.example / configuration.md / p41 清单。"""
+    """settings / selfcheck / .env.example / 配置管理.md / p41 清单。"""
     from agentix.config import selfcheck
     from agentix.config import settings
 
@@ -196,8 +196,8 @@ def test_five_place_sync():
     # ③ .env.example
     env_example = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8-sig")
     assert key in env_example
-    # ④ configuration.md §5 表
-    config_doc = (PROJECT_ROOT / "docs/architecture/configuration.md").read_text(
+    # ④ 配置管理.md §5 表
+    config_doc = (PROJECT_ROOT / "docs/architecture/配置管理.md").read_text(
         encoding="utf-8"
     )
     assert f"| `{key}`" in config_doc

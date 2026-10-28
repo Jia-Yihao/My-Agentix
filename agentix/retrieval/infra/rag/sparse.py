@@ -1,6 +1,6 @@
 """R-P1-1 Sparse 路：进程内 BM25（纯 Python，零新增依赖、零新服务）。
 
-设计要点（rag-optimization.md §5 R-P1-1）：
+设计要点（检索增强深度优化.md §5 R-P1-1）：
 
 - **语料复用文档入库链**：PostgreSQL ``chunk`` 表（活动产物通过
   ``document_repo.get_chunks_for_index_artifact`` 读取），
@@ -212,7 +212,7 @@ def _load_index(session, kb_id: str, ttl_seconds: int, artifact_id: str | None =
             oldest = min(_CACHE.items(), key=lambda kv: kv[1][0])
             _CACHE.pop(oldest[0], None)
         _CACHE[cache_key] = (time.monotonic(), index)
-    logger.debug("BM25 index built for kb=%s docs=%d", kb_id, len(index))
+    logger.debug("BM25 index built for kb={} docs={}", kb_id, len(index))
     return index
 
 
@@ -266,5 +266,5 @@ def sparse_search(
                 break
         return out
     except Exception as exc:  # noqa: BLE001 - fail-open：sparse 失败绝不打断主链路
-        logger.warning("sparse BM25 search degraded (fail-open, kb=%s): %s", kb_id, exc)
+        logger.warning("sparse BM25 search degraded (fail-open, kb={}): {}", kb_id, exc)
         return []

@@ -2,7 +2,7 @@
 
 覆盖 multiagent-optimization §5 的 A-P1-2：
 
-1. **五处同步棘轮**（settings / selfcheck / .env.example / configuration.md /
+1. **五处同步棘轮**（settings / selfcheck / .env.example / 配置管理.md /
    p41 手写清单），新键 ``AGENT_LLM_PLANNER_ENABLED`` 默认 False。
 2. **LLMPlanner**（flag 门控）：flag-off 选择器仍产出 ``SingleStepPlanner``
    （与基线逐位等价）、flag-on 产出 ``LLMPlanner``（结构化输出、执行表
@@ -143,7 +143,7 @@ class TestFlagSync:
         assert f"{_KEY}=false" in [line.strip() for line in lines]
 
     def test_configuration_md_documented(self):
-        text = (REPO / "docs" / "architecture" / "configuration.md").read_text(
+        text = (REPO / "docs" / "architecture" / "配置管理.md").read_text(
             encoding="utf-8"
         )
         assert _KEY in text

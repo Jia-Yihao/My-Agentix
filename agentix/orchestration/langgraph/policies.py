@@ -211,8 +211,10 @@ def node_error_handler(
     2. 返回 ``Command``：往 ``messages`` 追加一条如实的失败回执，并路由到
        ``exit_node``（默认 ``END``）——明确的失败出口，而不是整轮 500。
 
-    ``store`` 注入只给测试（sqlite 内存）；生产缺省惰性解析共享 engine，
-    构造 handler 不连库、不建表。
+    ``store`` 注入只给测试（sqlite 内存）；生产由调用方按 T18 单一判据
+    （``hitl_bridge.resolve_pending_store``）解析后传进来——handler 自己
+    **不读** ``HITL_PENDING_PERSIST_ENABLED``、也不惰性兜底建表。``store``
+    为 ``None``（flag 关或装配失败）时跳过写记录，失败收尾照常。
 
     **为什么不在这里重跑节点**：``execute_task`` / ``code_agent`` 整节点重跑
     会重放工具副作用（LG-1-1 铁律）。补偿 = 记录 + 收尾，不是「再试一次」。
@@ -227,22 +229,29 @@ def node_error_handler(
         configurable = config.get("configurable") if isinstance(config, dict) else None
         thread_id = str((configurable or {}).get("thread_id") or "")
         recorded = True
+        store_missing = False
         try:
             target_store = resolved_store
             if target_store is None:
-                from agentix.infrastructure.persistence.hitl_pending_store import (
-                    build_default_hitl_pending_store,
+                # 不在这里兜底建表：要不要读写 hitl_pending_approvals 只由
+                # hitl_bridge._resolve_pending_store 一个判据决定（纪律 6 ④）。
+                store_missing = True
+                logger.warning(
+                    "node_error_handler: compensation store 未装配"
+                    "（HITL_PENDING_PERSIST_ENABLED 关或装配失败），"
+                    "本次不写补偿记录，失败收尾照常 (node={}, thread={})",
+                    node,
+                    thread_id or "-",
                 )
-
-                target_store = build_default_hitl_pending_store()
-            # 同步 SQLAlchemy I/O 不下放线程就会卡住事件循环（AGENTS.md 代码风格）。
-            await asyncio.to_thread(
-                _write_compensation_record,
-                target_store,
-                thread_id=thread_id,
-                node=node,
-                exc=exc,
-            )
+            else:
+                # 同步 SQLAlchemy I/O 不下放线程就会卡住事件循环（AGENTS.md 代码风格）。
+                await asyncio.to_thread(
+                    _write_compensation_record,
+                    target_store,
+                    thread_id=thread_id,
+                    node=node,
+                    exc=exc,
+                )
         except Exception as store_exc:  # noqa: BLE001 - 纪律 2：补偿记录写失败只降级为告警，失败收尾照常
             recorded = False
             logger.warning(
@@ -253,11 +262,12 @@ def node_error_handler(
                 type(store_exc).__name__,
                 store_exc,
             )
-        record_note = (
-            "已记录补偿项，可稍后重试；若持续失败请联系管理员查看 nodeerr 记录。"
-            if recorded
-            else "补偿记录写入失败（已告警），请把本轮时间与节点一并告知管理员。"
-        )
+        if store_missing:
+            record_note = "补偿记录未写（补偿存储未装配），请把本轮时间与节点一并告知管理员。"
+        elif recorded:
+            record_note = "已记录补偿项，可稍后重试；若持续失败请联系管理员查看 nodeerr 记录。"
+        else:
+            record_note = "补偿记录写入失败（已告警），请把本轮时间与节点一并告知管理员。"
         return Command(
             update={
                 "messages": [

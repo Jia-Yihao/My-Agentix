@@ -10,7 +10,8 @@ Run/Event 源（守卫 #5：SSE event 必须来自统一 Run/Event stream）：
 Phase H · W0（PhaseH_高性能运行时优化规划 §4 W0）新增**性能真值戳记**：
 
 - 首个内容帧（answer_chunk / content / message）→ 记录 TTFT 并打
-  ``agent_ttft_seconds`` 直方图（每流一次）；
+  ``agent_ttft_seconds`` 直方图（每流一次）；T6 起按回退链导出的事实拆分归因——
+  走过 Model Gateway 兜底的流记 ``agent_ttft_fallback_seconds``，主口径只记主路径；
 - 终帧（finished / done / error，或检索域的 ``answer_chunk``+``finished=true``
   收尾 chunk）→ 增量注入 ``duration_ms``（流总时长）与已测得的
   ``ttft_ms``——**纯增量字段**，不改变既有词汇（p65 守卫）；
@@ -31,8 +32,11 @@ Phase H · W0（PhaseH_高性能运行时优化规划 §4 W0）新增**性能真
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Dict, FrozenSet, Optional
+
+logger = logging.getLogger(__name__)
 
 # 首内容帧类型：检索域为 answer_chunk；编排域消息帧为 message。
 _CONTENT_TYPES: FrozenSet[str] = frozenset({"answer_chunk", "content", "message"})
@@ -49,6 +53,15 @@ class RunEventEmitter:
         self._t0 = time.perf_counter()
         self._ttft_s: Optional[float] = None
         self._retrieval_ms: Optional[float] = None
+        # T6：流开始即开本流的「兜底链事实」槽——判定由回退链自身写入
+        # （model_gateway → record_gateway_fallback），发射器只读不判（纪律 6 ④）。
+        # 开槽失败 ⇒ 降级为「无事实」（归因回落主口径），留痕不打挂帧流（纪律 2）。
+        try:
+            from agentix.observability.metrics import begin_gateway_fallback_fact
+
+            begin_gateway_fallback_fact()
+        except Exception as exc:  # noqa: BLE001 - 观测开槽失败留痕忽略，不影响主链
+            logger.warning("ttft fallback attribution channel skipped: %s", exc)
 
     @property
     def seq(self) -> int:
@@ -80,11 +93,21 @@ class RunEventEmitter:
             if ftype in _CONTENT_TYPES and self._ttft_s is None:
                 self._ttft_s = time.perf_counter() - self._t0
                 try:
-                    from agentix.observability.metrics import record_ttft
+                    from agentix.observability.metrics import (
+                        gateway_fallback_observed,
+                        record_ttft,
+                        record_ttft_fallback,
+                    )
 
-                    record_ttft(self._ttft_s)
-                except Exception:  # noqa: BLE001 - 指标失败不影响帧流
-                    pass
+                    # T6：混采拆分——回退链已导出兜底事实的流，样本进
+                    # agent_ttft_fallback_seconds；主直方图只记主口径。
+                    # 「是否兜底」读的是链自身写入的事实，这里不再判定（纪律 6 ④）。
+                    if gateway_fallback_observed():
+                        record_ttft_fallback(self._ttft_s)
+                    else:
+                        record_ttft(self._ttft_s)
+                except Exception as exc:  # noqa: BLE001 - 指标失败不影响帧流（降级可观察）
+                    logger.warning("ttft record skipped: %s", exc)
             elif ftype == "progress" and self._retrieval_ms is None:
                 self._stash_retrieval_ms(frame)
             # 终帧：显式 finished/done/error 词汇，或检索域的

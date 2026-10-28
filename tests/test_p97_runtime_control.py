@@ -445,7 +445,11 @@ class TestAdaptiveToolTimeout:
         assert scope.remaining_ms() is None  # 未设 deadline → None（回原行为）
         scope.set_deadline_seconds(0.05)
         remaining = scope.remaining_ms()
-        assert remaining is not None and 0 < remaining <= 50
+        # 上界留浮点容差：deadline_at = time.monotonic() + 0.05 的加法丢精度，且 Windows
+        # 时钟粒度可能让 set() 与 remaining_ms() 读到同一个 monotonic 值，使差值比 50ms
+        # 大 ~1e-8ms 量级（本机实测 50.00000004656613）。容差 1e-3ms 比该噪音大三个数量级、
+        # 又远小于预算本身的可用分辨率，不改变"正值且未超预算"这条原意。
+        assert remaining is not None and 0 < remaining <= 50 + 1e-3
         scope.set_deadline_seconds(0)  # 0/负 = 不设
         scope.deadline_at = None
         assert scope.remaining_ms() is None
@@ -835,7 +839,7 @@ class TestTaskQueueShed:
 
 
 # ===========================================================================
-# 7. 五处同步守卫（p41 主检 configuration.md/p41 清单，这里补 selfcheck/.env）
+# 7. 五处同步守卫（p41 主检 配置管理.md/p41 清单，这里补 selfcheck/.env）
 # ===========================================================================
 
 

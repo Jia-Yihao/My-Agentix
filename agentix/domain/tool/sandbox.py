@@ -10,7 +10,9 @@
 - ``in_process`` —— 现状：在调用它的那个事件循环里 await。什么都不隔离。
 - ``thread`` —— 换一条线程跑。买到「别占住事件循环」（§24.2 G1），买不到隔离：
   同进程、同 GIL、同一套环境变量与文件权限。
-- ``subprocess`` —— 独立进程 + ``rlimit`` + 独立 uid + 精简环境。**T2 ⑮，未实现。**
+- ``subprocess`` —— 独立进程 + ``rlimit`` + 独立 uid + 精简环境。**T2 ⑮ 已实现**，但默认关
+  （``TOOL_SANDBOX_SUBPROCESS_ENABLED=true`` 才进"已实现"集合；且仅 POSIX、资源闸回读不过
+  仍在执行点拒绝）。
 - ``container`` —— 容器/microVM 级 + 网络默认拒绝 + 每次调用全新文件系统。**T3 ⑰，未实现。**
 
 零第三方依赖，且**不 import** ``agentix`` 的其它层（ADR-0001 的依赖方向：端口在上层）。

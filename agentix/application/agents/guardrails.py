@@ -53,7 +53,7 @@ async def get_additional_info(state: AgentState, *, config: RunnableConfig) -> D
         neo4j_graph = get_neo4j_graph()
         logger.info("success to get Neo4j graph database connection")
     except Exception as e:
-        logger.error("failed to get Neo4j graph database connection: %s", e)
+        logger.error("failed to get Neo4j graph database connection: {}", e)
         neo4j_graph = None
 
     scope_context = f"{GUARDRAILS_SCOPE_PREFIX}{SCOPE_DESCRIPTION}"

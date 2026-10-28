@@ -164,7 +164,7 @@ def _retrieval_cache_key(
     kb_id: str,
     artifact_id: str,
     search_k: int,
-    question_norm: str,
+    question_norm: str | None,
     scope_token: str,
     tenant_id: str = "default",
 ) -> str:
@@ -173,8 +173,17 @@ def _retrieval_cache_key(
     版本标记放在基础段**尾部**（调用方的 ``|h1``/``|r1``/``|y1`` 追加在
     其后仍居末位，既有 endswith 断言不受影响）；旧键（无 ``|k2``）自然
     冷却，属计划内一次性失效。
+
+    E7：``question_norm=None`` ⇒ 产出**不含问法**的作用域段（摘要位写成字面量 ``sem``）。
+    语义缓存的隔离范围必须由这个函数与精确键**共同**决定——自己拼一份"租户+kb+权限"
+    字符串就是给权限隔离造第二个源（纪律 6 ④），而第二源出错的方式是跨权限命中。
+    字面量 ``sem`` 与真实摘要（24 位十六进制）不可能相撞 ⇒ 精确键与语义作用域互不污染。
     """
-    digest = hashlib.sha256(question_norm.encode("utf-8")).hexdigest()[:24]
+    digest = (
+        "sem"
+        if question_norm is None
+        else hashlib.sha256(question_norm.encode("utf-8")).hexdigest()[:24]
+    )
     prefix = (getattr(settings, "CACHE_REDIS_PREFIX", "agentix_retrieval:retrieve:") or "agentix_retrieval:retrieve:").strip()
     return (
         f"{prefix}{tenant_id}:{kb_id}:{artifact_id}:{search_k}:"
@@ -536,12 +545,14 @@ async def retrieve_scoped_docs_cached(
             resolved_tenant = _resolve_cache_tenant(session, kb_id)
         return resolved_tenant
 
-    def _compose_key() -> str:
+    def _compose_key(*, scope_only: bool = False) -> str:
         key = _retrieval_cache_key(
             kb_id=kb_id,
             artifact_id=artifact_id,
             search_k=search_k,
-            question_norm=question_norm,
+            # E7：语义层的作用域段就是"去掉问法摘要的同一个键"。走同一个函数是为了
+            # 不出现第二个权限/租户隔离源——第二源错了的形态是跨权限命中，不是报错。
+            question_norm=None if scope_only else question_norm,
             scope_token=scope_token,
             tenant_id=_tenant_for_key(),
         )
@@ -565,6 +576,28 @@ async def retrieve_scoped_docs_cached(
         except Exception as e:
             logger.info(f"retrieval cache get failed: {e}")
             docs = None
+
+    # E7 · 召回级语义结果缓存（SEMANTIC_CACHE_ENABLED，默认关 ⇒ 这一段一行都不执行）。
+    # 位置刻意在精确键**之后**：精确键命中连 embedding 都不用算，语义层只该处理
+    # "换了问法问同一件事"那部分流量；反过来（语义在前）等于给每次命中都白付一次
+    # embedding 调用——把省钱件改造成花钱件。
+    semantic_peek = None
+    if docs is None and settings.SEMANTIC_CACHE_ENABLED:
+        from agentix.retrieval.infra.rag.semantic_cache import semantic_recall_peek
+
+        semantic_peek = await asyncio.to_thread(
+            semantic_recall_peek, _compose_key(scope_only=True), effective_norm
+        )
+        if semantic_peek is not None and semantic_peek.match is not None:
+            try:
+                docs = _deserialize_docs_from_cache(semantic_peek.match.payload.encode("utf-8"))
+            except Exception as exc:  # noqa: BLE001 - 坏载荷按未命中处理，照常检索（纪律 2）
+                logger.warning(f"semantic recall payload rejected; falling back to search: {exc}")
+                docs = None
+            if not docs:
+                # 空载荷不是一次命中：让它走 miss 分支并把**新结果**回写覆盖旧条目，
+                # 否则"检索为空"这个状态会一直粘在缓存里，IndexWorker 灌完库也读不到新东西。
+                docs = None
     if docs is None:
         # W2：miss 主体收敛为两个闭包——baseline 直跑其一（与旧行为逐位
         # 等价）；adaptive 拆成级联级别；SingleFlight 再包一层在飞合并。
@@ -683,6 +716,16 @@ async def retrieve_scoped_docs_cached(
                 )
             except Exception as e:
                 logger.info(f"retrieval cache set failed: {e}")
+        # E7 回写：把这次真检索的结果按**本次 peek 带出来的那个向量**存进语义层。
+        # 不重新嵌入一次是有原因的：重新嵌入等于"用来判命中的向量"与"存进去的向量"
+        # 分两次取，中间若换了端点/模型，条目就会与自己的判定口径对不上号（纪律 6 ④）。
+        # peek 为 None（flag 关 / 拿不到向量 / 空输入）⇒ 这里天然什么都不做。
+        if semantic_peek is not None and docs:
+            from agentix.retrieval.infra.rag.semantic_cache import semantic_remember
+
+            await asyncio.to_thread(
+                semantic_remember, semantic_peek, _serialize_docs_for_cache(docs)
+            )
 
     result = docs or []
     # R-P0-5 打点不吞错：埋点失败绝不打挂已成功的检索主链路——
@@ -1216,7 +1259,13 @@ def _ensure_kb_ready_or_reject(
     artifact_id = getattr(artifact, "id", "") or str(getattr(artifact, "version", ""))
 
     try:
-        _, vectorstore = build_retriever(artifact.index_path)
+        # R-P3：默认关 ⇒ 等价于 build_retriever；开启则复用进程内已构造实例
+        # （省掉每次预检检索的客户端重建 + FAISS 反序列化，README §15.2 口径③）。
+        from agentix.retrieval.infra.vectorstore.retriever_cache import (
+            get_or_build_retriever,
+        )
+
+        _, vectorstore = get_or_build_retriever(artifact.index_path)
     except FileNotFoundError:
         return _finished_answer_chunk(
             session,

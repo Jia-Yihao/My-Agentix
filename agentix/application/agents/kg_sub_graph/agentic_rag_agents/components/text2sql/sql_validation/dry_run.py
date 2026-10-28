@@ -44,9 +44,9 @@ def dry_run_explain(sql: str) -> tuple[bool, str]:
 
     基础设施故障 fail-open ⇒ ``(True, "")``；SQL 自身错误 ⇒ ``(False, 摘要)``。
     """
-    from agentix.config import settings
+    from ..target_db import text2sql_database_url
 
-    conn_str = getattr(settings, "DATABASE_URL", "") or ""
+    conn_str = text2sql_database_url()
     if not conn_str or not (sql or "").strip():
         return True, ""
     try:

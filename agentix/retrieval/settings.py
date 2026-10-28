@@ -192,6 +192,22 @@ class _RetrievalSettingsCompat:
     EMBEDDING_CACHE_ENABLED = _bool_env("EMBEDDING_CACHE_ENABLED", "true")
     EMBEDDING_CACHE_PATH = os.getenv("EMBEDDING_CACHE_PATH", "").strip()
     EMBEDDING_CACHE_MAX_ENTRIES = int(os.getenv("EMBEDDING_CACHE_MAX_ENTRIES", "200000"))
+    # E4 · 启动预热（docs/design/性能与优化路线图.md §2 E4）。三个键默认关/空：
+    # 开着它就是在每次启动打一批端点调用，属于行为变更，不作出厂形态（纪律 1）。
+    EMBEDDING_CACHE_PREWARM_ENABLED = _bool_env("EMBEDDING_CACHE_PREWARM_ENABLED", "false")
+    # 清单分隔符：`;`／`；`／换行（**不含半角逗号**——英文问句里的逗号会造出假问法）。
+    # 默认空串 ⇒ 即便 flag 开着也只是响亮跳过（reason=empty_list），不打端点。
+    EMBEDDING_CACHE_PREWARM_QUERIES = os.getenv("EMBEDDING_CACHE_PREWARM_QUERIES", "")
+    EMBEDDING_CACHE_PREWARM_MAX = int(os.getenv("EMBEDDING_CACHE_PREWARM_MAX", "32"))
+    # E7 · 召回级语义结果缓存（docs/design/性能与优化路线图.md §2 E7）。默认关：
+    # 命中的代价是"复用另一问法的检索结果"，属行为变更 ⇒ 新开关默认关（纪律 1）。
+    SEMANTIC_CACHE_ENABLED = _bool_env("SEMANTIC_CACHE_ENABLED", "false")
+    # τ：余弦相似度下限。0.95 是路线图风险段给的保守值；τ 调到 0.5 就等于把"无关问法"
+    # 也算命中——那是串答，不是缓存。
+    SEMANTIC_CACHE_TAU = float(os.getenv("SEMANTIC_CACHE_TAU", "0.95"))
+    # TTL：比精确键的 RETRIEVAL_CACHE_TTL_SECONDS（600）短一个量级——语义键复用的是
+    # 另一句话的结果，陈旧窗口必须更短（时效性由这个窗口兜底，没有主动失效钩子）。
+    SEMANTIC_CACHE_TTL_SECONDS = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", "120"))
     RERANKER_ENABLED = _bool_env("RERANKER_ENABLED", "false")
     RERANKER_MODEL = os.getenv("RERANKER_MODEL", "text-embedding-bge-reranker-v2-m3")
 
@@ -216,6 +232,12 @@ class _RetrievalSettingsCompat:
     # R-P1-3：hybrid 链默认精排（只在总闸开时生效）；候选上限 → 截断 TopK
     RETRIEVAL_HYBRID_RERANK = _bool_env("RETRIEVAL_HYBRID_RERANK", "true")
     RETRIEVAL_RERANK_CANDIDATES = int(os.getenv("RETRIEVAL_RERANK_CANDIDATES", "20"))
+    # T9（approval-recovery-optimization §T9）：rerank 候选分批，降低单请求上游负载。
+    # <=0 = 关（默认）⇒ 单次全候选调用，与基线逐位等价（纪律 1）；>0 = 每批候选数，
+    # 分批调用并按全局 relevance_score 降序融合（同分按原始下标升序，见 rerank.py）。
+    # 键沿检索域惯例只同步字段本体 + .env.example 注释块（Q5 保守边，其余三处缺口
+    # 已登记台账待追认），不入 配置管理.md / p41 名单 / selfcheck。
+    RETRIEVAL_RERANK_BATCH_SIZE = int(os.getenv("RETRIEVAL_RERANK_BATCH_SIZE", "0"))
 
     # R-P2-1（F2b-b）查询改写/HyDE：双可选独立 flag、默认关 = 基线逐位等价；
     # 改写/扩展失败一律回退原 query（fail-open），键沿 GROUNDING_* 检索域三处同步。
@@ -224,12 +246,22 @@ class _RetrievalSettingsCompat:
 
     # Phase H·W2（PhaseH_高性能运行时优化规划 §4）：检索优化三闸 + 精排动态
     # 跳过，全部默认关 ⇒ flag-off 与基线逐位等价（检索域 env 键沿既有惯例
-    # 只进 .env.example 注释示例块，不入 configuration.md/p41 名单）。
+    # 只进 .env.example 注释示例块，不入 配置管理.md/p41 名单）。
     RETRIEVAL_SINGLEFLIGHT_ENABLED = _bool_env("RETRIEVAL_SINGLEFLIGHT_ENABLED", "false")
     RETRIEVAL_ADAPTIVE_ENABLED = _bool_env("RETRIEVAL_ADAPTIVE_ENABLED", "false")
     # 级联分数闸：0 = 关（空命中才升级）；>0 = 归一化分数低于该值升级下一级
     RETRIEVAL_CASCADE_MIN_SCORE = float(os.getenv("RETRIEVAL_CASCADE_MIN_SCORE", "0"))
     RERANK_DYNAMIC_SKIP_ENABLED = _bool_env("RERANK_DYNAMIC_SKIP_ENABLED", "false")
+
+    # R-P3（README §15.2 口径③ 实测）：进程内检索器缓存——消灭「每次检索都
+    # 重建 embedding 客户端 + 反序列化 FAISS 索引」。默认关 ⇒ 与接线前逐位等价
+    # （每次照旧直调 build_retriever）；开启后按
+    # backend|index_path|index.faiss(mtime_ns,size)|embedding model+base_url|k 组键，
+    # 索引换代即自动失效。键名沿检索域惯例只进 .env.example 注释示例块。
+    RETRIEVAL_RETRIEVER_CACHE_ENABLED = _bool_env("RETRIEVAL_RETRIEVER_CACHE_ENABLED", "false")
+    RETRIEVAL_RETRIEVER_CACHE_MAX_ENTRIES = int(
+        os.getenv("RETRIEVAL_RETRIEVER_CACHE_MAX_ENTRIES", "8")
+    )
 
     AGENT_RECURSION_LIMIT = int(os.getenv("AGENT_RECURSION_LIMIT", "25"))
     AGENT_MAX_INPUT_TOKENS = int(os.getenv("AGENT_MAX_INPUT_TOKENS", "0"))
@@ -331,5 +363,17 @@ def validate_app_settings() -> tuple[list[str], list[str]]:
         warnings.append("INDEX_JOB_VISIBILITY_TIMEOUT_SECONDS 未大于 INDEX_JOB_TIMEOUT_SECONDS")
     if settings.EMBEDDING_CACHE_ENABLED and settings.EMBEDDING_CACHE_MAX_ENTRIES <= 0:
         errors.append("EMBEDDING_CACHE_MAX_ENTRIES 必须为正整数")
+    # E4：上限 <=0 与"关掉预热"不是一回事——前者是配置错误（flag 开着却永远刷 0 条），
+    # 后者由 EMBEDDING_CACHE_PREWARM_ENABLED 表达。这里刻意**不**以 flag 为前提：
+    # 让非法值在配置期就红，而不是等开了 flag 那天变成一条安静的空跑。
+    if settings.EMBEDDING_CACHE_PREWARM_MAX <= 0:
+        errors.append("EMBEDDING_CACHE_PREWARM_MAX 必须为正整数（关掉预热请用 _ENABLED=false）")
+    # E7：τ 与 TTL 同样**不以 flag 为前提**（与 E4 的 _MAX 同口径）。理由分两种失败形态：
+    # τ<=0 是"任何问法都算命中"（串答事故），τ>1 是"永远不命中"（开了等于没开、且没人知道）；
+    # TTL<=0 让写入被拒、读侧恒判过期——三者都是配错，不是"关"的表达方式。
+    if not 0.0 < settings.SEMANTIC_CACHE_TAU <= 1.0:
+        errors.append(f"SEMANTIC_CACHE_TAU 必须落在 (0, 1]（当前 {settings.SEMANTIC_CACHE_TAU}）")
+    if settings.SEMANTIC_CACHE_TTL_SECONDS <= 0:
+        errors.append("SEMANTIC_CACHE_TTL_SECONDS 必须为正整数（关掉缓存请用 SEMANTIC_CACHE_ENABLED=false）")
 
     return errors, warnings

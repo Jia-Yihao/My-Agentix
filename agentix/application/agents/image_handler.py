@@ -35,14 +35,14 @@ async def _generate_image(user_query: str, state: AgentState) -> Dict[str, List[
         enhance_prompt = IMAGE_GENERATION_ENHANCE_PROMPT.format(user_query=user_query)
         enhance_messages = [{"role": "user", "content": enhance_prompt}]
 
-        logger.info("Enhancing user prompt: %s", user_query)
+        logger.info("Enhancing user prompt: {}", user_query)
         # P1-4（重要）：此处**故意不转发 config**——本调用点由白名单节点
         # create_image_query 触发，但产出的是「内部提示词增强」，并非面向用户的
         # 回答；转发 config 会让增强后的提示词逐 token 冒泡到前端。真正面向用户的
         # 回答调用在 vision 分支（llm.ainvoke(..., config=config)）。
         enhanced_response = await model.ainvoke(enhance_messages)
         enhanced_prompt = enhanced_response.content.strip()
-        logger.info("Enhanced prompt: %s", enhanced_prompt)
+        logger.info("Enhanced prompt: {}", enhanced_prompt)
 
         api_key = settings.IMAGE_GENERATION_API_KEY
         base_url = settings.IMAGE_GENERATION_BASE_URL
@@ -60,26 +60,26 @@ async def _generate_image(user_query: str, state: AgentState) -> Dict[str, List[
         }
         payload = {"model": model_name, "prompt": enhanced_prompt, "size": size}
 
-        logger.info("Calling CogView-4 API: %s", api_url)
+        logger.info("Calling CogView-4 API: {}", api_url)
 
         async with aiohttp.ClientSession() as session:
             async with session.post(api_url, json=payload, headers=headers, timeout=60) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
-                    logger.error("CogView-4 API error: %s - %s", resp.status, error_text)
+                    logger.error("CogView-4 API error: {} - {}", resp.status, error_text)
                     return {"messages": [AIMessage(content="抱歉，图片生成失败，请稍后再试。")]}
                 result = await resp.json()
 
         if "data" not in result or len(result["data"]) == 0:
-            logger.error("CogView-4 API returned no image data: %s", result)
+            logger.error("CogView-4 API returned no image data: {}", result)
             return {"messages": [AIMessage(content="抱歉，图片生成失败，请稍后再试。")]}
 
         image_url = result["data"][0].get("url", "")
         if not image_url:
-            logger.error("CogView-4 API returned no image URL: %s", result)
+            logger.error("CogView-4 API returned no image URL: {}", result)
             return {"messages": [AIMessage(content="抱歉，图片生成失败，请稍后再试。")]}
 
-        logger.info("Image generated successfully: %s", image_url)
+        logger.info("Image generated successfully: {}", image_url)
 
         subject = "测试数据主题"
         for keyword in ["民法典", "刑法", "劳动合同法", "道路交通安全法", "行政处罚法"]:
@@ -96,7 +96,7 @@ async def _generate_image(user_query: str, state: AgentState) -> Dict[str, List[
         logger.error("CogView-4 API timeout")
         return {"messages": [AIMessage(content="抱歉，图片生成超时，请稍后再试。")]}
     except Exception as e:
-        logger.error("Error generating image: %s", e, exc_info=True)
+        logger.error("Error generating image: {}", e, exc_info=True)
         return {"messages": [AIMessage(content="抱歉，图片生成过程中出现错误。")]}
 
 
@@ -110,7 +110,7 @@ async def create_image_query(state: AgentState, *, config: RunnableConfig) -> Di
     is_generation = any(keyword in user_query for keyword in generation_keywords)
 
     if is_generation and not image_path:
-        logger.info("Image Generation Request: %s", user_query)
+        logger.info("Image Generation Request: {}", user_query)
         return await _generate_image(user_query, state)
 
     if not image_path:
@@ -124,13 +124,13 @@ async def create_image_query(state: AgentState, *, config: RunnableConfig) -> Di
     safe_image = resolve_within_root(settings.UPLOAD_DIR, image_path)
     if safe_image is None:
         logger.warning(
-            "Rejected out-of-root image_path (must be under UPLOAD_DIR=%s): %r",
+            "Rejected out-of-root image_path (must be under UPLOAD_DIR={}): {!r}",
             settings.UPLOAD_DIR, image_path,
         )
         return {"messages": [AIMessage(content=IMAGE_NOT_FOUND_MESSAGE)]}
 
     if not safe_image.exists():
-        logger.warning("User Upload Image Not Found: %s", image_path)
+        logger.warning("User Upload Image Not Found: {}", image_path)
         return {"messages": [AIMessage(content=IMAGE_NOT_FOUND_MESSAGE)]}
 
     api_key = settings.VISION_API_KEY
@@ -150,7 +150,7 @@ async def create_image_query(state: AgentState, *, config: RunnableConfig) -> Di
         logger.error("Vision Model Configuration Not Complete")
         return {"messages": [AIMessage(content=IMAGE_NOT_FOUND_MESSAGE)]}
 
-    logger.info("Using Vision Model: %s to process image: %s", vision_model, safe_image)
+    logger.info("Using Vision Model: {} to process image: {}", vision_model, safe_image)
 
     try:
         with Image.open(safe_image) as img:
@@ -173,7 +173,7 @@ async def create_image_query(state: AgentState, *, config: RunnableConfig) -> Di
 
             image_data = base64.b64encode(img_byte_arr.read()).decode("utf-8")
 
-            logger.info("Image Compressed, Original Size: %dx%d, New Size: %dx%d",
+            logger.info("Image Compressed, Original Size: {}x{}, New Size: {}x{}",
                         width, height, resized_img.width, resized_img.height)
 
         headers = {
@@ -224,9 +224,9 @@ async def create_image_query(state: AgentState, *, config: RunnableConfig) -> Di
                     return {"messages": [response]}
                 else:
                     error_text = await response.text()
-                    logger.error("Vision API Request Failed: %s - %s", response.status, error_text)
+                    logger.error("Vision API Request Failed: {} - {}", response.status, error_text)
                     return {"messages": [AIMessage(content=IMAGE_NOT_FOUND_MESSAGE)]}
 
     except Exception as e:
-        logger.error("Error processing image: %s", str(e))
+        logger.error("Error processing image: {}", str(e))
         return {"messages": [AIMessage(content=IMAGE_NOT_FOUND_MESSAGE)]}

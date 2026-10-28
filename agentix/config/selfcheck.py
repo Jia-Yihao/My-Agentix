@@ -81,6 +81,9 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "CHECKPOINTER_TYPE",
         # Phase K 任务 1：fail-closed 开关不设 = 默认 false（维持降级基线），属合法省略
         "CHECKPOINTER_FAIL_CLOSED",
+        # T22：升级重试节奏不设 = 默认 0（关闭重试循环）= 基线等价，属合法省略
+        "CHECKPOINTER_RETRY_INTERVAL_S",
+        "CHECKPOINTER_RETRY_MAX_ATTEMPTS",
         # LG-2-6：图执行 durability 不设 = 框架默认 async（与升级前逐位等价）
         "GRAPH_DURABILITY",
         # Phase 20：EventPort 后端不设 = 默认 memory（进程内），属合法省略
@@ -176,6 +179,10 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "HITL_IN_LOOP_ENABLED",
         # T18（审批恢复规划）：HITL pending 落库默认关（纯内存基线），属合法省略
         "HITL_PENDING_PERSIST_ENABLED",
+        # T19（审批恢复规划）：审批等待时限默认 0（无独立 deadline），属合法省略
+        "HITL_APPROVAL_DEADLINE_S",
+        # T21（审批恢复规划）：控制平面运行态落库默认关（纯内存基线），属合法省略
+        "RUN_STATE_PERSIST_ENABLED",
         # F2a（统一执行链 Stage F2）：PreCompact 重注 / 画像作用域默认关
         "CONTEXT_PRECOMPACT_REINJECT_ENABLED",
         "MEMORY_PROFILE_SCOPE_ENABLED",
@@ -245,6 +252,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         # Phase H·W1（PhaseH_高性能运行时优化规划 §4）：LLM 优化七键默认关/空/
         # 默认值，属合法省略
         "ROUTING_FASTPATH_ENABLED",
+        # T8：路由结果跨请求缓存（进程内 LRU+TTL，默认关，属合法省略）
+        "ROUTING_CACHE_ENABLED",
         "LLM_TIER_ROUTING_ENABLED",
         "LLM_ROLE_TIER_MAP",
         "VERIFICATION_MAX_LLM_CALLS",
@@ -335,6 +344,9 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         # P5（Proactive）：cron 调度两开关默认关/60s，属合法省略
         "CRON_ENABLED",
         "CRON_TICK_SECONDS",
+        # T26（队列 PEL 认领 + 优雅停机）：队列 worker 默认关，不设 = 不建任务、不建连，
+        # 属合法省略
+        "TASK_QUEUE_WORKER_ENABLED",
         # Phase 21：Skills/Hooks 默认关，不设 = 合法省略（skills 目录用默认 "skills"）
         "SKILLS_ENABLED",
         "SKILLS_DIR",
