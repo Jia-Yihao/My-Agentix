@@ -2,7 +2,7 @@
 
 感谢你愿意为 **My Agentix** 做出贡献！本文档说明本项目的开发流程、代码规范与提交约定，帮助你快速融入协作。
 
-> 阅读顺序建议：本文件 → [`docs/architecture/README.md`](docs/architecture/README.md)（架构总览）→ [`docs/architecture/extension.md`](docs/architecture/extension.md)（扩展机制）→ [`docs/VERSIONING.md`](docs/VERSIONING.md)（版本策略）。
+> 阅读顺序建议：本文件 → [`docs/architecture/README.md`](docs/architecture/README.md)（架构总览）→ [`docs/architecture/扩展机制.md`](docs/architecture/扩展机制.md)（扩展机制）→ [`docs/版本管理策略.md`](docs/版本管理策略.md)（版本策略）。
 
 ---
 
@@ -35,7 +35,7 @@
 |------|------|------|
 | 🐛 Bug 修复 | 修复缺陷，需附复现步骤与回归测试 | [Bug 报告模板](.github/ISSUE_TEMPLATE/bug_report.yml) |
 | ✨ 新功能 | 新增工具 / Agent / Provider / 领域适配 | [功能请求模板](.github/ISSUE_TEMPLATE/feature_request.yml) |
-| 🧩 新领域适配 | 把系统迁移到新垂直领域（中医药典、政务服务等） | [`docs/architecture/extension.md`](docs/architecture/extension.md) |
+| 🧩 新领域适配 | 把系统迁移到新垂直领域（中医药典、政务服务等） | [`docs/architecture/扩展机制.md`](docs/architecture/扩展机制.md) |
 | 📖 文档 | 修正、补充、翻译文档 | 直接提 PR |
 | ⚡ 性能 | 延迟、吞吐、成本优化 | 需附前后对比数据 |
 | 🔒 安全 | 漏洞报告请走 [SECURITY.md](SECURITY.md)，**不要**开公开 Issue |
@@ -53,8 +53,8 @@
 ### 快速开始
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/Jia-Yihao/Legelbot.git
+# 1. 克隆仓库（当前未发布到公共远端，发布后替换 URL；目录名与下方 cd 保持一致）
+git clone <远端仓库 URL> My-Agentix
 cd My-Agentix
 
 # 2. 创建虚拟环境（Python 3.12）
@@ -104,7 +104,7 @@ agentix/
 └── interfaces/      # 接口层：HTTP 路由、请求/响应模型
 ```
 
-完整的目录职责与依赖规则见 [`docs/architecture/layers.md`](docs/architecture/layers.md)。
+完整的目录职责与依赖规则见 [`docs/architecture/分层架构与依赖规则.md`](docs/architecture/分层架构与依赖规则.md)。
 
 ---
 
@@ -226,7 +226,7 @@ pytest --cov=agentix --cov-report=term-missing
 - `feat/*` / `fix/*` / `docs/*`：功能分支，生命周期短
 - `release/x.y`：发布维护分支（仅在需要 backport 时创建）
 
-版本号遵循 [语义化版本 SemVer 2.0.0](https://semver.org/lang/zh-CN/)，详见 [`docs/VERSIONING.md`](docs/VERSIONING.md)。
+版本号遵循 [语义化版本 SemVer 2.0.0](https://semver.org/lang/zh-CN/)，详见 [`docs/版本管理策略.md`](docs/版本管理策略.md)。
 
 ---
 
@@ -234,18 +234,17 @@ pytest --cov=agentix --cov-report=term-missing
 
 | 我想… | 参考 |
 |-------|------|
-| 新增一个工具（Tool） | [`docs/architecture/extension.md#新增工具`](docs/architecture/extension.md) |
-| 新增一个 LLM / Embedding / Reranker Provider | [`docs/architecture/extension.md#新增-provider`](docs/architecture/extension.md) |
-| 新增一个 Agent 子图 / 节点 | [`docs/architecture/extension.md#新增-agent-子图`](docs/architecture/extension.md) |
-| 迁移到新垂直领域 | [`docs/architecture/extension.md#新领域适配`](docs/architecture/extension.md) |
-| 新增配置项 | [`docs/architecture/configuration.md`](docs/architecture/configuration.md) |
+| 新增一个工具（Tool） | [`docs/architecture/扩展机制.md#新增工具`](docs/architecture/扩展机制.md) |
+| 新增一个 LLM / Embedding / Reranker Provider | [`docs/architecture/扩展机制.md#新增-provider`](docs/architecture/扩展机制.md) |
+| 新增一个 Agent 子图 / 节点 | [`docs/architecture/扩展机制.md#新增-agent-子图`](docs/architecture/扩展机制.md) |
+| 迁移到新垂直领域 | [`docs/architecture/扩展机制.md#新领域适配`](docs/architecture/扩展机制.md) |
+| 新增配置项 | [`docs/architecture/配置管理.md`](docs/architecture/配置管理.md) |
 
 ---
 
 ## 获取帮助
 
-- 💬 提问：[GitHub Discussions](https://github.com/Jia-Yihao/Legelbot/discussions)
-- 🐛 缺陷：[Issue Tracker](https://github.com/Jia-Yihao/Legelbot/issues)
+- 💬 提问与缺陷：本仓库当前未发布到公共远端，暂无 Discussions / Issue 入口；发布后在此回填，日常沟通请先联系维护者
 - 🔒 安全：见 [SECURITY.md](SECURITY.md)
 
 再次感谢你的贡献！🎉

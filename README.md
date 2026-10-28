@@ -131,7 +131,7 @@ My Agentix 是一套**生产导向的 Agent 平台**——以 Agent 内核为核
 | 能力域 | 内容 |
 |--------|------|
 | **Agent Core 2.0** | 规划 / 执行 / 观测 / 验证 / 纠偏 / 记忆 / HITL / 事件 / 多智能体 / 演化 |
-| **Agent Runtime** | 运行状态 / 步骤轨迹 / 四维预算 / 生命周期 |
+| **Agent Runtime** | 运行状态 / 步骤轨迹 / 六维预算 / 生命周期 |
 | **Control Plane** | spawn · status · cancel，取消可真正打断 asyncio Task |
 | **ToolExecutor** | 权限 → 风险 → 超时 → 重试 → 轨迹，统一治理 |
 | **MCP** | Client + Server，可挂载任意 MCP 工具进程 |
@@ -150,7 +150,7 @@ My Agentix 是一套**生产导向的 Agent 平台**——以 Agent 内核为核
 
 与顶部三句话（可控、可取消、可回归）对齐，这里只留五条主线；其余能力归入对应章节，不在这里铺开。
 
-- **可控制的执行**：每个 Agent 运行有 `run_id`、步数 / LLM / 耗时预算与超时，可查询、可取消
+- **可控制的执行**：每个 Agent 运行有 `run_id`、六维预算（步数 / LLM / 工具 / token / 时延 / 成本）与超时，可查询、可取消
 - **可恢复的失败**：错误分类 → 退避重试 → 模型 / 工具 Fallback 链 → 降级拒答，绝不悬挂
 - **可评估的质量**：确定性打分口径（路由 / 引用 / 拒答 / 引用正确性 / must_contain / pass^k）+ 声称一致性 / 提示敏感性 / 隐私标记（Phase 31）+ 质量门禁四态（**评测集已于 2026-10-26 下线，门禁当前未武装**，见 §8）+ 轨迹前缀回归 + 延迟基准（性能冒烟跑在 `perf-baseline.yml`，见 §11）
 - **可观测的轨迹**：步骤级轨迹落盘可回放、前端执行轨迹时间线、Explanation API、SLO 与告警、OTel GenAI 语义属性（token 用量归模型）
@@ -230,7 +230,7 @@ flowchart LR
 | 组成 | 职责 | 落地 |
 |------|------|------|
 | **Agent Core 2.0** | 主循环 / 规划 / 纠偏 / 验证 / 记忆 / HITL / 事件 / 多智能体 / 演化 | `agentix/orchestration/` + `agentix/policies/` + `agentix/agent/` + `agentix/tools/` |
-| **Agent Runtime** | 运行状态 / 步骤轨迹 / 四维预算 / 生命周期 | `agentix/runtime/` |
+| **Agent Runtime** | 运行状态 / 步骤轨迹 / 六维预算 / 生命周期 | `agentix/runtime/` |
 | **Control Plane** | 运行登记（有界 FIFO）+ 取消（打断 asyncio Task） | `agentix/runtime/control_plane.py` |
 | **性能治理** | 分段延迟 / 预算 / 准入排队 / 过载降级 | `agentix/performance/` |
 | **MCP** | 任意 MCP 工具进程接入 + 零依赖 stdio Server | `agentix/capabilities/mcp/` |
@@ -246,7 +246,7 @@ API / SSE / Run API（仅协议转换）
 → 应用层唯一入口创建 Run（ControlPlane 准入 · 单 owner，取消真正打断 asyncio Task）
 → 唯一执行循环（L2 LangGraph 主图 或 L3 AgentLoop，AGENT_LOOP_ENABLED 灰度）
    Context → Plan → Execute → Observe → Verify（Replan 受 Runtime 预算约束）
-→ Runtime（agentix/runtime/：状态 / 步骤 / 四维预算 / 生命周期 / 统一退出契约）
+→ Runtime（agentix/runtime/：状态 / 步骤 / 六维预算 / 生命周期 / 统一退出契约）
 → Tool Gateway（agentix/tools/gateway/：权限 / 风险 / 超时 / 重试 / HITL / 审计）
 → Capabilities（tools/ · retrieval/ · kg 子图 · capabilities/mcp · memory-tools）
 → Infrastructure（infrastructure/：Milvus / Neo4j / Redis · LLM / 外部服务）
@@ -348,7 +348,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 | 组件 | 说明 |
 |------|------|
 | **AgentState / ExecutionStep** | 统一运行状态与步骤轨迹（PLAN / EXECUTING / VERIFYING…），自动计时与预算记账 |
-| **BudgetManager** | 步数 / LLM 调用 / 工具调用 / 耗时四维预算，超限抛 `BudgetExceededError` 由调用方决策 STOP 或降级 |
+| **BudgetManager** | 步数 / LLM 调用 / 工具调用 / token / 时延 / 成本六维预算，超限抛 `BudgetExceededError` 由调用方决策 STOP 或降级 |
 | **Control Plane** | 运行登记（有界 FIFO）+ 取消（真正打断 asyncio Task）+ 预算归属，终态幂等 |
 | **任务级 Run API** | `POST /api/v1/agents/runs` 派生 → `GET .../runs/{id}` 查状态 → `POST .../runs/{id}/cancel` 取消，超时统一 `wait_for` 施加（A1c 上移自 `/api/v1/retrieval/agents/runs`） |
 | **MCP Client** | spawn 任意 MCP server 子进程，远端工具注册进统一 ToolExecutor（**默认不信任**：未声明即 `L2` + `side_effect=True`，需用 `risk_level_by_tool` 显式降级；`mcp_` 前缀防撞名） |
@@ -666,7 +666,7 @@ docker compose --profile full up -d       # 基础设施 + backend + web（compo
 
 **测试真源**（唯一声明处，其他文档只应指向本节）：
 
-> **当前测试基线（2026-10-28，LG-3-6 优雅关闭后）**：`.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **5519 passed / 40 skipped / 4 deselected / 0 failed**（453.16s，Python 3.12.13，单机离线，未开并行）；`ruff check agentix tests scripts evals kb_ingest` 全绿；`mypy agentix/domain` 38 文件 0 错；`python scripts/gen_staging_matrix.py --check` 退出 0；`pip check` 无 broken requirement。口径链：文档分层收敛 **5242** → LG-0-2 依赖迁移 **5242**（零增删）→ LG-0-3 策略集中 **5260**（+18 新守卫 `test_p147`）→ LG-1-1 只读节点重试 **5272**（+12 新用例 `test_p148`）→ LG-1-2 业务分类 `retry_on` **5286**（+14 新用例 `test_p149`）→ LG-1-3 三层退避与原生默认同源 **5305**（+19 新用例 `test_p150`）→ LG-1-4 部署面预算桶 **5309**（+4 新守卫 `test_p151`）→ LG-2-1 恢复线程派生 **5320**（+11 新守卫 `test_p152`）→ LG-2-2 挂起续跑 409 **5325**（+5 新用例 `test_p153`）→ LG-2-3 轮数预算统一 **5335**（+10 新用例 `test_p154`）→ LG-2-4 定点重跑 **5344**（+9 新用例 `test_p155`）→ LG-2-5 历史回看 **5355**（+11 新用例 `test_p156`）→ LG-2-6 durability **5373**（+18 新用例 `test_p157`）→ LG-2-7 启动恢复限界 **5384**（+11 新用例 `test_p158`）→ LG-3-1 预算感知 **5400**（+16 新用例 `test_p159`）→ LG-3-2 节点超时 **5426**（+26 新用例 `test_p160`）→ LG-3-3 四个业务指标 **5448**（+22 新用例 `test_p161`）→ LG-3-4 恢复期幂等 **5474**（+26 新用例 `test_p162`）→ LG-3-5 节点级错误补偿 **5494**（+20 新用例 `test_p163`）→ LG-3-6 优雅关闭 **5519**（+25 新用例 `test_p164`），逐段读数与条件见 [docs/工程口径日志.md](docs/工程口径日志.md)。**文档分层收敛轮（5242）是本仓第一次全量 0 failed**：上一轮唯一的红是文档路径存在性守卫点名两条「规划中但从未存在」的引用，当轮把这两处改述成不带路径反引号的写法（它们本来就是「当前不存在」的事实陈述），没有删守卫、没有加豁免、没有调测试基线，理由见 [CHANGELOG](CHANGELOG.md) 的「文档分层收敛」小节。
+> **当前测试基线（2026-10-28，收口批 T21 运行态落库后）**：`.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **5657 passed / 40 skipped / 4 deselected / 0 failed**（452.92s，Python 3.12.13，单机离线，未开并行）；`ruff check agentix tests scripts evals kb_ingest` 全绿；`mypy agentix/domain` 38 文件 0 错；`python scripts/gen_staging_matrix.py --check` 退出 0；`pip check` 无 broken requirement。口径链：文档分层收敛 **5242** → LG-0-2 依赖迁移 **5242**（零增删）→ LG-0-3 策略集中 **5260**（+18 新守卫 `test_p147`）→ LG-1-1 只读节点重试 **5272**（+12 新用例 `test_p148`）→ LG-1-2 业务分类 `retry_on` **5286**（+14 新用例 `test_p149`）→ LG-1-3 三层退避与原生默认同源 **5305**（+19 新用例 `test_p150`）→ LG-1-4 部署面预算桶 **5309**（+4 新守卫 `test_p151`）→ LG-2-1 恢复线程派生 **5320**（+11 新守卫 `test_p152`）→ LG-2-2 挂起续跑 409 **5325**（+5 新用例 `test_p153`）→ LG-2-3 轮数预算统一 **5335**（+10 新用例 `test_p154`）→ LG-2-4 定点重跑 **5344**（+9 新用例 `test_p155`）→ LG-2-5 历史回看 **5355**（+11 新用例 `test_p156`）→ LG-2-6 durability **5373**（+18 新用例 `test_p157`）→ LG-2-7 启动恢复限界 **5384**（+11 新用例 `test_p158`）→ LG-3-1 预算感知 **5400**（+16 新用例 `test_p159`）→ LG-3-2 节点超时 **5426**（+26 新用例 `test_p160`）→ LG-3-3 四个业务指标 **5448**（+22 新用例 `test_p161`）→ LG-3-4 恢复期幂等 **5474**（+26 新用例 `test_p162`）→ LG-3-5 节点级错误补偿 **5494**（+20 新用例 `test_p163`）→ LG-3-6 优雅关闭 **5519**（+25 新用例 `test_p164`）→ approval-recovery T19 审批等待时限 **5580**（+61 新用例 `test_p165_hitl_approval_deadline.py`）→ 收口批（T11 控制面取消 / T12 检索基准探针 / T15 队列告警 / T16 业务端点 p95 / T21 运行态落库 + T3 补测）**5657**（本轮全量实测，新增用例见各自 CHANGELOG 小节），逐段读数与条件见 [docs/工程口径日志.md](docs/工程口径日志.md)。**文档分层收敛轮（5242）是本仓第一次全量 0 failed**：上一轮唯一的红是文档路径存在性守卫点名两条「规划中但从未存在」的引用，当轮把这两处改述成不带路径反引号的写法（它们本来就是「当前不存在」的事实陈述），没有删守卫、没有加豁免、没有调测试基线，理由见 [CHANGELOG](CHANGELOG.md) 的「文档分层收敛」小节。
 >
 > 更早口径（2026-10-27 PhaseK：5239 passed / 40 skipped / 4 deselected / 1 failed）与 5084 → 5061 → … → 2329 已移入历史链，见 [docs/工程口径日志.md](docs/工程口径日志.md)；README 只保留当前值，避免同一事实写两处。
 >

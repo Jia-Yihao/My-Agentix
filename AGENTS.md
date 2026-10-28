@@ -28,7 +28,7 @@ cd web && npm run lint && npm run test           # 前端 vue-tsc + vitest
 4. **配置键五处同步**：新增 Settings 字段必须同步——
    ① `agentix/config/settings.py` ② `agentix/config/selfcheck.py`
    （`DEFAULT_IGNORED_MISSING`）③ `.env.example` ④
-   `docs/architecture/configuration.md` §5 表 ⑤
+   `docs/architecture/配置管理.md` §5 表 ⑤
    `tests/test_p41_doc_consistency.py::test_new_settings_are_documented` 手写清单。
 5. **改动前先问**：任何对数据、脚本、测试基线的改动需先征得维护者同意。
 6. **执行边界四条口径**（§24.3 T0/T1 实测得出，非倡议）：
@@ -47,8 +47,8 @@ cd web && npm run lint && npm run test           # 前端 vue-tsc + vitest
    `async __call__` 对后者为 False，照字面判则每个类形式的工具都吃假告警、告警与实际
    行为各说一套）；契约类检查不许拒绝注册：仓里最重的几个工具本就是同步 I/O 注册进来的，
    fail-closed 等于在开 flag 那一刻打断全部功能。
-   口径见 `docs/architecture/runtime-guardrails.md` §15、逐项实测见 `docs/PROJECT_SPEC.md` §24。
-7. **被运维当核对基准的表必须是生成物，不是抄本**：`docs/runbooks/staging-environment.md`
+   口径见 `docs/architecture/运行时护栏.md` §15、逐项实测见 `docs/项目实现手册.md` §24。
+7. **被运维当核对基准的表必须是生成物，不是抄本**：`docs/runbooks/预发环境与配置矩阵.md`
    的「配置矩阵」由 `scripts/gen_staging_matrix.py` 从 `docker-compose.yml` +
    `docker/compose.override.staging.yml` 推导（dev 列回落 `Settings` 的**字段默认值**，
    刻意不实例化 `Settings`——实例化会吃宿主机 `.env`，那正是这张表要避开的污染源）。
@@ -57,9 +57,21 @@ cd web && npm run lint && npm run test           # 前端 vue-tsc + vitest
    让 override 也管它，或在脚本的 `MANUAL_KEYS` 里署名登记理由。
    **不要用 `docker compose config` 的渲染结果当基准**：它把宿主机 `.env` 整个展开打印
    （密钥因此进终端与 CI 日志），而渲染值本身就被 `.env` 污染——用它校验文档等于让被校验的
-   对象决定校验基准。`docs/PROJECT_SPEC.md` §24.2 G13 记录的两次案发（矩阵写着 `true`、
+   对象决定校验基准。`docs/项目实现手册.md` §24.2 G13 记录的两次案发（矩阵写着 `true`、
    override 里压根没设；`${K:-${DEBUG:-True}}` 让工作站 `.env` 决定预发是否 `--reload`）
    都是"人抄的表"这一种形态的产物。
+8. **文档分层不可回退**（2026-10-27 起）：**`README.md` 是唯一「现行总览」**，
+   `docs/项目实现手册.md` 是「实现细节手册」，`docs/archive/**` 是**冻结快照**
+   （只用于追溯历史，不再维护、不随代码更新）。新增或修改规划/优化文档必须满足四条：
+   ① 顶部有一行「文档状态」，取值只能是 `现行` / `进行中` / `已完成` / `历史`，并指向现行依据；
+   ② **不复述** README 已声明的事实（架构分层、默认开关、目录地图、测试基线、已知限制）——只写指针；
+   ③ 计划交付后把状态改成「已完成」，**禁止**长期停在「进行中」冒充待办；
+   ④ **不要新增第四份「总览」**：要补结构信息就改 `README.md` §3/§12，要补实现细节就改
+   `docs/项目实现手册.md`，要补操作动作就写 `docs/runbooks/`。
+   判据来源：README / PROJECT_SPEC / 原 `docs/architecture/overview.md` 三份曾并存，同一套架构讲三遍、
+   改一次要同步三处（正是纪律 7 说的"人抄的表"）；项目全景-归档快照.md 的独有内容已并入 README，
+   原文归档为 `docs/archive/项目全景-归档快照.md`。守卫：`tests/test_p41_doc_consistency.py` 校验文档内
+   路径存在性，**不校验**上述四条——它们靠这条纪律与 review 维持。
 
 ## 代码风格
 
@@ -72,6 +84,8 @@ cd web && npm run lint && npm run test           # 前端 vue-tsc + vitest
 
 `CHANGELOG.md`（[Unreleased]）· `README.md`（§3 架构 / §7 可靠性 / §11 测试真源数 / §16 已知限制）·
 `SECURITY.md`（安全设计概览 / 部署安全建议 / 已知边界）·
-`docs/PROJECT_SPEC.md` · `docs/architecture/configuration.md` ·
-`docs/architecture/runtime-guardrails.md` · `docs/source-code-study.md` ·
+`docs/项目实现手册.md` · `docs/architecture/配置管理.md` ·
+`docs/architecture/运行时护栏.md` · `docs/源码研读笔记.md` ·
 `.env.example` · `agentix/config/selfcheck.py` · 本文件。
+
+> code exec 机制（运行时写代码执行任务，业务总闸 `CODE_EXEC_ENABLED` 默认关）的口径见 `.qoder/rules/code-exec.md`。
