@@ -315,6 +315,9 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "AGENT_MAX_REPLANS",
         # LG-3-4：恢复期步骤清单默认关，不设 = 不建表、零读写，属合法省略
         "RECOVERY_STEP_LEDGER_ENABLED",
+        # LG-3-6：优雅关闭默认关，不设 = 不装信号处理器、不传 control 形参，属合法省略
+        "RUN_CONTROL_ENABLED",
+        "RUN_DRAIN_TIMEOUT_S",
         # P2（Skills/Registry/动态调度）：工具面灰度开关默认关/空，属合法省略
         "TOOL_SELECTION_ENABLED",
         "TOOL_SELECTION_MAX_RISK",

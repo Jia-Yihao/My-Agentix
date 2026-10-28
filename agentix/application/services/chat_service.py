@@ -25,6 +25,10 @@ from agentix.config.settings import DISPLAY_TZ
 
 from agentix.orchestration.langgraph import lg_builder
 from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
+# LG-3-6：drain 控制面与 ``GraphDrained`` 都从适配层（policies.py）转出——
+# 本文件不在 `test_p66` 的 langgraph 导入白名单里，直接 import langgraph 会
+# 破坏等式棘轮（守卫 #11：只减不增）。
+from agentix.orchestration.langgraph.policies import GraphDrained, get_drain_coordinator
 from agentix.application.services.budget_notice import record_budget_notice
 from agentix.application.services.request_scope import (
     RequestScope,
@@ -1439,6 +1443,8 @@ class ChatService:
         emitted_message = False
         sources: List[Any] = []
         sem_acquired = False
+        # LG-3-6：drain 登记簿的注销键（flag 关时恒为 None，finally 里零动作）
+        drain_key: Optional[int] = None
         # Phase 28（Ch10 §10.6）：budget_notice 本轮恰好一次（流式检查点去重）
         budget_notice_emitted = False
         # A1a：非抛异常的失败收口（idle/墙钟超时走 error 帧 + break，
@@ -1520,6 +1526,19 @@ class ChatService:
             import time as _time
 
             t0 = _time.perf_counter()
+            # LG-3-6：优雅关闭的控制面（`RUN_CONTROL_ENABLED` 关 = 空 dict，
+            # `astream_events` 的调用形状与基线逐位一致，不多传任何形参）。
+            # `begin()` 每次运行**新建** `RunControl`（复用已 drain 的实例会
+            # 永久 drain，等于把后续所有请求一起关掉）。
+            drain_control_kwargs: Dict[str, Any] = {}
+            if settings.RUN_CONTROL_ENABLED:
+                drain_key, drain_control = get_drain_coordinator().begin()
+                drain_control_kwargs["control"] = drain_control
+            # 单次展开：两个来源合并成一个 kwargs dict，调用形状保持"一行一个 **"。
+            graph_run_kwargs: Dict[str, Any] = {
+                **durability_kwargs(),
+                **drain_control_kwargs,
+            }
             # Phase 15 决策 A：stream **恒走 L2**（AgentLoop 无流式 API；
             # 合成伪事件 = 假 token 流）。AGENT_LOOP_ENABLED 只 gate 非流式 ask。
             # P1-4：LangGraph 原生事件流（graph_getter 惰性访问）
@@ -1533,7 +1552,7 @@ class ChatService:
                 input_state,
                 config=config,
                 version="v2",
-                **durability_kwargs(),
+                **graph_run_kwargs,
             ).__aiter__()
             while True:
                 try:
@@ -1730,6 +1749,27 @@ class ChatService:
                 }
                 done_sent = True
 
+        except GraphDrained as exc:
+            # LG-3-6：服务端关停（SIGTERM → `RunControl.request_drain()`）在
+            # **超步边界**协作式停摆。此刻 checkpoint 已落盘，线程可被
+            # `alist()` 列出 ⇒ 启动恢复（LG-2-1）/ 续跑入口能接手，所以这里
+            # 不是"失败"，也不该伪装成功：按 cancelled 收口 + 如实告知客户端。
+            reason = getattr(exc, "reason", "shutdown")
+            logger.warning("Graph drained ({}): stream stopped at superstep boundary", reason)
+            _finish_run("cancelled", f"graph_drained: {reason}")
+            _record_error_step("graph_drained", f"GraphDrained: {exc}")
+            yield {
+                "type": "error",
+                "content": "服务正在重启，本轮任务已保存，稍后可继续。",
+                "session_id": session_id,
+            }
+            if not done_sent:
+                yield {
+                    "type": "done",
+                    "metadata": {"sources": sources},
+                    "session_id": session_id,
+                }
+                done_sent = True
         except asyncio.CancelledError:
             # 非控制平面触发的取消（服务端关停等）：先收口终态再传播，
             # 保证运行记录不悬挂非终态（经 ControlPlane.cancel 的取消
@@ -1774,6 +1814,10 @@ class ChatService:
             # 信号量归还（含异常与客户端 aclose 触发的 GeneratorExit 路径）
             if sem_acquired:
                 _AGENT_SEM.release()
+            # LG-3-6：注销 drain 登记（无论正常/异常/断连都要注销，否则关停
+            # 会为一个已经结束的运行白等超时预算）。flag 关时 drain_key 恒 None。
+            if drain_key is not None:
+                get_drain_coordinator().end(drain_key)
 
 
 # 模块级单例（端点层通过 get_chat_service() 获取；测试可替换实例属性）
