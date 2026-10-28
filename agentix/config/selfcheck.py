@@ -177,6 +177,9 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "AGENT_TOOL_ROUND_CONCURRENCY",
         # F1e（统一执行链 Stage F）：HITL 进环默认关，属合法省略
         "HITL_IN_LOOP_ENABLED",
+        # T23（审批恢复规划）：流内审批默认关 + 心跳间隔有默认值，属合法省略
+        "STREAM_HITL_ENABLED",
+        "STREAM_HITL_HEARTBEAT_S",
         # T18（审批恢复规划）：HITL pending 落库默认关（纯内存基线），属合法省略
         "HITL_PENDING_PERSIST_ENABLED",
         # T19（审批恢复规划）：审批等待时限默认 0（无独立 deadline），属合法省略

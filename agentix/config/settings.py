@@ -1108,6 +1108,31 @@ class Settings(BaseSettings):
         default=False,
         description="F1e A-P1-4 in-loop HITL: suspend review_required in execute_task via langgraph interrupt (approve resumes + one retry) + no-approver REJECT + deny/hook/ask/allow order lock (py3.12+ only, py3.10 degrades; parent HUMAN_REVIEW_ENABLED)",
     )
+    # T23（规划 approval-recovery §4）：**流**内审批。默认 False = 流恒走 L2 且不
+    # 声明进环意图，高风险工具在流里立即失败（与基线逐位等价：SSE 帧序列、日志、
+    # 指标零增量，纪律 1）。True（且父闸 HITL_IN_LOOP_ENABLED +
+    # HUMAN_REVIEW_ENABLED 均开）时：流路径声明进环意图并经
+    # `application/services/stream_hitl.StreamHitlChannel` 承接——遇
+    # review_required **不挂图**（流只有一条 SSE 响应可写），而是节点内等待，期间
+    # 下发 `approval` 帧与周期性 `heartbeat` 帧；裁决落地后 approve ⇒ 落批准后
+    # 重试一次，其余 fail-closed 按治理层终局收口。裁决入口复用 `/ops/hitl/
+    # approvals/{id}`（裁决事实的唯一真源是 T18 库行 `hitl_pending_approvals`，
+    # 本地闸门簿记是同一事实的进程内快路径；未决时按 `sidecar_request_id`
+    # 回捞库行，见 `stream_hitl._gate_decision`，纪律 6 ④）。装配判定唯一源 =
+    # `stream_hitl.build_stream_hitl`。
+    STREAM_HITL_ENABLED: bool = Field(
+        default=False,
+        description="T23 stream-side HITL: emit an `approval` SSE frame when a tool needs review, keep the stream alive with `heartbeat` frames while waiting, then continue (approve + one retry) or close at the governance terminal; default off = baseline-equal frame sequence (parents: HITL_IN_LOOP_ENABLED + HUMAN_REVIEW_ENABLED)",
+    )
+    # T23 配套：审批等待期心跳间隔（秒）。流内等待**不算** STREAM_IDLE_TIMEOUT 的
+    # idle（等待期必须有帧，否则中间层与前端会把连接当死链），但仍受 AGENT_TIMEOUT
+    # 墙钟约束——墙钟检查粒度 = 本值（每发一次心跳即复检一次）。四层时限口径见
+    # `docs/architecture/运行时护栏.md`。
+    STREAM_HITL_HEARTBEAT_S: float = Field(
+        default=15.0,
+        gt=0,
+        description="T23 heartbeat interval (seconds) emitted while the stream waits for an in-stream approval decision; the approval wait does NOT count as STREAM_IDLE_TIMEOUT idle, but AGENT_TIMEOUT wall clock still applies (check granularity = this value)",
+    )
     # T18（规划 approval-recovery §4 · Q7 已裁决：Postgres 为真源）：HITL pending
     # 落库。默认**关**——关 = pending 维持进程内存（FIFO 封顶 200），不建表、不
     # 读写新表，行为与基线逐位等价（纪律 1）；开 = 挂起写 `hitl_pending_approvals`

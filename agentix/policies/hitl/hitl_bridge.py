@@ -742,6 +742,24 @@ class HitlBridge:
         """本桥的扫描者/认领者标识（``host:pid:uuid8``）。"""
         return self._sweep_owner
 
+    def sidecar_id_for_gate(self, gate_request_id: str) -> Optional[str]:
+        """闸门请求 id → sidecar 请求 id（**裁决 API 的入参是后者**）。
+
+        T23：流内审批帧要告诉前端"这条 pending 该往哪儿裁决"，而
+        ``POST /ops/hitl/approvals/{sidecar_request_id}`` 收的是桥自己的 id。
+        这里只是把桥内既有的 ``sidecar → gate`` 映射反过来读一次，**不新建映射**
+        （纪律 6 ④：同一事实不许两个源）。查不到返回 ``None``——调用方据此
+        决定不写该字段，而不是编一个假 id 让裁决打到空气里。
+        """
+        if not gate_request_id:
+            return None
+        with self._lock:
+            # 锁内只做一次内存遍历（绝不跨 DB I/O，锁语义见 __init__ 注释）
+            for sidecar_id, mapped_gate_id in self._map.items():
+                if mapped_gate_id == gate_request_id:
+                    return sidecar_id
+        return None
+
     def release_sweep_lease(self) -> bool:
         """让出扫描租约（关停路径调用）；无库面 ⇒ ``False``。
 

@@ -1453,6 +1453,8 @@ class ChatService:
         # A5/R5d：完成度校验所需的流内聚合（路由帧类型 + 已转发正文）
         route_type: Optional[str] = None
         answer_parts: List[str] = []
+        # T23：流内审批通道（flag-off ⇒ 恒 None ⇒ finally 零动作）
+        stream_hitl: Optional[Any] = None
 
         def _record_stream_completion() -> None:
             """A5/R5d：流式**成功**终态补记完成度校验步骤（与 ask 同款确定性校验）。
@@ -1506,6 +1508,15 @@ class ChatService:
             # P2：tool_policy 注入（同 _ask_impl；默认关 = 不触碰 config）。
             _inject_tool_policy(config)
 
+            # T23（规划 approval-recovery §4）：流内审批通道。装配判定唯一源在
+            # `stream_hitl.build_stream_hitl`——flag-off ⇒ None，config 一个键都
+            # 不多、下面取事件的语句也一字不改（与基线逐位等价，纪律 1）；
+            # flag-on ⇒ 进环意图 + 通道挂到 configurable，`execute_task` 里那
+            # 段"等人工裁决"的等待由此变成审批帧 + 心跳帧，不再是一条静默的流。
+            from agentix.application.services.stream_hitl import build_stream_hitl
+
+            stream_hitl = build_stream_hitl(config)
+
             input_state = {
                 "messages": [{"type": "human", "content": message}]
             }
@@ -1556,10 +1567,21 @@ class ChatService:
             ).__aiter__()
             while True:
                 try:
-                    event = await asyncio.wait_for(
-                        stream_iter.__anext__(),
-                        timeout=settings.STREAM_IDLE_TIMEOUT,
-                    )
+                    if stream_hitl is None:
+                        event = await asyncio.wait_for(
+                            stream_iter.__anext__(),
+                            timeout=settings.STREAM_IDLE_TIMEOUT,
+                        )
+                        frame: Optional[Dict[str, Any]] = None
+                    else:
+                        # T23：flag-on 时取事件改由流内审批通道代理——它同时盯
+                        # 「图的下一事件」与「节点的审批请求」：等待期按
+                        # STREAM_HITL_HEARTBEAT_S 出心跳帧、按闸门裁决收口，
+                        # 且**等待期不算 idle**（静默仍然按同一阈值抛
+                        # asyncio.TimeoutError，走下面同一段 error 收口）。
+                        event, frame = await stream_hitl.next_item(
+                            stream_iter.__anext__
+                        )
                 except StopAsyncIteration:
                     break
                 except asyncio.TimeoutError:
@@ -1594,6 +1616,11 @@ class ChatService:
                         "session_id": session_id,
                     }
                     break
+                if frame is not None:
+                    # T23：审批帧 / 心跳帧不是图事件——直接下发，回到取下一个。
+                    # 放在墙钟检查**之后**：超限时一帧都不许再发。
+                    yield {**frame, "session_id": session_id}
+                    continue
                 kind = event.get("event")
                 name = event.get("name")
                 data = event.get("data") or {}
@@ -1730,6 +1757,11 @@ class ChatService:
             # 批次 B1：显式回收事件流（idle 超时已取消 __anext__、墙钟
             # break 后上游生成器仍挂起；正常结束时 aclose 为 no-op）。
             try:
+                if stream_hitl is not None:
+                    # T23：先收通道的在飞 ``__anext__`` 任务（含"事件已取到但
+                    # 还没交出去"的缓冲态），否则下面 aclose 会撞
+                    # "asynchronous generator is already running"。
+                    stream_hitl.close()
                 await stream_iter.aclose()
             except Exception:  # noqa: BLE001 - 清理失败不影响已产出的事件流
                 logger.debug("stream aclose failed (non-fatal)", exc_info=True)
@@ -1811,6 +1843,10 @@ class ChatService:
                 _finish_run("failed", stream_failure)
             else:
                 _finish_run()
+            # T23：通道收尾（幂等；异常/断连路径没走到上面的 aclose 就靠这里）。
+            # flag-off 时恒 None ⇒ 零动作。
+            if stream_hitl is not None:
+                stream_hitl.close()
             # 信号量归还（含异常与客户端 aclose 触发的 GeneratorExit 路径）
             if sem_acquired:
                 _AGENT_SEM.release()

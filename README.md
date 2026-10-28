@@ -845,7 +845,7 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | [请求执行图](docs/architecture/请求执行图与关键路径.md) | 请求链路与节点依赖 |
 | [配置管理](docs/architecture/配置管理.md) | 单一事实来源、特性开关回滚表 |
 | [架构决策记录](docs/architecture/adr/) | 分层与端口 / 注册表可插拔 / 声明式配置 |
-| [优化路线图与落地台账](docs/design/性能与优化路线图.md) | 性能功能盘点 · 优化清单 · 分期路线 · 落地台账（代码 + 守卫 + 取证边界，含本批收尾结论） |
+| [优化路线图与落地台账](docs/design/性能与优化路线图.md) | 性能功能盘点 · 优化清单 · 分期路线 · 落地台账（代码 + 守卫 + 取证边界，含本批收尾结论）· 架构分层与 Agent 内核的 M 组（§7 / §8） |
 | [架构审计 2026-09-28](docs/architecture/架构审计-2026-09-28.md) | 遗留可优化点分期方案；批次 A/B/C **已修复清单**（§1，随批移项）+ 验证基线 |
 | [技术栈指南](docs/guides/技术栈详解.md) | 全量技术选型、版本与集成细节 |
 | [Quick Start 常见问题](docs/guides/快速启动.md) | 端口占用 / 连接超时 / LLM 空返回排查 |
@@ -1194,13 +1194,14 @@ PYTHONPATH=. DATABASE_URL="sqlite:///D:/Code/My-Agentix/data/demo/agentix_demo.d
 
 ## 16. 已知限制
 
-这是演示项目，不是可直接上线的生产系统。**三条最需要知道的边界**：
+这是演示项目，不是可直接上线的生产系统。**四条最需要知道的边界**：
 
 1. 执行沙箱默认关（`in_process` / `thread` 同进程同 GIL，不构成隔离）；未打开文中点名的闸门前，不应把实例暴露给不可信流量。
    - `subprocess` 档也**不是笼子**：它**不隔离文件系统与网络**（仍可出网、仍可读宿主可读的文件），且**仅 POSIX 可用**——非 POSIX 平台 fail-closed 拒绝执行，不做无隔离降级。
    - **运行时写代码执行（code exec）继承同一组边界**：`CODE_EXEC_ENABLED` 默认关；关着时路由不产 `code-query`、节点不可达、工具零注册，**与基线逐位等价**。开着的它也**不隔离文件系统与网络**、**仅 POSIX 可用**，且**不进 LLM 可见工具面**（由 `code_agent` 节点直接调用，不让模型自己挑）。它要真跑起来还得同时开 `EXECUTION_SANDBOX_ENABLED` + `TOOL_SANDBOX_SUBPROCESS_ENABLED`——**只开业务总闸跑不起来**，缺哪一闸会**响亮失败**而不是退回进程内。
 2. 质量门禁把关的是“打分口径没被放宽”，不是“这次改动有没有让答案变差”——后者必须重新录制基线才看得见。
 3. 端到端只有最小切片的小样本（n=23）；全栈服务口径（FastAPI + 容器 + Prometheus TTFT、成本聚合）仍是 `<待实测>`。
+4. 流式审批（`STREAM_HITL_ENABLED`，默认关）**只交付了后端帧**：`web/` 零改动，前端 `chatStream.ts` 的 `ChatStreamChunk.type` 仍是六值、`dispatchChunk` 对 `approval` / `heartbeat` 走 `default` 直接丢弃——浏览器端审批卡片另立排期。另外它**跨 worker** 才完整：裁决真源是 T18 的库行（本地闸门只是快路径），等流靠「本地闸门优先、未决时回捞库」看见别的 worker 上的裁决，因此要求 `HITL_PENDING_PERSIST_ENABLED=true`；关着时该流只看得到本进程的裁决，跨 worker 的裁决要等到调用墙钟超时。
 
 逐条边界（含 `kb_ingest` 三道默认关、golden 覆盖缺口、路由兜底计数、子进程沙箱的已知空洞、checkpointer 静默降级等）见 [docs/已知限制.md](docs/已知限制.md)。
 

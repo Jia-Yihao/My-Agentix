@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -370,6 +371,20 @@ def _record_in_loop_decision(decision: str) -> None:
         logger.debug("record_approval_decision failed: {}", exc)
 
 
+def _gate_already_approved(gate: Any, request_id: Any) -> bool:
+    """闸门上这条审批是否**已是** APPROVED（外部决策面已落账）。
+
+    T23：流内裁决走 ``/ops/hitl/approvals/{id}`` ⇒ ``bridge.decide``，批准在
+    ``gate.approve`` 上先落了账；恢复时再批一次必然返回 ``False``（``_resolve``
+    只接受 PENDING）。此处只**读**闸门簿记，不做任何判定复制——"批没批"仍然只有
+    闸门这一个源。
+    """
+    from agentix.tools.gateway.human_review import ReviewDecision
+
+    request = gate.get(str(request_id)) if request_id else None
+    return bool(request is not None and request.decision is ReviewDecision.APPROVED)
+
+
 async def run_task_execution(
     message: str,
     *,
@@ -387,7 +402,10 @@ async def run_task_execution(
     :param route: 透传 ``LayeredVerifier``（``task-query`` 不在 CITATION_ROUTES）。
     :param review_interrupt: F1e·A-P1-4 进环中断回调（lg_builder 注入壳经
         ``execute_task`` 透传；``None`` = 现行为 review_required 快速失败）。
-        挂起/恢复语义见下方 ``_unit`` 与波循环注释。
+        挂起/恢复语义见下方 ``_unit`` 与波循环注释。T23：回调可以是 **async**
+        的（流内审批要在等待期让事件循环继续转，才能下发心跳帧），本函数按
+        ``inspect.isawaitable`` 决定是否 await——同步回调（langgraph
+        ``interrupt``）行为一字不变。
     :param step_scope: LG-3-4 节点执行作用域（``execute_task`` 取 LangGraph
         ``checkpoint_ns``）。与 ``RECOVERY_STEP_LEDGER_ENABLED`` 同时具备时，
         已完成步骤落 ``run_step_ledger`` 并在同作用域重入时跳过；缺一 = 不开清单。
@@ -596,15 +614,28 @@ async def run_task_execution(
             pending = None
             blocked_spec: WaveTask = payload.pop("spec")
             decision = review_interrupt(payload)  # type: ignore[misc]
-            from agentix.tools.gateway.human_review import get_review_gate
+            # T23：流内审批的回调是 async（等待期要发心跳帧 ⇒ 不能同步阻塞事件
+            # 循环）。langgraph 的 ``interrupt`` 返回裸值 ⇒ 不进本分支，非流式
+            # 路径一字不变。
+            if inspect.isawaitable(decision):
+                decision = await decision
+            from agentix.tools.gateway.human_review import (
+                ReviewDecision,
+                get_review_gate,
+            )
 
             gate = get_review_gate()
             if decision == "approve" and payload.get("request_id"):
-                if gate.approve(
+                # T23：流内裁决经桥（``/ops/hitl/approvals/{id}`` → ``bridge.decide``）
+                # 已经把批准落在闸门上；此处再 ``gate.approve`` 会因「已非 PENDING」
+                # 返回 False，把一次真批准的恢复误判成"批准未落账"。判据仍是闸门
+                # 簿记这一处（纪律 6 ④），不另建流侧裁决缓存。
+                recorded = gate.approve(
                     str(payload["request_id"]),
                     by="in_loop_resume",
                     note="HITL in-loop resume",
-                ):
+                )
+                if recorded or _gate_already_approved(gate, payload["request_id"]):
                     retried = await executor.execute(
                         str(payload["tool"]), dict(payload["args"])
                     )
