@@ -37,7 +37,6 @@ from evals.hybrid_eval import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-GOLDEN = PROJECT_ROOT / "evals" / "legal_golden.jsonl"
 
 
 class _Doc:
@@ -212,12 +211,10 @@ class TestRunReport:
 
 
 class TestLoadGolden:
-    def test_default_kb_small_set(self):
-        rows = load_golden_rows(GOLDEN, limit=40, route="kb-query")
-        assert 10 <= len(rows) <= 50  # 10–50 问小集（实为 23 问）
-        for row in rows:
-            assert row["route_type"] == "kb-query"
-            assert row.get("expected_sources")
+    # `test_default_kb_small_set` 随评测集于 2026-10-26 下线：它读的是已删除的
+    # ``evals/legal_golden.jsonl``，断言的是「那份数据集里有 23 问 kb 小集」这件事。
+    # 下面的 `test_route_filter_and_limit` 用内联 fixture 覆盖了同一个函数
+    # （route 过滤 + 空 expected_sources 剔除），代码侧覆盖面没有丢。
 
     def test_route_filter_and_limit(self, tmp_path: Path):
         path = tmp_path / "g.jsonl"

@@ -554,6 +554,24 @@ class Settings(BaseSettings):
         ge=0,
         description="Max delegation depth for agent runs (admission); 0 disables the limit",
     )
+    # T21（规划 approval-recovery · 运行态落库）：控制平面运行态的持久化。
+    # 默认**关**——关 = 运行登记/状态迁移只存进程内存，不 import 持久层、不建表、
+    # 不读写、响应体形状不变（GET 重启后仍 404，与基线逐位等价，纪律 1）；
+    # 开 = spawn 与每次状态迁移经**有界后台写队列 + 单写线程**落 `agent_run_states`
+    # （游标在事件的什么位置都不会被同步 SQL 卡住，纪律 6 ②），GET 单查与列表在内存
+    # miss 时回落到库（重启后仍可查历史终态）。写库失败 **fail-open**（纪律 2）：
+    # 只 warning + `stats().persist_errors` 计数，运行照跑、内存态不回滚。
+    # 装配判据唯一源 = `agentix/runtime/control_plane.py::resolve_run_state_store`。
+    RUN_STATE_PERSIST_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Persist control-plane agent run states (spawn + every transition) to the "
+            "database so GET /agents/runs survives restarts; default off = in-process "
+            "memory only, baseline-equal (no persistence import, no table, no reads/"
+            "writes, unchanged response shape); writes go through a bounded background "
+            "queue and failures are fail-open (warning + stats().persist_errors)"
+        ),
+    )
     # Phase H · W3（PhaseH_高性能运行时优化规划 §4）：运行时治理五件套。
     # ADMISSION_CONTROL_ENABLED：准入三态（放行/排队/拒绝 429）挂 Control
     # Plane 入口（spawn 前 await 排队，运行计数复用平面 active_count，
@@ -1104,6 +1122,18 @@ class Settings(BaseSettings):
         default=False,
         description="Persist HITL pending approvals to the database (source of truth per Q7): suspend writes the row, decision closes it, boot-time restore pulls unresolved rows back, cross-instance decide falls back to the store (no more 404); default off = in-process memory only, baseline-equal (parent HUMAN_REVIEW_ENABLED at wiring time)",
     )
+    # T19（规划 approval-recovery · Q9 已裁决：到期自动拒绝）：审批等待时限。
+    # **0（默认）= 关 = 现行为**：不建扫描任务、不读库、`stats()` 键集合不变
+    # （纪律 1 flag-off 逐位等价）；>0 才启用扫描。量的是「pending 存活时长」
+    # （挂起时刻起算），与 `AGENT_TIMEOUT` 的「单次图调用墙钟」是两把尺子：
+    # 两者同时可达时**先到者生效**，且归因不同（超时拒 = `decided_by=system:deadline`）。
+    # 扫描的库面来自 T18（`HITL_PENDING_PERSIST_ENABLED`），因此本键 >0 而落库
+    # 未开时不会生效，启动期显式告警一次（不静默假装在管）。
+    HITL_APPROVAL_DEADLINE_S: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Approval wait deadline in seconds: 0 = off (baseline-equal, no sweep task, no store read); >0 = pending older than this is auto-rejected (reason=auto_reject_timeout, decided_by=system:deadline) by a background sweep over the pending store (requires HITL_PENDING_PERSIST_ENABLED)",
+    )
     # P4（岗位对照·异常闭环 4.3）：RollbackPort 生产实现 + 计划态权限切换。
     # 默认 False = 不声明不装配 enter/exit_plan_mode（与基线逐位等价）；True =
     # 注册「计划态」工具：enter 先把 executor.policy 快照进 RollbackStore 再切到
@@ -1134,6 +1164,17 @@ class Settings(BaseSettings):
         default=60,
         ge=1,
         description="Background cron scheduler tick interval in seconds (used only when CRON_ENABLED)",
+    )
+    # T26（队列 PEL 认领 + 优雅停机）：Redis Stream 任务队列的消费 worker。
+    # 此前 `TaskQueue.start_worker()` 全仓没有生产调用点——任务能入队但没人消费，
+    # 未 ack 的消息永久卡在 PEL 里。默认**关** = 不建任务、不建连、不打日志、
+    # 不 import 队列模块（纪律 1：flag-off 与基线逐位等价）；
+    # 开 = `_startup` 末尾起一条消费循环（`XAUTOCLAIM` 接手死消费者遗留消息，
+    # idle 阈值 / 周期 / 单轮条数是 `task_queue.py` 的模块常量，不进配置面），
+    # 关停时由 `_shutdown` 显式收口（`stop_worker()` + cancel）。
+    TASK_QUEUE_WORKER_ENABLED: bool = Field(
+        default=False,
+        description="Start the Redis Stream task-queue consumer worker (XAUTOCLAIM PEL claim included) at startup; default off",
     )
     # P1（岗位对照·任务执行）：任务型路由与任务执行管线（默认**关**）。
     # flag-on = router 意图 task-query（提示词段 + 白名单，换一次前缀）→
@@ -1388,6 +1429,21 @@ class Settings(BaseSettings):
         description="checkpointer 初始化失败时是否拒绝启动（true=fail-closed，绝不落 MemorySaver）；"
         "显式 `CHECKPOINTER_TYPE=memory` 不受影响",
     )
+    # T22：Redis 不可用降级 MemorySaver 后按定间隔重试升级。0（默认）= 关闭重试循环
+    # ⇒ 不建后台任务、不加日志、与基线逐位等价（纪律 1）。>0 才起任务，节奏就是这个值，
+    # 刻意不做指数退避（重试目标同进程的一个 Redis 连接，退避换不来成功率）。
+    CHECKPOINTER_RETRY_INTERVAL_S: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="checkpointer 降级 MemorySaver 后重试升级为 Redis 的间隔秒数（0=关闭，默认）",
+    )
+    # T22：每进程重试上限，防重试风暴；仅在 `CHECKPOINTER_RETRY_INTERVAL_S > 0` 时生效。
+    CHECKPOINTER_RETRY_MAX_ATTEMPTS: int = Field(
+        default=3,
+        ge=0,
+        description="checkpointer 升级重试的每进程尝试上限"
+        "（仅 CHECKPOINTER_RETRY_INTERVAL_S>0 时生效；0=不尝试）",
+    )
     # Phase 20: EventPort 生产后端。memory（默认）= 进程内事件总线（现状）；
     # jsonl = 追加式事件日志（events/event_log.jsonl，重启恢复 pending/dedup）；
     # redis_stream（Phase 23）= Redis Stream（XADD/XREAD，需 Redis 运行时；
@@ -1435,6 +1491,17 @@ class Settings(BaseSettings):
     ROUTING_FASTPATH_ENABLED: bool = Field(
         default=False,
         description="Skip the LLM intent classifier on high-confidence deterministic inputs (greetings/single-statute); default off",
+    )
+    # T8：路由结果跨请求缓存（进程内、有界 LRU + TTL，见
+    # ``agentix/application/agents/routing_cache.py``）。命中即跳过整次 LLM 意图
+    # 分类（零客户端构造、零请求）。**默认关** ⇒ 缓存模块连 import 都不发生
+    # （惰性 import 在 flag 判真之后），路由链与基线逐位等价。
+    # 失效口径是 Q1 未裁决时的**保守版「换代失效」**：router 提示词实际生效文本、
+    # 实际使用的 Router 类、主模型标识、``router_enabled`` 消融开关任一变化即换代；
+    # 语料换代**不**失效，进程重启与 TTL 到期自然失效（该模块 docstring 写明了边界）。
+    ROUTING_CACHE_ENABLED: bool = Field(
+        default=False,
+        description="Cache routing results in-process (bounded LRU + TTL) so repeated identical questions skip the LLM intent classifier; default off",
     )
     # Phase 28（Ch9 §9.3.2 需求澄清决策）：歧义输入先澄清再执行（默认**关**）。
     # flag-on = general_handler 各入口 _maybe_clarify 前置（词表/confidence 确定性

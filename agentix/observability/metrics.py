@@ -15,10 +15,37 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from functools import wraps
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
+
+
+class _GatewayFallbackFact:
+    """T6：本流「Model Gateway 兜底」事实槽（单个可变对象）。
+
+    写入方只有一个：回退链自身的成败判定点（model_gateway.ainvoke_with_fallback
+    的既有 `if errors:` 分支）经 record_gateway_fallback 置位——「是否走了兜底」
+    在仓里不存在第二个判定（纪律 6 ④）。读取方：RunEventEmitter 首内容帧记 TTFT
+    时判归因。
+
+    用「槽对象」而非直接 set 布尔值：并发工具轮（AGENT_TOOL_ROUND_CONCURRENCY>1）
+    里工具跑在 gather 子任务——ContextVar.set 不回传父任务，但子任务创建时复制的
+    绑定指向**同一个槽引用**，改属性父侧可见。
+    """
+
+    __slots__ = ("observed",)
+
+    def __init__(self) -> None:
+        self.observed = False
+
+
+# 刻意定义在 prometheus try-import 之外：无指标后端时归因通道照常工作（noop 降级）。
+_gateway_fallback_fact: ContextVar[Optional[_GatewayFallbackFact]] = ContextVar(
+    "gateway_fallback_fact", default=None
+)
+
 
 # 尝试导入 prometheus_client，不可用时降级
 try:
@@ -136,12 +163,17 @@ try:
     )
     APPROVAL_DECISIONS = Counter(
         "retrieval_approval_decisions_total",
-        "Delete approval decisions (approved / rejected)",
+        "Approval decisions (decision: approved/rejected/edited/resumed/auto/"
+        "bypass; target_type: tool/document/kb, empty falls back to"
+        " unknown)",
         ["target_type", "decision"],
     )
+    # 覆盖两类到期裁决（删除审批 / 工具审批时限）：help 只写其中一类会让运维
+    # 误判指标来源，而指标名与 label 不变（口径收敛不加新序列）。
     APPROVAL_TIMEOUTS = Counter(
         "retrieval_approval_timeouts_total",
-        "Delete approval requests processed after timeout",
+        "Approval requests decided only after their waiting deadline elapsed"
+        " (timeout attribution, decision counted separately)",
         ["target_type"],
     )
     
@@ -164,6 +196,15 @@ try:
         ["component"],
     )
 
+    # T22：checkpointer 降级后的升级重试结果（`result` 封闭 ok|fail，有界；已在
+    # p100 ALLOWED_METRIC_LABELS 白名单）。与 `degraded_total` 分工：那条记"进了降级态"，
+    # 这条记"有没有从降级态回来"——只有它能在降级后告诉运维"多久没回来"。
+    CHECKPOINTER_UPGRADE = Counter(
+        "checkpointer_upgrade_total",
+        "Checkpointer upgrade retries after MemorySaver degradation (result=ok|fail)",
+        ["result"],
+    )
+
     # P2 可观测（O1）：业务质量指标——答案证据锚定低分
     GROUNDING_LOW_SCORE = Counter(
         "grounding_low_score_total",
@@ -182,6 +223,16 @@ try:
         "gateway_fallback_total",
         "Model Gateway fallback activations (primary failed, a fallback model answered)",
         ["primary_model", "fallback_model"],
+    )
+
+    # R-P3：路由兜底触发（L1 分类失败/非法 ⇒ 落 kb-query 兜底或将判据降级为启发式）。
+    # reason 有界 exception|empty|invalid_type|unknown；`reason` 标签名已在 p100 白名单。
+    # 补的是 §16 记录的那处空洞：这条路径原先只有一行 warning，`degraded_total`
+    # 与 `gateway_fallback_total` 都不覆盖它。
+    ROUTER_FALLBACK = Counter(
+        "router_fallback_total",
+        "Router L1 classification fallbacks (reason=exception|empty|invalid_type|unknown)",
+        ["reason"],
     )
 
     # P2-1 满意度反馈：用户点赞/点踩计数（label 有界 up|down；
@@ -318,6 +369,17 @@ try:
         "Stream start to first content frame (SSE TTFT)",
         buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0],
     )
+
+    # T6（approval-recovery-optimization）：拆开 TTFT 混采——走过 Model Gateway
+    # 兜底链的流，其首内容帧样本进本指标，不再混进主口径。选「独立指标」而非
+    # 「加 label」：主直方图定义与记录点逐字不动（README §15 PromQL、p92 断言、
+    # 历史桶全保住），且零新增 label（纪律 3，p100 白名单无需扩容）。
+    # 桶边界**逐字复制**主直方图：Q2 未决不细分，两口径同分辨率才可互比。
+    TTFT_LATENCY_FALLBACK = Histogram(
+        "agent_ttft_fallback_seconds",
+        "Stream start to first content frame (SSE TTFT) - Model Gateway fallback path",
+        buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0],
+    )
     
     AGENT_LLM_CALLS = Counter(
         "agent_llm_call_total",
@@ -343,7 +405,15 @@ try:
     LLM_CALLS_SAVED = Counter(
         "llm_calls_saved_total",
         "LLM calls avoided by deterministic routing fast-path",
-        ["reason"],  # reason: chit_chat / statute_direct（有界枚举，控基数）
+        # reason 的取值由 agentix/application/agents/router.py::FASTPATH_REASONS
+        # 单源定义（封闭枚举，控基数）——本注释只做指针，不许在此再抄一份名单。
+        ["reason"],
+    )
+
+    ROUTING_CACHE = Counter(
+        "routing_cache_total",
+        "Process-local routing result cache outcomes (hit / miss / error)",
+        ["result"],  # result: hit / miss / error（封闭枚举，控基数）
     )
 
     PROMPT_PREFIX_FINGERPRINT = Gauge(
@@ -398,6 +468,16 @@ try:
         "graph_resume_total",
         "Graph resumes from checkpoint by entry point",
         ["kind"],  # kind: startup / ops / retry_task / hitl_in_loop（有界枚举）
+    )
+
+    # T26：Redis Stream 任务队列的 PEL 认领轮次（`result` 封闭 ok|empty|error，有界；
+    # 标签名 `result` 已在 p100 ALLOWED_METRIC_LABELS 白名单）。与消费计数分开的理由：
+    # 「正常消费」和「接手死消费者遗留消息」是两条不同的健康信号——只有后者能回答
+    # 「有没有 worker 死在 PEL 里、现在有人在接手吗」。
+    TASK_QUEUE_CLAIMED = Counter(
+        "task_queue_claimed_total",
+        "Redis Stream PEL claim rounds via XAUTOCLAIM (result=ok|empty|error)",
+        ["result"],
     )
 
     PROMETHEUS_AVAILABLE = True
@@ -458,10 +538,12 @@ except ImportError:
     CHAT_MESSAGES = _NoopMetric()
     CITATION_COUNT = _NoopMetric()
     TTFT_LATENCY = _NoopMetric()
+    TTFT_LATENCY_FALLBACK = _NoopMetric()
     AGENT_LLM_CALLS = _NoopMetric()
     AGENT_LLM_TOKENS = _NoopMetric()
     EVENT_LOOP_LAG = _NoopMetric()
     LLM_CALLS_SAVED = _NoopMetric()
+    ROUTING_CACHE = _NoopMetric()
     PROMPT_PREFIX_FINGERPRINT = _NoopMetric()
     ADMISSION_DECISIONS = _NoopMetric()
     SSE_DROPPED_FRAMES = _NoopMetric()
@@ -469,6 +551,10 @@ except ImportError:
     RETRY_SLEEP_SECONDS = _NoopMetric()
     RETRY_EXHAUSTED = _NoopMetric()
     GRAPH_RESUME = _NoopMetric()
+    # T22：兜底表逐名赋值，漏一个 ⇒ 无 prometheus 后端时 record_* 抛 NameError
+    # （被调用点的宽 except 吞掉，指标静默消失）。新增指标必须在这里同步一行。
+    CHECKPOINTER_UPGRADE = _NoopMetric()
+    TASK_QUEUE_CLAIMED = _NoopMetric()
 
 
 # ============================================================
@@ -513,8 +599,37 @@ def record_llm_tokens(
 
 
 def record_ttft(duration: float) -> None:
-    """Phase H·W0：SSE 流首内容帧时延（TTFT），单位秒。"""
+    """Phase H·W0：SSE 流首内容帧时延（TTFT），单位秒。T6 后为**主口径**（未走兜底的流）。"""
     TTFT_LATENCY.observe(max(0.0, duration))
+
+
+def record_ttft_fallback(duration: float) -> None:
+    """T6：兜底路径的 TTFT（Model Gateway 主模型失败、由链内兜底模型答出），单位秒。
+
+    本函数只在发射器读到 ``gateway_fallback_observed()`` 为真时被调用——判定由
+    回退链自身导出（见 :class:`_GatewayFallbackFact`），这里不另立判据（纪律 6 ④）。
+    """
+    TTFT_LATENCY_FALLBACK.observe(max(0.0, duration))
+
+
+def begin_gateway_fallback_fact() -> _GatewayFallbackFact:
+    """T6：新流开始（RunEventEmitter 构造点）为本流开一个新的兜底事实槽。
+
+    同上下文中上一流的残留事实随之清零——归因只属于**本流**的生命周期。
+    """
+    fact = _GatewayFallbackFact()
+    _gateway_fallback_fact.set(fact)
+    return fact
+
+
+def gateway_fallback_observed() -> bool:
+    """T6：当前流的回退链是否已导出「主模型失败、链内兜底成功」的事实。
+
+    事实槽未开（构造失败/非流式上下文）时恒 False——宁可少一笔兜底归因，
+    也不在仓里出现第二个「是否兜底」的判定点（纪律 6 ④）。
+    """
+    fact = _gateway_fallback_fact.get()
+    return fact is not None and fact.observed
 
 
 def record_agent_llm_call(role: str, status: str) -> None:
@@ -594,9 +709,34 @@ def record_graph_resume(kind: str) -> None:
     GRAPH_RESUME.labels(kind=_bounded_label(kind, GRAPH_RESUME_KIND_VALUES)).inc()
 
 
+#: T26：PEL 认领轮次结果的封闭枚举。调用点只有
+#: ``agentix/application/services/task_queue.py::TaskQueue._claim_stale_pending``，
+#: 且只传这三个字面量——词表外取值不可达，故这里不另设 ``"other"`` 兜底
+#: （在指标层改口会把"调用点传错了"这件事一起吞掉）。
+TASK_QUEUE_CLAIM_RESULT_VALUES = frozenset({"ok", "empty", "error"})
+
+
+def record_task_queue_claimed(result: str) -> None:
+    """T26：记一轮 PEL 认领的结果（``ok``=认领到并已交给处理器 / ``empty``=没有
+    到期消息 / ``error``=XAUTOCLAIM 失败，异常已由调用点 warning 留痕）。"""
+    TASK_QUEUE_CLAIMED.labels(result=result).inc()
+
+
 def record_llm_calls_saved(reason: str) -> None:
     """Phase H·W1：确定性 fast-path 跳过的 LLM 意图分类调用数（reason 有界枚举）。"""
     LLM_CALLS_SAVED.labels(reason=reason or "unknown").inc()
+
+
+#: T8：路由缓存结果的封闭枚举。调用点只有
+#: ``agentix/application/agents/router.py``（``hit``/``miss`` 来自命中判定，
+#: ``error`` 只用于"读写或重建抛异常且已 fail-open 降级为未命中"）。命中率 =
+#: ``hit / (hit + miss)``——``error`` 不计入分母，否则缓存故障会伪装成"命中率下降"。
+ROUTING_CACHE_RESULT_VALUES = frozenset({"hit", "miss", "error"})
+
+
+def record_routing_cache(result: str) -> None:
+    """T8：进程内路由结果缓存的一次判定（hit / miss / error，有界枚举）。"""
+    ROUTING_CACHE.labels(result=_bounded_label(result, ROUTING_CACHE_RESULT_VALUES)).inc()
 
 
 def record_prompt_prefix_fingerprint(builder: str, prefix: str) -> None:
@@ -634,7 +774,24 @@ def record_approval_created(target_type: str) -> None:
 
 
 def record_approval_decision(target_type: str, decision: str) -> None:
-    """记录审批决策（decision: approved / rejected）。"""
+    """记录审批决策（值域维护者 2026-10-27 裁决，六值）。
+
+    ``decision`` 只允许 ``{approved, rejected, edited, resumed, auto,
+    bypass}``：进环/检索侧写 ``approved``/``rejected``，桥侧人工裁决经
+    bucket 映射写四值之一，``auto``/``bypass`` 来自桥侧自动放行
+    （逐请求 auto 与 PermissionMode.BYPASS 模式级豁免，治理含义不同）。
+    ``target_type`` 实测写入值：``tool``（桥/进环）与检索侧
+    ``document`` / ``kb``；``tenant`` 只流向 write_audit（审计），从不进
+    本指标，故不列入——help/docstring 是下游取证的依据，声称比实现宽
+    会放行一条根本没落下的取值。指标层对空输入兜底写 ``unknown``，但两侧
+    可触达性不同：``decision`` 侧经调用点闭合可证为上述六值（桥/进环传常量或
+    bucket 映射值、检索侧传 ``approved``/``rejected``），兜底不可触达；
+    ``target_type`` 侧桥/进环为常量 ``tool``，检索侧透传 ``ap.target_type``——
+    本仓创建点只写 ``document``/``kb``，但模型字段是 ``Field(description=...)``
+    （描述非约束）、仓储层 ``create_approval`` 也不校验取值，故库里存在
+    ``target_type=""`` 的历史行时兜底会被触达 ⇒ 序列出现 ``unknown``
+    应先查库行，而不是怀疑调用点。
+    """
     APPROVAL_DECISIONS.labels(
         target_type=target_type or "unknown", decision=decision or "unknown"
     ).inc()
@@ -660,6 +817,16 @@ def record_degraded(component: str) -> None:
     DEGRADED_TOTAL.labels(component=component or "unknown").inc()
 
 
+def record_checkpointer_upgrade(result: str) -> None:
+    """T22：记录一次 checkpointer 升级重试的结果（result: ok / fail，封闭枚举）。
+
+    调用点只有 `agentix/infrastructure/persistence/checkpointer.py` 的
+    `retry_upgrade_checkpointer`，且只传两个字面量——词表外取值不可达，这里不另设
+    兜底映射（在指标层改口会把"调用点传错了"这件事一起吞掉）。
+    """
+    CHECKPOINTER_UPGRADE.labels(result=result).inc()
+
+
 def record_grounding_low_score() -> None:
     """P2 可观测（O1）：grounding 低分答案 +1（观测口径，不拦截交付）"""
     GROUNDING_LOW_SCORE.inc()
@@ -678,10 +845,32 @@ def record_multiagent_failure(mode: str) -> None:
 
 def record_gateway_fallback(primary_model: str, fallback_model: str) -> None:
     """P2 可观测（O1）：Model Gateway 主模型失败后由 fallback 模型兜底成功一次"""
+    # T6：先置本流兜底事实再动计数器（计数器故障不丢事实，事实由调用方兜异常）——
+    # 本函数只在回退链自身判定点被调用（model_gateway.py 的 `if errors:` 分支），
+    # 因此「是否走了兜底」在全仓只有一个源（纪律 6 ④）。
+    fact = _gateway_fallback_fact.get()
+    if fact is not None:
+        fact.observed = True
     GATEWAY_FALLBACK.labels(
         primary_model=primary_model or "unknown",
         fallback_model=fallback_model or "unknown",
     ).inc()
+
+
+# 路由兜底 reason 的有界取值；表外值统一落 unknown（标签值有界 = 指标基数有界）
+_ROUTER_FALLBACK_REASONS = frozenset({"exception", "empty", "invalid_type"})
+
+
+def record_router_fallback(reason: str) -> None:
+    """R-P3：路由 L1 兜底 +1（reason 有界，表外值归 ``unknown``）。
+
+    reason 语义：
+    - ``exception``：分类那次 LLM 调用抛错/超时 ⇒ 直接用兜底 Router；
+    - ``empty``：模型返回但 ``type`` 为空 ⇒ 判据降级为启发式/兜底；
+    - ``invalid_type``：``type`` 不在白名单 ⇒ 同上，但可归因到"模型给了越界类型"。
+    """
+    r = reason if reason in _ROUTER_FALLBACK_REASONS else "unknown"
+    ROUTER_FALLBACK.labels(reason=r).inc()
 
 
 def record_feedback(rating: str) -> None:

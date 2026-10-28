@@ -4,6 +4,9 @@ name: Perf baseline
 # 与上一版基线比对（劣化 >20% 阻断）。基线靠 actions/cache 跨运行持久化，
 # 否则每次都是"首跑建档"，门禁永远不生效。
 # 口径与阈值语义见 evals/quality_gate.py；本地复现见 scripts/load_test.py。
+#
+# 另一个 job `business-p95` 压三个关键业务端点（T16）。它与 `p95` **分开**是口径要求：
+# 只挂夜间 cron、首周只报告不阻断、基线独立——三条都不该混进上面那条真阻断链路里。
 on:
   workflow_dispatch:
   schedule:
@@ -90,6 +93,9 @@ jobs:
               handle.write(f"p95={p95}\n")
           PY
       # 这一步必须是真阻断：任何 `|| ...` 吞退出码的写法都会让"劣化"变成噪声。
+      # `--allow-bootstrap` 是**显式声明的例外**：quality_gate 默认已把"缺基线"改成硬失败
+      # （NOT-ARMED），而 nightly 首跑确实没有 perf-baseline.json（缓存可能被清），
+      # 每次首跑硬失败是噪声不是信号。阻断力来自下一行起的真比对，不来自这一步的运气。
       - name: Compare with previous baseline
         run: |
           set -eu
@@ -98,9 +104,284 @@ jobs:
             --metric p95_seconds \
             --current "${{ steps.p95.outputs.p95 }}" \
             --max-regression 0.20 \
-            --direction lower_is_better
+            --direction lower_is_better \
+            --allow-bootstrap
       - name: Publish new baseline
         run: cp perf-cache/baseline.json perf-cache/perf-baseline.json
+      - name: Stop backend
+        if: always()
+        run: kill "$(cat uvicorn.pid)" 2>/dev/null || true
+
+  # 关键业务端点（规划卡 T16）。与上面 `p95` job 分开的三条理由都是口径，不是口味：
+  #
+  # 1) 挂载面不同：新端点只挂夜间 cron。本 workflow 本来就没有 pull_request 触发器，
+  #    这里再用 `if` 把它钉死在 schedule 上——PR 和手动 dispatch 都不会跑新端点。
+  # 2) 阻断口径不同：业务端点受 DB/序列化波动影响大，直接进 20% 真阻断会产出假阳性红灯
+  #    ⇒ 首周只报告（`::warning`，作业仍绿）；**2026-11-04 起**同一判定转真阻断
+  #    （`PERF_ENFORCE_FROM`）。改这个日期 = 改门禁强度，属行为变更，须走评审。
+  # 3) 基线不共享：liveness 的基线是单键 `perf-baseline.json`，这里按 slug 分键存
+  #    `business-baseline.json`，两套基线互不覆盖（也不动上面任何一步）。
+  #
+  # 阈值口径不变：仍是 0.20（`PERF_MAX_REGRESSION` 与上面那行 `--max-regression 0.20`
+  # 逐字相等，由 tests/test_p169_perf_baseline_endpoints.py 钉住）；判定函数直接复用
+  # `evals/quality_gate.py::evaluate_metric`——不在这里另写一份"劣化多少算劣化"。
+  business-p95:
+    name: business endpoint p95 (nightly only)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    env:
+      # 同 p95 job：只测"进程能路由"，不需要外部中间件 ⇒ SQLite（启动时建表）。
+      DATABASE_URL: sqlite:///./perf_baseline.db
+      # 限流耦合（T16 收尾，必修其一里选「钉住」这一支）：三个业务端点里 `sessions` /
+      # `chat_routes` **不在** `agentix/interfaces/http/public_paths.py::PUBLIC_PATHS`
+      # ⇒ 受 `GlobalRateLimitMiddleware` 约束（`/metrics` 在清单里，免限流）。
+      # `RATE_LIMIT_ENABLED` 默认 `false`，但 CI 机位若被人打开，200 请求 / 10 workers 会吃
+      # 429 ⇒ `status_codes != {"200"}` ⇒ 判红，而日志只写"状态码不对"，看起来像端点劣化。
+      # 压测不该测限流 ⇒ 显式钉 false。作用域是**本 job**：`p95` job 的 env 自成一块，
+      # 不受这一行影响（它压的 `/liveness` 也在 `PUBLIC_PATHS` 里）。
+      RATE_LIMIT_ENABLED: "false"
+      # 与上面 p95 job 的 `--max-regression 0.20` 是同一个数。
+      PERF_MAX_REGRESSION: "0.20"
+      # 首周口径的到期日：2026-10-28 建档 → 到 2026-11-03 只报告 → 2026-11-04 起同日判定真阻断。
+      PERF_ENFORCE_FROM: "2026-11-04"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      # 前缀与 p95 job 不同（perf-business-baseline-）：两个 job 不互相恢复对方的基线。
+      - name: Restore previous business baseline
+        uses: actions/cache@v4
+        with:
+          path: perf-cache
+          key: perf-business-baseline-${{ github.run_id }}
+          restore-keys: |
+            perf-business-baseline-
+      - name: Start backend
+        run: |
+          set -eu
+          mkdir -p data perf-cache/business
+          python -m uvicorn agentix.main:application --host 127.0.0.1 --port 8000 \
+            > uvicorn.log 2>&1 &
+          echo $! > uvicorn.pid
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/liveness > /dev/null 2>&1; then
+              echo "[perf] backend live after ${attempt}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error title=perf-baseline::backend never became live within 60s（见 uvicorn.log）"
+          tail -n 50 uvicorn.log || true
+          exit 1
+      # 端点清单（slug|url）是唯一一处：比对步骤按同名 slug 归档基线。
+      #
+      # 选点判据（逐条可由代码核对；不引用任何一次实测读数——那种数字没有可复现的落点，
+      # 写进工作流只会腐烂）：
+      #   metrics      —— Prometheus 抓取面，`/metrics` 在
+      #                   `agentix/interfaces/http/public_paths.py::PUBLIC_PATHS` 里 ⇒
+      #                   开 `REQUIRE_API_KEY` 也免鉴权；只读指标，不落库；
+      #   sessions     —— 会话列表读路径（前端历史面板首屏），SQLite 单表查询；只过
+      #                   `require_v1_user`，而 `V1_REQUIRE_JWT` 默认 `false` ⇒ 夜间
+      #                   无凭据也可达（把它打开会让本端点恒 401，那是配置变更不是劣化）；
+      #   chat_routes  —— 路由/能力清单（前端启动时渲染对话能力面），纯静态、无 DB。
+      #   `sessions` / `chat_routes` 不在 `PUBLIC_PATHS` ⇒ 还受全局限流中间件约束；
+      #   本 job 的 env 已把 `RATE_LIMIT_ENABLED` 钉成 `false`（理由见那处注释），
+      #   否则 CI 机位一旦打开限流，这两个端点会吃 429 并伪装成"端点劣化"。
+      # 刻意不选：/readiness（`main.readiness_check` 转 `health_check()`，每次调用都在线
+      # 探 Redis / Neo4j / Milvus，外部抖动会被记成"服务劣化"）；/api/v1/agents/runs
+      # （router 级 `require_run_bearer` 严格验签 Bearer JWT，夜间无凭据 = 恒 401，
+      # 测到的是鉴权闸不是业务路径）；/api/v1/chat（要 LLM，夜间必假阳性）。
+      - name: Run load test per business endpoint
+        run: |
+          set -eu
+          set -o pipefail
+          # 先清空报告目录：`actions/cache` 会把上一轮的 `perf-cache/business/*.json`
+          # 一起恢复回来，而比对步骤是 `glob("*.json")` ⇒ 清单之外的陈旧报告会被当成
+          # "本轮当前值"参与比对。清目录而不是在比对脚本里再抄一份 slug 白名单——
+          # 白名单等于把端点清单拆成两个源（纪律 6 ④：同一个判定不许两个源）。
+          rm -f perf-cache/business/*.json
+          while IFS='|' read -r slug url; do
+            [ -n "$slug" ] || continue
+            echo "[perf] ${slug} <- ${url}"
+            python scripts/load_test.py --url "$url" \
+              --requests 200 --workers 10 --warmup 20 \
+              | tee "perf-cache/business/${slug}.json"
+          done <<'EOF'
+          metrics|http://127.0.0.1:8000/metrics
+          sessions|http://127.0.0.1:8000/api/v1/sessions/?user_id=perf-baseline&limit=50
+          chat_routes|http://127.0.0.1:8000/api/v1/chat/routes
+          EOF
+      # 首周口径落在这里，而不是 `continue-on-error`：后者会让"到期该阻断"这件事
+      # 也一直是绿的。判定用 `evaluate_metric`（与 liveness 同一个函数），
+      # 只是对"是否把非零退出码交出去"按 PERF_ENFORCE_FROM 分两档。
+      - name: Compare business endpoints with previous baseline
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          from evals.quality_gate import evaluate_metric
+
+          budget = float(os.environ["PERF_MAX_REGRESSION"])
+          enforce_from = datetime.date.fromisoformat(os.environ["PERF_ENFORCE_FROM"])
+          enforcing = datetime.date.today() >= enforce_from
+          baseline_path = Path("perf-cache/business-baseline.json")
+          baseline = (
+              json.loads(baseline_path.read_text(encoding="utf-8"))
+              if baseline_path.exists()
+              else {}
+          )
+
+          reports = sorted(Path("perf-cache/business").glob("*.json"))
+          if not reports:
+              print("::error title=perf-baseline::business endpoint 未产出任何报告")
+              sys.exit(1)
+
+          failures = []
+          regressions = []
+          rows = []
+
+          def _failed_row(slug: str, reason: str) -> str:
+              """失败行也要占一行：只在日志里报红，step summary 表上就"看起来全都通过了"。"""
+              return f"| `{slug}` | — | — | — | 失败：{reason} |"
+
+          def _is_count(value: object) -> bool:
+              """计数必须是真整数：None / 字符串 / 布尔都不算（bool 是 int 子类，单独排掉）。"""
+              return isinstance(value, int) and not isinstance(value, bool)
+
+          # 每个失败分支都 `continue` 在"把这个 slug 的读数写进 baseline"**之前** ⇒
+          # 判红的 slug 绝不会推进基线（连旧值都不读）。**这条语句顺序就是"失败不污染
+          # 基线"的全部保证**，改顺序等于把低报值写进下一版参照。
+          for path in reports:
+              slug = path.stem
+              report = json.loads(path.read_text(encoding="utf-8"))
+              codes = set(report.get("status_codes") or {})
+              # 端点没跑通不算"波动"：500/404 再快也不是被监控的那段路径。
+              if codes != {"200"}:
+                  failures.append(
+                      f"{slug}: status_codes={sorted(codes)} errors={report.get('errors')}"
+                  )
+                  rows.append(_failed_row(slug, f"status_codes={sorted(codes)}"))
+                  continue
+              # 超时/异常样本**不进延迟样本**（`scripts/load_test.py::_Worker.run` 只在
+              # 拿到响应之后才 append）⇒「200 个请求里 60 个超时」时 p95 只由那 140 个
+              # 存活样本算出，读数很漂亮。只读 status_codes 会把这种"部分请求打不通"
+              # 判成 PASS，并把这个低报值写成下一版参照——静默低报与污染基线同时发生。
+              errors = report.get("errors")
+              success = report.get("success")
+              requests_total = report.get("requests")
+              # 先判报告契约、再判语义：三个键缺失（或非整数）时**显式判红**。
+              # 原先 `report.get("errors") or 0` 把缺失退化成 0、`success` 退化成 None
+              # ⇒ 判据静默失效，报告字段哪天改名也照样一路绿灯。两种红必须分得开：
+              # "报告字段缺失"是契约破了（判据根本没生效），"真有失败样本"是端点有失败。
+              invalid_counts = [
+                  f"{name}={value!r}"
+                  for name, value in (
+                      ("errors", errors),
+                      ("success", success),
+                      ("requests", requests_total),
+                  )
+                  if not _is_count(value)
+              ]
+              if invalid_counts:
+                  failures.append(
+                      f"{slug}: 报告字段缺失或非整数（{', '.join(invalid_counts)}）"
+                      "；失败样本判据无法生效（报告契约破了，不是样本失败）"
+                  )
+                  rows.append(_failed_row(slug, "报告字段缺失：" + ", ".join(invalid_counts)))
+                  continue
+              if errors > 0 or success != requests_total:
+                  failures.append(
+                      f"{slug}: errors={errors} success={success}/{requests_total}"
+                      "（p95 只含成功样本，低报值不得作为基线）"
+                  )
+                  rows.append(_failed_row(slug, f"errors={errors}/{requests_total}"))
+                  continue
+              p95 = report.get("p95_seconds")
+              # 零成功样本时 p95 是 None（load_test 侧已非零退出，这里兜第二道）。
+              if p95 is None:
+                  failures.append(f"{slug}: p95_seconds is None (no successful samples)")
+                  rows.append(_failed_row(slug, "p95_seconds is null"))
+                  continue
+              previous = baseline.get(slug)
+              if previous is None:
+                  print(f"::warning title=perf-baseline::{slug} 无历史基线，本次只建档不比对")
+                  baseline[slug] = p95
+                  rows.append(f"| `{slug}` | {float(p95):.6f} | — | — | 建档（未比对） |")
+                  continue
+              verdict = evaluate_metric(
+                  float(p95),
+                  float(previous),
+                  max_regression=budget,
+                  direction="lower_is_better",
+              )
+              line = (
+                  f"{slug}: current={float(p95):.6f}s baseline={float(previous):.6f}s "
+                  f"threshold={float(verdict['threshold']):.6f}s => {verdict['verdict']}"
+              )
+              print(f"[perf] {line}")
+              rows.append(
+                  f"| `{slug}` | {float(p95):.6f} | {float(previous):.6f} | "
+                  f"{float(verdict['threshold']):.6f} | {verdict['verdict']} |"
+              )
+              if not verdict["ok"]:
+                  # 劣化读数**不许**变成下一版参照：与 liveness 的"失败即不发布"同口径。
+                  regressions.append(line)
+              else:
+                  baseline[slug] = p95
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              header = "| endpoint | current p95 (s) | baseline p95 (s) | threshold (s) | verdict |"
+              with open(summary, "a", encoding="utf-8") as handle:
+                  handle.write("\n### business endpoint p95\n\n")
+                  handle.write(header + "\n|---:|---:|---:|---:|:--:|\n")
+                  handle.write("\n".join(rows) + "\n")
+                  handle.write(f"\n> 阻断口径：{enforce_from} 起转真阻断\n")
+
+          if failures:
+              for item in failures:
+                  print(f"::error title=perf-baseline::{item}")
+              sys.exit(1)
+
+          if regressions and enforcing:
+              for item in regressions:
+                  print(f"::error title=perf-baseline::regression {item}")
+              print(
+                  f"[perf] 阻断期（>= {enforce_from}）：{len(regressions)} 个端点超过 "
+                  f"{budget:.0%} 预算，不发布新基线"
+              )
+              sys.exit(1)
+
+          if regressions:
+              for item in regressions:
+                  print(f"::warning title=perf-baseline::bootstrap-week regression {item}")
+              print(
+                  f"[perf] 首周只报告（{enforce_from} 起转真阻断）：{len(regressions)} 个端点"
+                  f"超过 {budget:.0%} 预算，本次不阻断"
+              )
+
+          baseline_path.write_text(
+              json.dumps(baseline, ensure_ascii=False, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          PY
+      # 真实保证只有一条，而且它来自比对脚本内部的**语句顺序**：`baseline_path.write_text`
+      # 排在所有 `sys.exit(1)` 之后 ⇒ 判红那一次根本没走到写入，"写基线只发生在 exit 之前"
+      # 说的是这件事。缓存侧同样不推进，但机制不是"本步不执行"：判红 ⇒ job 失败 ⇒
+      # `actions/cache` 的 post 步是 `post-if: success()` ⇒ 不打包也不写回 ⇒ 缓存条目
+      # 仍是上一版基线（等于没推进）。**不要**给 post 步加 `always()` 去"修正"这件事：
+      # 那等于让失败运行也推进基线，是改门禁强度。
+      # 这里只做存在性声明：文件真被写出，才说明脚本走过了写入那一步。
+      - name: Publish new business baseline
+        run: test -s perf-cache/business-baseline.json
       - name: Stop backend
         if: always()
         run: kill "$(cat uvicorn.pid)" 2>/dev/null || true

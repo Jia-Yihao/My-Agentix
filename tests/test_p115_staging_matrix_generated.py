@@ -29,7 +29,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = PROJECT_ROOT / "scripts/gen_staging_matrix.py"
-RUNBOOK = PROJECT_ROOT / "docs/runbooks/staging-environment.md"
+RUNBOOK = PROJECT_ROOT / "docs/runbooks/预发环境与配置矩阵.md"
 COMPOSE = PROJECT_ROOT / "docker-compose.yml"
 OVERRIDE = PROJECT_ROOT / "docker/compose.override.staging.yml"
 

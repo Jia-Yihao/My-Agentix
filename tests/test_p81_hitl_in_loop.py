@@ -14,6 +14,9 @@
   的 PENDING）；有决策面（HITL 桥）或 flag-off ⇒ 照旧 review_required。
 - **③ 裁决顺序** deny→hook→ask强制→allow 契约锁定（source-code-study
   Codex 序；hook 可代批但代批仍须再过 ask，allow 走执行点消费）。
+- **④ 裁决打点**：进环每条裁决路径恰好一次 ``record_approval_decision``，
+  值域与桥/检索侧同源（放行 ⇒ ``approved``，其余 ⇒ ``rejected``；
+  见 ``TestInLoopDecisionMetrics``）。
 
 py3.10：async ``interrupt`` 必死锁（test_p32 双向锁特征化）⇒ 注入壳
 版本门控，3.10 诚实降级=不注入；真正挂起恢复的 e2e 标记 skipif py3.12+。
@@ -161,7 +164,7 @@ class TestFlagSync:
         assert "HITL_IN_LOOP_ENABLED=false" in text
 
     def test_configuration_doc_documents_key(self):
-        text = (REPO / "docs/architecture/configuration.md").read_text(encoding="utf-8")
+        text = (REPO / "docs/architecture/配置管理.md").read_text(encoding="utf-8")
         assert "| `HITL_IN_LOOP_ENABLED` | `false`" in text
         assert "`HITL_IN_LOOP_ENABLED`" in text  # §2 精选键行
 
@@ -599,7 +602,158 @@ class TestInLoopPipeline:
 
 
 # ---------------------------------------------------------------------------
-# 6. ops 恢复面 + 接线锁 + 真图 e2e（py3.12+）
+# 6. 进环审批裁决打点（与桥路径同源；decision 值域收敛为一套）
+# ---------------------------------------------------------------------------
+
+
+def _decision_value(decision: str) -> float:
+    """读共享计数器 ``retrieval_approval_decisions_total`` 的指定桶。
+
+    读值范式沿用仓内既有两处（``test_p118_router_fallback_metric.py:44``
+    的 ``_counter``、``test_p105_feedback_loop.py:137`` 的
+    ``COUNTER.labels(...)._value.get()``），不新造第三套读法。
+    """
+    from agentix.observability.metrics import APPROVAL_DECISIONS
+
+    return APPROVAL_DECISIONS.labels(target_type="tool", decision=decision)._value.get()
+
+
+class TestInLoopDecisionMetrics:
+    """进环（``interrupt()`` 恢复）路径的裁决必须打点，且只打一次。
+
+    口径（维护者 2026-10-27 裁决；第 1 轮审查由五值收敛为六值）：``decision``
+    只允许 ``{approved, rejected, edited, resumed, auto, bypass}``（``bypass``
+    是桥路径的模式级豁免，进环不产出）；进环只有放行 ⇒
+    ``approved``，其余（reject / 未知值 / 批准未落账 / 重试仍失败）⇒
+    ``rejected``。打点不得改变审批语义：未批准一律 fail-closed 不放行。
+    """
+
+    @pytest.mark.asyncio
+    async def test_in_loop_approve_records_approved_decision(self, loop_env, monkeypatch):
+        monkeypatch.setattr(settings, "HITL_IN_LOOP_ENABLED", True)
+
+        def _interrupt(payload: dict) -> str:
+            return "approve"
+
+        approved_before = _decision_value("approved")
+        rejected_before = _decision_value("rejected")
+        result = await run_task_execution(
+            "产出报告（进环批准打点）",
+            session_id="p81-metric-approve",
+            task_steps=_write_steps("p81-metric-approve.md"),
+            review_interrupt=_interrupt,
+        )
+        assert result.terminal == "completed"
+        assert _decision_value("approved") - approved_before == 1
+        assert _decision_value("rejected") - rejected_before == 0
+
+    @pytest.mark.asyncio
+    async def test_in_loop_reject_records_rejected_decision(self, loop_env, monkeypatch):
+        monkeypatch.setattr(settings, "HITL_IN_LOOP_ENABLED", True)
+
+        def _interrupt(payload: dict) -> str:
+            return "reject"
+
+        # 观察「拒绝后不再重试执行」：包装 execute 计数（不改行为）
+        ex = get_tool_executor()
+        real_execute = ex.execute
+        executed: List[str] = []
+
+        async def _spy(tool_name, arguments=None, *, policy=None):
+            executed.append(tool_name)
+            return await real_execute(tool_name, arguments, policy=policy)
+
+        monkeypatch.setattr(ex, "execute", _spy)
+
+        approved_before = _decision_value("approved")
+        rejected_before = _decision_value("rejected")
+        result = await run_task_execution(
+            "产出报告（进环拒绝打点）",
+            session_id="p81-metric-reject",
+            task_steps=_write_steps("p81-metric-reject.md"),
+            review_interrupt=_interrupt,
+        )
+        assert result.terminal == "failed"
+        assert "in_loop_review_rejected" in result.reason
+        assert _decision_value("rejected") - rejected_before == 1
+        assert _decision_value("approved") - approved_before == 0
+        # 拒绝是治理层终局：只有一次执行尝试，没有批准后的重试
+        assert executed == ["write_task_artifact"]
+        assert len(get_artifact_store()._items) == 0
+
+    @pytest.mark.asyncio
+    async def test_in_loop_approve_not_recorded_records_rejected_decision(
+        self, loop_env, monkeypatch
+    ):
+        """裁决 ``approve`` 但闸门未落账（approve 返回 False）⇒ 记 rejected。"""
+        monkeypatch.setattr(settings, "HITL_IN_LOOP_ENABLED", True)
+
+        def _interrupt(payload: dict) -> str:
+            return "approve"
+
+        gate = get_review_gate()
+        monkeypatch.setattr(gate, "approve", lambda *a, **k: False)
+
+        approved_before = _decision_value("approved")
+        rejected_before = _decision_value("rejected")
+        result = await run_task_execution(
+            "产出报告（批准未落账打点）",
+            session_id="p81-metric-approve-false",
+            task_steps=_write_steps("p81-metric-approve-false.md"),
+            review_interrupt=_interrupt,
+        )
+        assert result.terminal == "failed"
+        assert "approve not recorded" in result.reason
+        assert _decision_value("rejected") - rejected_before == 1
+        assert _decision_value("approved") - approved_before == 0
+        assert len(get_artifact_store()._items) == 0  # 未落账绝不放行
+
+    @pytest.mark.asyncio
+    async def test_in_loop_unknown_decision_records_rejected_decision(
+        self, loop_env, monkeypatch
+    ):
+        """裁决未知值（既非 approve 也非 reject）⇒ 记 rejected 且绝不放行执行。
+
+        补这一条是因为审查重点第 46 行把 ``reject`` / 未知值 / ``gate.approve``
+        返回 False 三件事并列要求：前两条已有用例，未知值这条原先只落在代码里、
+        没有用例钉住——而"图外调用方直接喂 interrupt 回调"正是它唯一能发生的入口
+        （ops 面自己只放 approve|reject 进来，见 ops_router 的 400 校验）。
+        入口越界拿到别的裁决值时，必须仍是 fail-closed 的拒绝，不是"默认放行"。
+        """
+        monkeypatch.setattr(settings, "HITL_IN_LOOP_ENABLED", True)
+
+        def _interrupt(payload: dict) -> str:
+            return "abort"  # 不在 approve|reject 词表内
+
+        ex = get_tool_executor()
+        real_execute = ex.execute
+        executed: List[str] = []
+
+        async def _spy(tool_name, arguments=None, *, policy=None):
+            executed.append(tool_name)
+            return await real_execute(tool_name, arguments, policy=policy)
+
+        monkeypatch.setattr(ex, "execute", _spy)
+
+        approved_before = _decision_value("approved")
+        rejected_before = _decision_value("rejected")
+        result = await run_task_execution(
+            "产出报告（未知裁决打点）",
+            session_id="p81-metric-unknown",
+            task_steps=_write_steps("p81-metric-unknown.md"),
+            review_interrupt=_interrupt,
+        )
+        assert result.terminal == "failed"
+        assert "bad resume decision" in result.reason
+        assert _decision_value("rejected") - rejected_before == 1
+        assert _decision_value("approved") - approved_before == 0
+        # 未知裁决同样是治理层终局：只有那一次被拦的执行，没有批准后的重试
+        assert executed == ["write_task_artifact"]
+        assert len(get_artifact_store()._items) == 0
+
+
+# ---------------------------------------------------------------------------
+# 7. ops 恢复面 + 接线锁 + 真图 e2e（py3.12+）
 # ---------------------------------------------------------------------------
 
 

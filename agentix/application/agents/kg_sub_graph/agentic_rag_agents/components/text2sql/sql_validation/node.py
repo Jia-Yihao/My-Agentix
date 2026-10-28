@@ -41,12 +41,12 @@ def create_sql_validation_node(
             syntax_ok, syntax_errors = validate_sql_syntax(sql_statement, db_type)
             if not syntax_ok:
                 errors.extend(syntax_errors)
-                logger.warning("SQL 语法验证失败: %s", syntax_errors)
+                logger.warning("SQL 语法验证失败: {}", syntax_errors)
 
             security_ok, security_warnings = validate_sql_security(sql_statement)
             if not security_ok:
                 errors.extend(security_warnings)
-                logger.warning("SQL 安全检查警示: %s", security_warnings)
+                logger.warning("SQL 安全检查警示: {}", security_warnings)
 
             # R-P2-4（F2b-c）dry-run 校验（TEXT2SQL_DRY_RUN_ENABLED 默认关 =
             # 基线逐位等价）：词法通过才试跑 EXPLAIN；失败喂既有重试环，
@@ -61,7 +61,7 @@ def create_sql_validation_node(
                 )
                 if not dry_ok:
                     errors.append(dry_err)
-                    logger.warning("dry-run 校验失败: %s", dry_err)
+                    logger.warning("dry-run 校验失败: {}", dry_err)
 
             is_valid = not errors
             next_retry = current_retry if is_valid else current_retry + 1
@@ -69,7 +69,7 @@ def create_sql_validation_node(
             if is_valid:
                 logger.info("SQL 验证通过")
             else:
-                logger.error("SQL 验证失败: %s", errors)
+                logger.error("SQL 验证失败: {}", errors)
 
             return {
                 "is_valid": is_valid,
@@ -78,7 +78,7 @@ def create_sql_validation_node(
                 "steps": ["sql_validation" if is_valid else "sql_validation_failed"],
             }
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("SQL 验证过程出错: %s", exc)
+            logger.exception("SQL 验证过程出错: {}", exc)
             return {
                 "is_valid": False,
                 "validation_errors": [f"验证过程出错: {exc}"],

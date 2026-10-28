@@ -1,4 +1,4 @@
-"""R2-3：引用正确性评分 + golden 100+ 扩充测试。
+"""R2-3：引用正确性评分测试（golden 100+ 那条随评测集于 2026-10-26 下线）。
 
 依据：《技术变更与架构演进指南 v2.0》§2.3.7①（黄金集 100+）与 §2.3.7②
 （引用正确性评分：期望法条须同时可归因到 sources 且真实出现在答案文本中）。
@@ -13,7 +13,9 @@ from pathlib import Path
 import pytest
 
 EVALS_DIR = Path(__file__).resolve().parent.parent / "evals"
-GOLDEN_PATH = EVALS_DIR / "legal_golden.jsonl"
+# 原 `GOLDEN_PATH = evals/legal_golden.jsonl` 连同 `test_golden_covers_100_and_all_routes`
+# 一起撤下（2026-10-26 评测集下线）：那条测的是**数据集本身**的条数/路由覆盖/效力样例，
+# 不是打分代码。本文件其余用例全部吃内联行，删掉金标不影响覆盖面。
 
 
 def _load_run_eval():
@@ -178,21 +180,3 @@ def test_evaluate_missing_prediction_scores_zero_correctness():
     assert result["summary"]["citation_correctness_applicable"] == 0.0
 
 
-# ---------------------------------------------------------------- golden 100+
-
-
-def test_golden_covers_100_and_all_routes():
-    rows = run_eval.load_jsonl(GOLDEN_PATH)
-    assert len(rows) >= 100
-    seen = {row["route_type"] for row in rows}
-    assert seen == set(run_eval.ALLOWED_ROUTE_TYPES)
-
-    # expected_citations ⊆ expected_sources 语义：允许 expected_sources 为空但
-    # expected_citations 非空的样例（法规名级），不允许 citations 里的条目完全无意义
-    for row in rows:
-        for cite in row.get("expected_citations", []):
-            assert "《" in cite and "条" in cite
-
-    # R2-2 效力感知样例存在（旧法废止 → 现行替代条文）
-    eff_ids = {row["id"] for row in rows if "废止" in row.get("notes", "")}
-    assert len(eff_ids) >= 5

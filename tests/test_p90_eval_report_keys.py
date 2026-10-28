@@ -5,8 +5,8 @@
    dist / budget_exhaust_rate / cancel_terminal_rate(+applicable) 精确口径。
 2. meta 缺 ``exit_reason``（Phase 19 旧预测行 / 扁平拓扑）⇒ ``{}``，
    evaluate() summary 不加本组键——不把「没有」读成 0。
-3. 只增报告键纪律：新键不进 CI ``METRICS`` 五键门（``ci.yml`` 交集为空），
-   ``test_ci_gate_contract`` / phase31 空预测快照与前缀白名单零变化。
+3. 只增报告键纪律：新键是**报告键**，不进质量门禁；``test_ci_gate_contract`` /
+   phase31 空预测快照与前缀白名单零变化。
 4. 取消口径：分母 = ``exit_reason == "interrupted"`` 的样本；分子 = 其中
    ``status`` 落在明确终态集合（completed / interrupted / failed）的占比；
    无取消样本 ⇒ rate=None + applicable=False（离线不造假）。
@@ -14,15 +14,9 @@
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
 from typing import Any, Dict, List
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CI_PATH = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
-
-from evals import run_eval  # noqa: E402  —— pythonpath=["."] 包路径加载
+from evals import run_eval
 
 
 def _meta(exit_reason: str, status: str, **extra: Any) -> Dict[str, Any]:
@@ -212,10 +206,19 @@ class TestEvaluateWiring:
         assert "multi_agent_exit_reason_dist" not in summary
         assert summary["multi_agent_meta_count"] == 0
 
-    def test_real_golden_empty_predictions_keeps_group_absent(self):
-        summary = run_eval.evaluate(
-            run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN), []
-        )["summary"]
+    def test_various_golden_shapes_empty_predictions_keep_group_absent(self):
+        """多条、多种路由形态、空预测 ⇒ 本组键仍不出现（原断言吃真实金标集，现吃内联行）。
+
+        金标集 2026-10-26 下线后这里改喂合成行：要点不在条数，而在「预测缺失时不得把
+        『没有数据』渲染成 exit 契约键」——空真与造假是同一种病。
+        """
+        golden = [
+            _golden("F1"),
+            {**_golden("F2"), "route_type": "general-query", "expect_reject": True},
+            {**_golden("F3"), "route_type": "text2sql-query", "expected_sources": ["《示例集》第1条"]},
+        ]
+        summary = run_eval.evaluate(golden, [])["summary"]
+        assert summary["total"] == 3
         for key in (
             "multi_agent_exit_reason_dist",
             "multi_agent_budget_exhaust_rate",
@@ -226,28 +229,17 @@ class TestEvaluateWiring:
 
 
 # ---------------------------------------------------------------------------
-# 4. 只增报告键纪律：不进 CI 五键门；与既有聚合函数正交
+# 4. 只增报告键纪律：与既有聚合函数正交
 # ---------------------------------------------------------------------------
-
-
-def _ci_gate_metrics() -> List[str]:
-    text = CI_PATH.read_text(encoding="utf-8")
-    match = re.search(r"METRICS\s*=\s*\(([^)]*)\)", text)
-    assert match, "ci.yml 里找不到 METRICS 元组——写法变了请同步本测试"
-    return re.findall(r'"([^"]+)"', match.group(1))
+#
+#: 2026-10-26 起本节少了「不泄进 CI 五键门」那一条：CI 的 `eval-offline` 质量门禁
+#: 机位随评测集下线一并撤除 ⇒ 「CI 门禁指标集合」这个东西不存在了，守卫的前提
+#: 随前提一起消失（断言一个不存在的集合不泄出任何东西，是恒真的假守卫）。
+#: 纪律本身仍然成立且由 `test_base_aggregator_returns_no_exit_keys` 守着：
+#: 老聚合函数不认识这些键 ⇒ 键只在多 agent 聚合路径上出现。
 
 
 class TestReportOnlyDiscipline:
-    def test_exit_keys_not_in_ci_metrics(self):
-        metrics = set(_ci_gate_metrics())
-        leaked = metrics & {
-            "multi_agent_exit_reason_dist",
-            "multi_agent_budget_exhaust_rate",
-            "multi_agent_cancel_terminal_applicable",
-            "multi_agent_cancel_terminal_rate",
-        }
-        assert not leaked, f"退出契约报告键泄入 CI 门禁：{sorted(leaked)}"
-
     def test_base_aggregator_returns_no_exit_keys(self):
         # p88 零接触的回归锚：老函数不认识新键
         agg = run_eval._aggregate_multi_agent(

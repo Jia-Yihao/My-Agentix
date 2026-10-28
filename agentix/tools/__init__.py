@@ -8,6 +8,8 @@ from agentix.tools.definitions import (
     RISK_LEVELS,
     ToolRegistry,
     ToolSpec,
+    is_llm_visible_tool,
+    llm_visible_specs,
     registry,
 )
 from agentix.tools.gateway.human_review import RiskLevel
@@ -50,18 +52,37 @@ registry.register(
 
 
 def list_tool_specs() -> List[Dict[str, Any]]:
-    """Return tool function definitions formatted for OpenAI function calling."""
-    return [spec.as_openai_function() for spec in registry.get_specs()]
+    """Return tool function definitions formatted for OpenAI function calling.
+
+    按注册表全集导出 ⇒ 必须过一遍 LLM 可见面的唯一判定
+    （``agentix/tools/definitions.py::llm_visible_specs``）：不进 LLM 可见
+    工具面的工具（``code_execute``）不能出现在这里——它由 ``code_agent``
+    节点直接调用，不交给模型自由挑选（口径见 ``.qoder/rules/code-exec.md`` §4）。
+    """
+    return [spec.as_openai_function() for spec in llm_visible_specs(registry.get_specs())]
 
 
 def get_tool_spec(name: str) -> Dict[str, Any]:
-    """Retrieve a single tool spec formatted for OpenAI function calling."""
-    return registry.get_spec(name).as_openai_function()
+    """Retrieve a single tool spec formatted for OpenAI function calling.
+
+    单点查询同样受 LLM 可见面约束：请求一条**不进 LLM 可见工具面**的工具
+    的 OpenAI schema 是拼装工具面的漏口 ⇒ 直接拒绝（fail-closed），
+    不返回 schema 让调用方自己拼进工具清单。
+    """
+    spec = registry.get_spec(name)
+    if not is_llm_visible_tool(spec.name):
+        raise KeyError(
+            f"tool {name!r} is excluded from the LLM-visible tool surface"
+        )
+    return spec.as_openai_function()
 
 
 def list_openai_tools() -> List[Dict[str, Any]]:
-    """Return tool entries suitable for the OpenAI `tools` argument."""
-    return [spec.as_openai_tool() for spec in registry.get_specs()]
+    """Return tool entries suitable for the OpenAI `tools` argument.
+
+    同 ``list_tool_specs()``：按注册表全集导出，必须过 LLM 可见面的唯一判定。
+    """
+    return [spec.as_openai_tool() for spec in llm_visible_specs(registry.get_specs())]
 
 
 @cache
@@ -105,5 +126,6 @@ __all__ = [
     "FORBIDDEN_RISK_LEVEL", "CONTROL_REQUIRED_FROM",
     "SearchTool", "RiskLevel", "ensure_registered", "get_active_tools",
     "list_tool_specs", "get_tool_spec", "list_openai_tools", "get_tool",
+    "is_llm_visible_tool", "llm_visible_specs",
 ]
 

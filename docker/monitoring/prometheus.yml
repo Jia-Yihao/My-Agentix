@@ -13,7 +13,7 @@ alerting:
   alertmanagers:
     - static_configs:
         - targets:
-            - alertmanager: 9093
+            - alertmanager:9093
 
 scrape_configs:
   - job_name: agentix-backend
@@ -33,4 +33,4 @@ scrape_configs:
   - job_name: alertmanager-self
     static_configs:
       - targets:
-          - alertmanager: 9093
+          - alertmanager:9093

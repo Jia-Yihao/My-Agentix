@@ -16,7 +16,7 @@
    flag-on L1 + ``side_effect=True`` + schema 类名 == 工具名（title 契约）；
    必填三键/长度/单行/name 正则校验、**同名拒绝覆盖**、写后复验、
    草稿隔离于 ``SKILLS_DIR``（loader 扫不到 ⇒ 不会被当活技能加载）。
-5. **flag 五处同步**：settings / selfcheck / .env.example / p41 / configuration.md。
+5. **flag 五处同步**：settings / selfcheck / .env.example / p41 / 配置管理.md。
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ from agentix.config import settings
 from agentix.domain.agent.types import MemoryItem, MemoryKind, MemoryScope
 
 # ---------------------------------------------------------------------------
-# 基线断言：flag 默认关（flag 治理；见 configuration.md §5）
+# 基线断言：flag 默认关（flag 治理；见 配置管理.md §5）
 # ---------------------------------------------------------------------------
 
 assert settings.MEMORY_REVIEW_ENABLED is False, "P6 基线：记忆后台评审默认关"
@@ -508,7 +508,7 @@ class TestCreateSkillDraft:
 
 
 # ===========================================================================
-# 5 处同步：settings / selfcheck / .env.example / p41 / configuration.md
+# 5 处同步：settings / selfcheck / .env.example / p41 / 配置管理.md
 # ===========================================================================
 
 
@@ -534,7 +534,7 @@ class TestFlagSync:
         assert '"MEMORY_REVIEW_ENABLED"' in text
 
     def test_configuration_md_documents_keys(self):
-        text = (_ROOT / "docs" / "architecture" / "configuration.md").read_text(
+        text = (_ROOT / "docs" / "architecture" / "配置管理.md").read_text(
             encoding="utf-8"
         )
         assert "MEMORY_FANOUT_ENABLED" in text

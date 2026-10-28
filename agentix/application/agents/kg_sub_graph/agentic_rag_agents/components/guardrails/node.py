@@ -97,7 +97,7 @@ def create_guardrails_node(
                 {"question": question}
             )
         except Exception as exc:  # pragma: no cover - 容错
-            logger.warning("Guardrails LLM 调用失败，回退到 planner: %s", exc)
+            logger.warning("Guardrails LLM 调用失败，回退到 planner: {}", exc)
             return {"next_action": "planner", "summary": None, "steps": ["guardrails"]}
 
         decision = guardrails_output.decision

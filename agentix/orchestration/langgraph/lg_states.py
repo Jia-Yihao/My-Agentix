@@ -51,6 +51,48 @@ class TaskRouter(Router):
     ] = "kb-query"
 
 
+class CodeRouter(Router):
+    """P2（代码执行）：在 Router 白名单上追加 ``code-query`` 意图。
+
+    与 :class:`TaskRouter` 同款纪律：不动基类字段、不放宽基类 ``type``
+    字面量，只在**子类**上加一个取值。仅当 ``settings.CODE_EXEC_ENABLED=true``
+    时被 analyze 使用（结构化输出 schema / 字面量校验都换成本类）；flag-off 时
+    生产链路仍只构造基类 ``Router``，其 ``type`` 字面量与基线**字节等价**。
+    """
+
+    type: Literal[
+        "general-query",
+        "additional-query",
+        "kb-query",
+        "graphrag-query",
+        "image-query",
+        "file-query",
+        "text2sql-query",
+        "code-query",
+    ] = "kb-query"
+
+
+class TaskCodeRouter(TaskRouter):
+    """两个 flag 同开时的联合白名单（task-query + code-query）。
+
+    为什么不靠"运行时给 Literal 加值"：``Literal`` 是静态类型，schema 一旦
+    按基类构造就固化了。联合白名单必须**显式声明**一份，否则两个 flag 同开时
+    只能二选一（先命中的那个把另一个挡在白名单外）。
+    """
+
+    type: Literal[
+        "general-query",
+        "additional-query",
+        "kb-query",
+        "graphrag-query",
+        "image-query",
+        "file-query",
+        "text2sql-query",
+        "task-query",
+        "code-query",
+    ] = "kb-query"
+
+
 @dataclass(kw_only=True)
 class RouteResult:
     """Route selection result for downstream nodes."""

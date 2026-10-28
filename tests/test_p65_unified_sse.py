@@ -401,6 +401,130 @@ class TestSingleVocabulary:
         assert payload["run_id"] == "r-1"
         assert "event" not in payload, "A5 归一后 wire 不得出现 event 键"
 
+    def test_to_sse_carries_terminal_perf_fields_and_nothing_else(self):
+        """回归守卫（2026-10-23 宿主实跑发现）：emitter 的终帧耗时必须出得来。
+
+        断链现场：RunEventEmitter 已在终帧 setdefault 了 duration_ms / ttft_ms /
+        breakdown_ms，`_to_sse` 却按 ChatStreamChunk 的字段白名单序列化，三个键整个
+        被丢弃 ⇒ 前端 `web/src/modules/knowledge/api/chatStreamHandlers.ts` 的耗时芯片
+        永远拿不到数据，而它自己的单测喂的是手写假帧，掩盖了这条断链。
+        两头都钉：终帧必须带，非终帧连 null 占位键都不许多。
+        """
+        from agentix.interfaces.http.v1.chat import _PERF_FRAME_KEYS, _to_sse
+
+        def payload(line):
+            return json.loads(line[len("data: ") :])
+
+        terminal = payload(
+            _to_sse(
+                {
+                    "type": "done",
+                    "seq": 4,
+                    "run_id": "r-1",
+                    "duration_ms": 2451,
+                    "ttft_ms": 2010,
+                    "breakdown_ms": {"stream_ms": 2451, "ttft_ms": 2010},
+                }
+            )
+        )
+        assert {k: terminal[k] for k in _PERF_FRAME_KEYS} == {
+            "duration_ms": 2451,
+            "ttft_ms": 2010,
+            "breakdown_ms": {"stream_ms": 2451, "ttft_ms": 2010},
+        }
+
+        content = payload(_to_sse({"type": "message", "content": "hi", "seq": 2}))
+        assert not set(content) & set(_PERF_FRAME_KEYS), "非终帧不得出现性能键（也不得补 null）"
+
+    @pytest.mark.asyncio
+    async def test_emitter_terminal_fields_survive_to_wire(self):
+        """整链守卫：stub 图 → stream_events（emitter 戳记）→ `_to_sse` → wire。
+
+        只测 DTO 会漏掉今天这种断链（emitter 内帧有 duration_ms，wire 上没有），
+        所以这条跑真实投影链，并在 emitter 侧先确认字段确实被注入了。
+        """
+        from agentix.interfaces.http.v1.chat import _to_sse
+
+        frames = await _collect_chat()
+        internal_done = [f for f in frames if f.get("type") == "done"]
+        assert internal_done and "duration_ms" in internal_done[-1], (
+            f"emitter 未注入终帧耗时，本条守卫失去意义：{sorted(internal_done[-1] if internal_done else {})}"
+        )
+
+        wire = [json.loads(_to_sse(f)[len("data: ") :]) for f in frames]
+        terminal = [w for w in wire if w["type"] == "done"]
+        assert terminal, f"stub 链未产出 done 终帧：{[w['type'] for w in wire]}"
+        for key in ("duration_ms", "ttft_ms"):
+            assert key in terminal[-1], f"终帧 {key} 在序列化时被丢弃：{sorted(terminal[-1])}"
+
+
+# ---------------------------------------------------------------------------
+# 路由帧：必须按 router 节点的**真实返回形状**测
+# ---------------------------------------------------------------------------
+
+
+class TestRouteFrameUsesRealNodeShape:
+    """``route`` 必须真的出现在帧上。
+
+    案发背景（2026-10-23 拉起真栈实测）：SSE 每一帧的 ``route`` 都是 ``null``。根因是
+    ``_stream_events_impl`` 用 ``isinstance(router_data, dict)`` 取值，而
+    ``analyze_and_route_query`` 返回的是 ``{"router": Router(...)}``——pydantic 模型
+    不是 dict，判断恒为 False，这一帧**从来没发出去过**。既有夹具
+    ``_success_events`` 恰好把 router 写成了 dict，于是"有路由帧"在测试里一直成立、
+    在生产里一直不存在——形状失真的夹具比没有夹具更糟。
+    """
+
+    @staticmethod
+    def _events(router_payload: Any) -> List[Dict[str, Any]]:
+        return [
+            _ev(
+                "on_chain_end",
+                name="analyze_and_route_query",
+                data={"output": {"router": router_payload}},
+                metadata={"langgraph_node": "analyze_and_route_query"},
+            ),
+            _ev(
+                "on_chat_model_stream",
+                name="ChatModel",
+                data={"chunk": _FakeChunk("这是用来验证路由帧是否上线的流式回答")},
+                metadata={"langgraph_node": "create_kb_query"},
+            ),
+            {
+                "event": "on_chain_end",
+                "name": "LangGraph",
+                "data": {"output": {"sources": []}},
+                "metadata": {},
+            },
+        ]
+
+    @pytest.mark.asyncio
+    async def test_router_model_instance_reaches_the_wire(self):
+        from agentix.application.agents.router import Router
+
+        frames = await _collect_chat(
+            self._events(Router(type="kb-query", logic="fallback: llm down", question="q"))
+        )
+        routed = [f for f in frames if f.get("route")]
+        assert routed, f"Router 实例没换来路由帧：{[f.get('type') for f in frames]}"
+        assert routed[0]["type"] == "metadata", f"route 挂在了非 metadata 帧上：{routed[0]}"
+        assert routed[0]["route"] == "kb-query"
+        assert routed[0]["metadata"]["logic"] == "fallback: llm down"
+
+    @pytest.mark.asyncio
+    async def test_dict_shaped_router_payload_also_reaches_the_wire(self):
+        """dict 形状（既有夹具/其它节点可能给的形状）同样必须可用。"""
+        frames = await _collect_chat(self._events({"type": "general-query", "logic": "fast-path"}))
+        routed = [f for f in frames if f.get("route")]
+        assert routed and routed[0]["route"] == "general-query"
+
+    @pytest.mark.asyncio
+    async def test_absent_router_payload_does_not_fabricate_a_route(self):
+        """拿不到路由就整帧不发——不得凭空造一个 route 值（守卫的反向半边）。"""
+        frames = await _collect_chat(self._events(None))
+        assert not [f for f in frames if f.get("route")], (
+            f"没有 router 输出却出现了 route：{[f for f in frames if f.get('route')]}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # R5d：流式轨迹通电（error / completion 步）

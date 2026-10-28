@@ -1,11 +1,17 @@
 """P2-1 评估集与回归框架的单测（零外部服务，可在 ``-m "not integration"`` 下跑）。
 
 覆盖：
-* golden JSONL 可解析、条数 ≥20、7 类路由 + 6 个出口节点全覆盖、≥2 条越界
+* 路由 ↔ 出口节点映射的不变量（7 类路由 → 6 个出口节点）
 * 三个确定性打分函数的分支对拍（命中/未命中/零期望/误拒/正确拒答）
 * 离线模式端到端（tmp_path 下的临时 golden + predictions → CSV/summary）
 * 基线文件缺失时的清晰报错且非静默通过
 * ``--judge`` 无端点 → ``NotImplementedError`` 诚实失败（退出码 3）
+
+2026-10-26：法律金标集（``evals/legal_golden.jsonl``）随知识图谱/RAG 评测一起下线。
+本文件原先那组「金标集结构」断言（条数 ≥20、7 类路由全覆盖、6 个出口节点全覆盖、
+id 唯一、字段齐全、≥2 条越界）测的是**数据集内容**，没有输入就不成立，已撤下；
+它们的可迁移部分改由 :func:`_fixture_golden` 驱动——那是内联的合成金标，只用来验
+`run_eval` 的代码契约，不代表任何评测结论。
 """
 
 from __future__ import annotations
@@ -21,7 +27,6 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EVALS_DIR = PROJECT_ROOT / "evals"
-GOLDEN_PATH = EVALS_DIR / "legal_golden.jsonl"
 
 
 def _load_run_eval():
@@ -38,72 +43,93 @@ run_eval = _load_run_eval()
 
 
 # ---------------------------------------------------------------------------
-# golden 评估集结构
+# 路由映射不变量 + 内联合成金标
 # ---------------------------------------------------------------------------
 
 
-def _load_golden() -> List[Dict[str, Any]]:
-    return run_eval.load_jsonl(GOLDEN_PATH)
+def test_route_exit_node_mapping_is_seven_classes_six_exits():
+    """映射表自身的口径（原靠真实 golden 覆盖来间接验证，现在直接钉代码）。
+
+    `EXIT_NODE_BY_ROUTE` 是「路由类 → 出口节点」的单一真源：7 类路由必须各自有归属，
+    归属集合必须恰好等于 6 个出口节点——多一类或少一类都会让 run_offline 的
+    route/exit 判定静默漏掉一条路径。
+    """
+    assert len(run_eval.ALLOWED_ROUTE_TYPES) == 7
+    assert len(run_eval.EXPECTED_EXIT_NODES) == 6
+    assert set(run_eval.EXIT_NODE_BY_ROUTE) == set(run_eval.ALLOWED_ROUTE_TYPES)
+    assert set(run_eval.EXIT_NODE_BY_ROUTE.values()) == set(run_eval.EXPECTED_EXIT_NODES)
 
 
-def test_golden_jsonl_parses_and_has_enough_rows():
-    rows = _load_golden()
-    assert len(rows) >= 20, f"golden 条数不足：{len(rows)}"
-    assert all(isinstance(row, dict) for row in rows)
+def _fixture_golden() -> List[Dict[str, Any]]:
+    """形状合法的内联合成金标：7 类路由各 1 条 + 2 条越界 + 2 条无引用要求。
+
+    字段与已下线金标一致（同一套 schema），但内容是无意义的占位文本。用它驱动端到端
+    与聚合口径断言，是因为那些断言测的是 `run_eval` 的算术，不是数据集质量。
+    """
+    rows: List[Dict[str, Any]] = []
+    for i, route in enumerate(sorted(run_eval.ALLOWED_ROUTE_TYPES)):
+        rows.append(
+            {
+                "id": f"FX{i:03d}",
+                "question": f"fixture 问题 {i}（{route}）",
+                "route_type": route,
+                "expected_sources": [f"《示例集》第{i}条"],
+                "expected_citations": [f"《示例集》第{i}条"],
+                "must_contain": [],
+                "expect_reject": False,
+            }
+        )
+    # 无引用要求的条目：驱动空真地板断言
+    for i, route in enumerate(("general-query", "text2sql-query")):
+        rows.append(
+            {
+                "id": f"FXN{i:03d}",
+                "question": f"fixture 无引用问题 {i}（{route}）",
+                "route_type": route,
+                "expected_sources": [],
+                "must_contain": [],
+                "expect_reject": False,
+            }
+        )
+    # 越界条目
+    for i in range(2):
+        rows.append(
+            {
+                "id": f"FXR{i:03d}",
+                "question": f"fixture 越界问题 {i}",
+                "route_type": "general-query",
+                "expected_sources": [],
+                "must_contain": [],
+                "expect_reject": True,
+            }
+        )
+    return rows
 
 
-def test_golden_ids_unique_and_schema_complete():
-    rows = _load_golden()
+def test_fixture_golden_is_schema_complete_and_ids_unique():
+    rows = _fixture_golden()
     ids = [row["id"] for row in rows]
-    assert len(ids) == len(set(ids)), "golden id 存在重复"
-
-    required = {
-        "id",
-        "question",
-        "route_type",
-        "expected_sources",
-        "must_contain",
-        "expect_reject",
-    }
+    assert len(ids) == len(set(ids)), "id 存在重复"
+    required = {"id", "question", "route_type", "expected_sources", "must_contain", "expect_reject"}
     for row in rows:
         assert required.issubset(row.keys()), f"{row.get('id')} 缺字段"
         assert isinstance(row["id"], str) and row["id"]
         assert isinstance(row["question"], str) and row["question"]
-        assert isinstance(row["route_type"], str)
+        assert isinstance(row["route_type"], str) and row["route_type"]
         assert isinstance(row["expected_sources"], list)
         assert all(isinstance(src, str) for src in row["expected_sources"])
         assert isinstance(row["must_contain"], list)
         assert isinstance(row["expect_reject"], bool)
-
-
-def test_golden_covers_all_seven_route_types():
-    rows = _load_golden()
-    seen = {row["route_type"] for row in rows}
-    assert seen == set(run_eval.ALLOWED_ROUTE_TYPES), (
-        f"路由覆盖不全，缺失：{set(run_eval.ALLOWED_ROUTE_TYPES) - seen}"
-    )
-    assert len(run_eval.ALLOWED_ROUTE_TYPES) == 7
-
-
-def test_golden_covers_all_six_exit_nodes():
-    rows = _load_golden()
-    seen_exits = {run_eval.EXIT_NODE_BY_ROUTE[row["route_type"]] for row in rows}
-    assert seen_exits == set(run_eval.EXPECTED_EXIT_NODES), (
-        f"出口节点覆盖不全，缺失：{set(run_eval.EXPECTED_EXIT_NODES) - seen_exits}"
-    )
-    assert len(run_eval.EXPECTED_EXIT_NODES) == 6
-
-
-def test_golden_has_at_least_two_reject_rows():
-    rows = _load_golden()
-    rejects = [row for row in rows if row["expect_reject"]]
-    assert len(rejects) >= 2, f"越界样本不足：{len(rejects)}"
-
-
-def test_golden_non_reject_rows_have_valid_route():
-    rows = _load_golden()
-    for row in rows:
         assert row["route_type"] in run_eval.ALLOWED_ROUTE_TYPES
+
+
+def test_fixture_golden_covers_every_route_and_exit_node():
+    rows = _fixture_golden()
+    assert {row["route_type"] for row in rows} == set(run_eval.ALLOWED_ROUTE_TYPES)
+    assert {run_eval.EXIT_NODE_BY_ROUTE[row["route_type"]] for row in rows} == set(
+        run_eval.EXPECTED_EXIT_NODES
+    )
+    assert sum(1 for row in rows if row["expect_reject"]) >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -438,9 +464,9 @@ def test_cli_judge_flag_returns_error_code(tmp_path, capsys, monkeypatch):
     assert "人工" in captured.err or "校准" in captured.err
 
 
-def test_real_golden_evaluates_against_synthetic_full_hit_baseline():
-    """用 golden 自身构造“全命中”预测，端到端验证三个指标可同时到 1.0。"""
-    golden_rows = _load_golden()
+def test_synthetic_golden_evaluates_against_full_hit_baseline():
+    """用合成 golden 自身构造“全命中”预测，端到端验证三个指标可同时到 1.0。"""
+    golden_rows = _fixture_golden()
     predictions = []
     for row in golden_rows:
         if row["expect_reject"]:
@@ -546,13 +572,18 @@ class TestVacuousFloorVisibility:
         flags = {row["id"]: row["citation_expected"] for row in result["rows"]}
         assert flags == {"C1": True, "C2": True, "C3": False, "C4": False}
 
-    def test_real_golden_floor_is_quantified(self):
-        """对真实 golden：空真地板必须在 summary 可见（R2-3 扩充后改为结构化断言）。"""
-        golden = run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN)
+    def test_fixture_golden_floor_is_quantified(self):
+        """对合成 golden：空真地板必须在 summary 可见（结构化断言，不依赖数据集）。
+
+        原来这里读的是 ``run_eval.DEFAULT_GOLDEN``（102 条法律金标），并顺带钉了
+        「黄金集 ≥100 条」这条指南要求。金标集下线后条数断言失去输入，但**分母自洽**
+        与**空预测下均值恰等于空真地板**是聚合层的算术不变量，与条数无关，照旧保留。
+        """
+        golden = _fixture_golden()
         summary = run_eval.evaluate(golden, [])["summary"]
 
-        assert summary["total"] >= 100  # 指南 §2.3.7①：黄金集 100+
         assert summary["citation_expected_count"] > 0
+        assert summary["citation_free_hit_count"] > 0
         # 分母结构自洽：期望引用条数 + 空真条数 = 总数
         assert (
             summary["citation_expected_count"] + summary["citation_free_hit_count"]

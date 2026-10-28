@@ -83,6 +83,11 @@ class ChatResponse(BaseModel):
     # P0-4：贯穿 HTTP → Agent → LLM 的追踪 id（响应头 X-Trace-Id 同值）
     trace_id: Optional[str] = None
 
+
+#: W0 性能戳记键：只有终帧带，非终帧从 wire 里整键剔除（帧形状不变）。
+_PERF_FRAME_KEYS = ("duration_ms", "ttft_ms", "breakdown_ms")
+
+
 class ChatStreamChunk(BaseModel):
     """Streaming response chunk"""
 
@@ -97,6 +102,13 @@ class ChatStreamChunk(BaseModel):
     # run_id（守卫 #5：帧可回溯到统一 Run/Event stream；降级时为 None）。
     seq: Optional[int] = None
     run_id: Optional[str] = None
+    # Phase H · W0 性能戳记：RunEventEmitter 只在**终帧**注入这三个键，非终帧为
+    # None 且由 `_to_sse` 的 exclude 从 wire 里剔除（保持既有帧形状逐字节不变）。
+    # 它们曾经在这里整个丢掉——DTO 字段集是白名单，序列化器不带就不出 wire，
+    # 于是前端 `chatStreamHandlers.ts` 的耗时芯片永远拿不到数据。
+    duration_ms: Optional[int] = None
+    ttft_ms: Optional[int] = None
+    breakdown_ms: Optional[Dict[str, int]] = None
 
 
 @router.post("/", response_model=ChatResponse)
@@ -281,6 +293,7 @@ def _ensure_session_visible(
 
 def _to_sse(event: Dict[str, Any]) -> str:
     """业务事件 dict → SSE 帧（service 产出业务语义，本层负责传输格式）。"""
+    perf = {name: event.get(name) for name in _PERF_FRAME_KEYS}
     chunk = ChatStreamChunk(
         type=event["type"],
         content=event.get("content"),
@@ -289,8 +302,11 @@ def _to_sse(event: Dict[str, Any]) -> str:
         route=event.get("route"),
         seq=event.get("seq"),
         run_id=event.get("run_id"),
+        **perf,
     )
-    return f"data: {chunk.model_dump_json()}\n\n"
+    # 非终帧逐字节保持原样：没带的性能键连 null 都不补
+    drop = {name for name, value in perf.items() if value is None}
+    return f"data: {chunk.model_dump_json(exclude=drop)}\n\n"
 
 
 @router.post("/stream")

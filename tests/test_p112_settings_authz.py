@@ -407,7 +407,7 @@ def test_worker_does_not_get_a_knob_it_cannot_use() -> None:
 
 def test_runbook_documents_the_two_preconditions() -> None:
     """开关能不能拧，取决于运维是否知道拧之前要准备什么——文档要能被 grep 到。"""
-    text = (PROJECT_ROOT / "docs/runbooks/staging-environment.md").read_text(encoding="utf-8")
+    text = (PROJECT_ROOT / "docs/runbooks/预发环境与配置矩阵.md").read_text(encoding="utf-8")
     assert "SETTINGS_AUTHZ_ENABLED" in text
     for token in ("tenant_id", "admin", "403"):
         assert token in text, f"runbook 没交代 ⑪ 的前置：{token}"

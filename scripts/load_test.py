@@ -34,13 +34,22 @@ from __future__ import annotations
 import argparse
 import http.client
 import json
-import math
 import ssl
 import sys
 import threading
 import time
 import urllib.parse
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# 直跑（``python scripts/load_test.py``）时 sys.path[0] 是 scripts/，仓库根不在
+# 搜索路径里；分位数的**唯一实现**住在 evals/ 包里（2026-10-27 口径统一），
+# 先把根插进来才 import 得到。该模块只用标准库 ⇒ 本脚本"零第三方依赖"的前提不变。
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from evals.perf_stats import nearest_rank_quantile  # noqa: E402  （依赖上面的根注入）
 
 
 # ---------------------------------------------------------------------------
@@ -49,28 +58,22 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 def percentile(values: List[float], p: float) -> Optional[float]:
-    """线性插值分位数（与 numpy 默认 ``method="linear"`` 一致）。
+    """最近邻秩分位数——**委托**全仓唯一实现 ``evals/perf_stats.py``。
 
-    为什么不用"最近秩"（``sorted[ceil(p*n)-1]``）：样本量小的时候最近秩会
-    在 p95 与 p99 上取到同一个值，让"尾部劣化"看不出来；线性插值保有
-    区分度，且不引入 numpy 依赖。
+    本函数此前是**线性插值**（与 numpy 默认 ``method="linear"`` 一致），理由是
+    "小样本上最近秩会让 p95 == p99，尾部劣化看不出来"。2026-10-27 起全仓统一
+    到最近邻秩（规划文档 T2）：一把尺子优先于每处各自挑"更合用"的那把——同一份
+    延迟样本过去按调用哪个脚本得出不同 p95，而 ``perf-baseline.yml`` 的
+    「劣化 >20% 就阻断」正好建在这个数字上。⚠️ 切换日期之前的 p50/p95/p99
+    与之后不同尺，跨日期比对前必须先按新口径重跑基线。
+
+    样本量足够大时（本脚本默认 200 请求）两种口径几乎重合；差异主要落在小样本。
 
     :param values: 样本（未排序亦可）
-    :param p: 分位点，0–100
+    :param p: 分位点，0–100（本脚本的对外口径仍是百分数）
     :return: 分位数；``values`` 为空时返回 ``None``（**不是 0.0**）
     """
-    if not values:
-        return None
-    ordered = sorted(values)
-    if len(ordered) == 1:
-        return ordered[0]
-    rank = (p / 100.0) * (len(ordered) - 1)
-    low = math.floor(rank)
-    high = math.ceil(rank)
-    if low == high:
-        return ordered[int(rank)]
-    weight = rank - low
-    return ordered[low] * (1.0 - weight) + ordered[high] * weight
+    return nearest_rank_quantile(values, p / 100.0)
 
 
 def summarize(samples: List[float]) -> Dict[str, Optional[float]]:

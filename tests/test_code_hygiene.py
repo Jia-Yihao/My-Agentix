@@ -19,6 +19,12 @@
    收集成用例并报 fixture 错误——"开启集成测试"的结果是**报错**而不是运行。
    守卫口径：凡是有 ``allow_module_level=True`` 跳过的模块，不得再定义
    顶层 ``test_*`` 函数。
+
+5. **loguru 调用用 printf 占位符**：loguru 用 ``str.format``，``logger.warning("x: %s", exc)``
+   会打印字面 ``%s`` 并把 ``exc`` 整个丢掉——降级/失败**原因**从日志里消失，排查只能靠猜。
+   当时本仓 57 处（含三条降级路径）已改为 ``{}`` / ``{!r}``，守卫见
+   ``TestLoguruFormatPlaceholders``；57 这个数字是 ``_printf_style_loguru_calls``
+   对改前树逐文件数出来的，不是估算。
 """
 
 from __future__ import annotations
@@ -52,6 +58,80 @@ def _read_source(path: Path) -> str:
     待检查文件的编码问题而崩掉——那会把"检查失败"伪装成"收集错误"。
     """
     return path.read_text(encoding="utf-8-sig")
+
+
+_LOGURU_LEVELS = {
+    "debug",
+    "info",
+    "warning",
+    "error",
+    "exception",
+    "critical",
+    "success",
+    "trace",
+    "log",
+}
+# 故意不含空格标志：否则 "50% off" 这类普通文本会被误判成说明符。
+_PRINTF_SPEC_RE = re.compile(r"%[-+#0]*\d*(?:\.\d+)?[sdifrxeEog]")
+
+
+def _logger_is_loguru(tree: ast.AST) -> bool:
+    """判断本模块里 ``logger`` 这个名字绑到的是 loguru 还是标准库。
+
+    必须分辨，因为两种库的占位符语义**相反**：
+    * ``from loguru import logger`` 与 ``logger = get_logger(service=...)``
+      （``agentix.infrastructure.core.logger`` 的唯一实现，返回 ``logger.bind``）
+      → loguru，用 ``{}``；写 ``%s`` 会丢实参。
+    * ``logger = logging.getLogger(__name__)`` → 标准库，``%s`` 是**正确**写法，
+      按 loguru 口径改反而会把消息打成 ``x: {}``。
+    """
+    is_loguru = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "loguru":
+            if any((a.asname or a.name) == "logger" for a in node.names):
+                is_loguru = True
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if not (isinstance(target, ast.Name) and target.id == "logger"):
+                    continue
+                call = node.value
+                if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "get_logger":
+                    is_loguru = True
+                elif isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute):
+                    # logging.getLogger(...) —— 标准库语义优先，整模块豁免
+                    return False
+    return is_loguru
+
+
+def _printf_style_loguru_calls(source: str):
+    """扫出「printf 风格 + 仍有位置实参」的 loguru 调用 → ``[(行号, 消息), ...]``。"""
+    offenders = []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:  # 语法问题交给别的守卫报，这里不假装发现
+        return offenders
+    if not _logger_is_loguru(tree):
+        return offenders
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "logger"
+            and func.attr in _LOGURU_LEVELS
+        ):
+            continue
+        if len(node.args) < 2:
+            continue
+        first = node.args[0]
+        if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+            continue
+        if not _PRINTF_SPEC_RE.search(first.value):
+            continue
+        offenders.append((node.lineno, first.value))
+    return offenders
 
 
 class TestNoUtf8Bom:
@@ -250,3 +330,64 @@ class TestHistoricalDefectsStayFixed:
         path = REPO_ROOT / relative_path
         assert path.exists(), f"文件不存在：{relative_path}"
         assert needle in _read_source(path), f"{relative_path} 中缺少修复标记：{why}"
+
+
+class TestLoguruFormatPlaceholders:
+    """``loguru`` 不做 ``%``-格式化：``logger.warning("x: %s", exc)`` 打印出字面
+    ``%s``，并把 ``exc`` 整个丢掉。
+
+    案发背景（2026-10-23 拉起真栈实测）：三条降级路径的**原因文本**全部丢失，
+    日志里只剩 ``Router LLM failed: %s. Falling back to KB query.``。排查时看不出
+    是真的没余额（402 Insufficient Balance）还是代码写错，只能靠猜——降级设计本身
+    是 fail-open，可"为什么降级"这条信息一旦丢失，fail-open 就变成了 blind-open。
+    当时全仓 57 处（6 个模块直绑 ``from loguru import logger`` 共 26 处 + 12 个模块经
+    ``get_logger(service=...)`` 包装共 31 处），已全部改为 loguru 的 ``{}`` / ``{!r}`` 风格。
+    57 这个数是用本文件的 ``_printf_style_loguru_calls`` 逐文件数改前那棵树得到的；
+    早先记的"54 处/24+30 处"是没做绑定分类那一轮的估算，少算了 3 处、分法也不对。
+
+    口径两条：
+    1. 只查「首参是含 printf 说明符的字符串字面量 **且** 还有位置实参」的调用——
+       没有实参时 ``%s`` 只是消息里的普通字符，不构成信息丢失；
+    2. 只查 ``logger`` 确实绑到 loguru 的模块——``logging.getLogger`` 模块里
+       ``%s`` 是**正确**写法，跟着改反而会把日志打坏。
+    """
+
+    def test_no_printf_style_loguru_calls_in_package(self):
+        offenders = []
+        for path in _iter_python_files(PKG_ROOT):
+            for lineno, msg in _printf_style_loguru_calls(_read_source(path)):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno}  {msg}")
+        assert not offenders, (
+            "loguru 会丢弃这些调用的位置实参（改用 {} / {!r}）：\n" + "\n".join(offenders)
+        )
+
+    def test_detector_is_not_vacuous(self):
+        """探测器必须认得出病文本、且不误判健康文本。
+
+        没有这一条，上一个测试可能只是因为扫不到任何东西才绿。
+        """
+        broken = 'from loguru import logger\nlogger.warning("Router failed: %s", exc)\n'
+        assert _printf_style_loguru_calls(broken) == [(2, "Router failed: %s")]
+
+        healthy = 'from loguru import logger\nlogger.warning("Router failed: {}", exc)\n'
+        assert _printf_style_loguru_calls(healthy) == []
+
+        no_args = 'from loguru import logger\nlogger.warning("still 50%s done")\n'
+        assert _printf_style_loguru_calls(no_args) == []
+
+        # 标准库语义的模块必须豁免：那里 %s 是正确写法，改成 {} 才会把日志打坏。
+        stdlib = (
+            "import logging\n"
+            'logger = logging.getLogger(__name__)\n'
+            'logger.warning("Executor failed: %s", exc)\n'
+        )
+        assert _printf_style_loguru_calls(stdlib) == []
+
+        # wrapper 绑定的模块（get_logger → loguru）不在此豁免之列。
+        wrapped = (
+            "from agentix.infrastructure.core.logger import get_logger\n"
+            'logger = get_logger(service="kb")\n'
+            'logger.warning("External search retrieved %s results", n)\n'
+        )
+        assert _printf_style_loguru_calls(wrapped) == [(3, "External search retrieved %s results")]
+

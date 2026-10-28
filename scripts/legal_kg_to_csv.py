@@ -15,7 +15,7 @@ produces valid, importable CSV files.
 import argparse
 import csv
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Small helper to keep node registries deduplicated by a stable id
@@ -44,10 +44,6 @@ def _ensure_node(
     return node
 
 
-def _regulation_id(name: str) -> str:
-    return f"reg::{name}"
-
-
 def _chapter_id(reg_name: str, title: str) -> str:
     return f"chap::{reg_name}::{title}"
 
@@ -56,16 +52,13 @@ def _article_id(reg_name: str, article_no: str) -> str:
     return f"art::{reg_name}::{article_no}"
 
 
-def _cause_id(name: str) -> str:
-    return f"cause::{name}"
-
-
-def _interpretation_id(name: str) -> str:
-    return f"interp::{name}"
-
-
-def _authority_id(name: str) -> str:
-    return f"auth::{name}"
+# 2026-10-25（基线录制）：此处原有 `_regulation_id` / `_cause_id` /
+# `_interpretation_id` / `_authority_id`，返回 `reg::名称` 这类**注册表键**。
+# 它们只是 registry 的去重键，不是写进 CSV 的节点 id（节点 id 由 `_ensure_node`
+# 生成 `reg_N`）。关系行早期误用它们当端点，导入时 Neo4j 报
+# "referring to missing node auth::全国人民代表大会" —— 即文档里
+# `legal_kg_to_csv.py` → `neo4j_seeded` 这条灌库链路从未真正跑通过。
+# 删掉这套第二 id 方案，避免再次被当成端点使用。
 
 
 def main() -> None:
@@ -142,6 +135,11 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
     rel_regulation_authority: List[Dict[str, Any]] = []
     rel_interpretation_authority: List[Dict[str, Any]] = []
     rel_upper_law: List[Dict[str, Any]] = []
+    # 引用是**顺序敏感的前向引用**：种子里 286 个不同引用对里有 34 个，被引条号在
+    # 遍历到引用方时还没登记（同数据集内、出现在更后的章节/条目）。单遍顺解会让这
+    # 34 条边静默消失（实测图谱只有 252 条引用边，而 SQL 侧 286 行齐全），所以先把
+    # 声明挂起来，等节点全部登记完再统一解析。
+    pending_citations: List[Tuple[str, str, str]] = []
 
     # ----- standalone cause / interpretation / authority lists -----------
     for cause in seed.get("causes", []) or []:
@@ -174,11 +172,14 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
         )
         issuing = interp.get("制定机关") or interp.get("发布机关")
         if issuing:
-            _ensure_node(
+            # 关系端点必须用 _ensure_node 返回的**节点 id**（`auth_N`），不能再用
+            # 注册表键（`auth::名称`）：两者方案不同，neo4j-admin 批量导入会报
+            # "referring to missing node"，整库导不进去。
+            auth_node = _ensure_node(
                 authority_registry, issuing, "auth", authorities, {"name": issuing, "层级": ""}
             )
             rel_interpretation_authority.append(
-                {"start": node["id"], "end": _authority_id(issuing)}
+                {"start": node["id"], "end": auth_node["id"]}
             )
 
     for auth in seed.get("authorities", []) or []:
@@ -210,19 +211,16 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
         # 数据来源 (数据集 -> 机构)
         issuing = reg.get("制定机关")
         if issuing:
-            _ensure_node(
+            auth_node = _ensure_node(
                 authority_registry, issuing, "auth", authorities, {"name": issuing, "层级": ""}
             )
             rel_regulation_authority.append(
-                {"start": reg_node["id"], "end": _authority_id(issuing)}
+                {"start": reg_node["id"], "end": auth_node["id"]}
             )
 
         # 上级数据集 (下级数据集 -> 上级数据集)
         upper = reg.get("上位法")
         if upper and upper != reg_name:
-            _ensure_node(
-                authority_registry, upper, "auth", authorities, {"name": upper, "层级": ""}
-            ) if False else None
             upper_node = _ensure_node(
                 regulation_registry, upper, "reg", regulations,
                 {"name": upper, "生效日期": "", "发文字号": "", "效力层级": ""},
@@ -272,11 +270,7 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
 
                 # 引用 (数据条目 -> 数据条目)，条号限定在同一数据集内
                 for cited in _as_list(article.get("引用")):
-                    cited_id = _article_id(reg_name, cited) if cited in article_registry or True else cited
-                    if cited_id in article_registry:
-                        rel_article_cites_article.append(
-                            {"start": art_node["id"], "end": cited_id}
-                        )
+                    pending_citations.append((art_node["id"], reg_name, str(cited)))
 
                 # 对应数据分类 (数据条目 -> 数据分类)
                 for cause_name in _as_list(article.get("案由")):
@@ -298,6 +292,27 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
                         {"start": art_node["id"], "end": interp_node["id"]}
                     )
 
+    # ----- 引用统一解析（节点全部登记之后，顺序不再影响边的存在性）-----------
+    seen_citation_edges: set = set()
+    unresolved_citations: List[Tuple[str, str]] = []
+    for start_id, reg_name, cited_no in pending_citations:
+        cited_node = article_registry.get(_article_id(reg_name, cited_no))
+        if cited_node is None:
+            unresolved_citations.append((reg_name, cited_no))
+            continue
+        pair = (start_id, cited_node["id"])
+        if pair in seen_citation_edges:
+            continue
+        seen_citation_edges.add(pair)
+        rel_article_cites_article.append({"start": pair[0], "end": pair[1]})
+    if unresolved_citations:
+        # 引用指向本数据集中不存在的条号：边只能不建（导入器会以 missing node
+        # 直接拒绝整库），但必须留痕——静默丢边正是这次 252/286 差异的成因形态。
+        print(
+            f"WARN: {len(unresolved_citations)} 条引用指向不存在的条目，未建边："
+            f"{unresolved_citations[:5]}"
+        )
+
     return {
         "nodes_regulation": regulations,
         "nodes_chapter": chapters,
@@ -317,62 +332,67 @@ def _build_graph_assets(seed: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]
 
 
 def _write_csv(output_dir: Path, assets: Dict[str, List[Dict[str, Any]]]) -> None:
+    # Label / 关系类型必须用**中文功能性标识符**（`法条`/`章节`/`案由`…），与
+    # `docs/design/测试数据域-本体Schema.md` §1.1–1.2 及运行时的 Cypher 模板一一对应。
+    # 早期这里写的是英文（`Article`/`Chapter`/…），导入命令也用英文，于是
+    # "导入成功、图也在、但 `MATCH (f:法条)` 永远返回空" ——graphrag 静默退化。
+    # 英文括注（Regulation/Article/…）只是文档里的别名，不是 Neo4j label。
     writers = {
         "nodes_regulation": (
             "regulation_nodes.csv",
-            ["id:ID(Regulation)", "name", "生效日期", "发文字号", "效力层级"],
+            [":ID(法规)", "name", "生效日期", "发文字号", "效力层级"],
         ),
         "nodes_chapter": (
             "chapter_nodes.csv",
-            ["id:ID(Chapter)", "标题", "层级:int", "所属法"],
+            [":ID(章节)", "标题", "层级:int", "所属法"],
         ),
         "nodes_article": (
             "article_nodes.csv",
-            ["id:ID(Article)", "条号", "法规", "内容", "关键词"],
+            [":ID(法条)", "条号", "法规", "内容", "关键词"],
         ),
         "nodes_cause": (
             "cause_nodes.csv",
-            ["id:ID(Cause)", "名称", "类别"],
+            [":ID(案由)", "名称", "类别"],
         ),
         "nodes_interpretation": (
             "interpretation_nodes.csv",
-            ["id:ID(JudicialInterpretation)", "name", "发布机关", "日期", "文号"],
+            [":ID(司法解释)", "name", "发布机关", "日期", "文号"],
         ),
         "nodes_authority": (
             "authority_nodes.csv",
-            ["id:ID(Authority)", "name", "层级"],
+            [":ID(机关)", "name", "层级"],
         ),
         "rel_article_belongs_chapter": (
             "rel_article_belongs_chapter.csv",
-            [":START_ID(Article)", ":END_ID(Chapter)"],
+            [":START_ID(法条)", ":END_ID(章节)"],
         ),
         "rel_chapter_belongs_regulation": (
             "rel_chapter_belongs_regulation.csv",
-            [":START_ID(Chapter)", ":END_ID(Regulation)"],
+            [":START_ID(章节)", ":END_ID(法规)"],
         ),
         "rel_article_cites_article": (
             "rel_article_cites_article.csv",
-            [":START_ID(Article)", ":END_ID(Article)"],
+            [":START_ID(法条)", ":END_ID(法条)"],
         ),
         "rel_article_cause": (
             "rel_article_cause.csv",
-            [":START_ID(Article)", ":END_ID(Cause)"],
+            [":START_ID(法条)", ":END_ID(案由)"],
         ),
         "rel_article_interpretation": (
             "rel_article_interpretation.csv",
-            [":START_ID(Article)", ":END_ID(JudicialInterpretation)"],
+            [":START_ID(法条)", ":END_ID(司法解释)"],
         ),
         "rel_regulation_authority": (
             "rel_regulation_authority.csv",
-            [":START_ID(Regulation)", ":END_ID(Authority)"],
+            [":START_ID(法规)", ":END_ID(机关)"],
         ),
         "rel_interpretation_authority": (
             "rel_interpretation_authority.csv",
-            [":START_ID(JudicialInterpretation)", ":END_ID(Authority)"],
+            [":START_ID(司法解释)", ":END_ID(机关)"],
         ),
         "rel_upper_law": (
             "rel_upper_law.csv",
-            [":START_ID(Regulation)", ":END_ID(Regulation)"],
+            [":START_ID(法规)", ":END_ID(法规)"],
         ),
     }
 
@@ -399,6 +419,13 @@ def _encode_row(headers: List[str], row: Dict[str, Any]) -> Dict[str, Any]:
             key = "start"
         elif header.startswith(":END_ID"):
             key = "end"
+        elif header.startswith(":ID("):
+            # 裸 `:ID(法条)`（不带列名）：写成 `id:ID(法条)` 时 neo4j-admin 除了
+            # 元素 id，还会把这一列**再存成一个名为 id 的属性**——2201 个节点全都
+            # 白背一个 `id="art_31"`。它进 `db.propertyKeys()`、进 apoc.meta.data、
+            # 进而进 text2cypher 的 schema 提示，等于教模型去 `WHERE n.id = 'art_31'`
+            # 这种业务上不存在的东西。去掉列名即可只留元素 id。
+            key = "id"
         elif header.endswith(":int"):
             key = header.split(":")[0]
         elif ":ID" in header:

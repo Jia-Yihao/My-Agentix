@@ -31,7 +31,7 @@ from agentix.application.services.breakpoint_resume import (
 from agentix.config import settings
 
 # ---------------------------------------------------------------------------
-# 基线断言：flag 默认关（flag 治理；见 configuration.md §5）
+# 基线断言：flag 默认关（flag 治理；见 配置管理.md §5）
 # ---------------------------------------------------------------------------
 
 assert settings.FAILURE_BOUNDARY_ENABLED is False, "P4 基线：失败边界默认关"

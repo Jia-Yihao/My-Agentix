@@ -281,6 +281,9 @@ data/vector_store/
 # FAISS/索引产物（index_worker 写入，见 agentix/retrieval/settings.py::INDEX_DIR）
 data/indexes/
 
+# 最小 Demo 的隔离产物（scripts/demo/local_kb_demo.py 写入：SQLite + FAISS + 明细 JSON）
+data/demo/
+
 # 爬虫相关
 proxies.txt
 cookies.json
@@ -376,3 +379,14 @@ archive/
 # 融合迁移中间产物（pytest 临时目录、迁移回填临时文件）
 .pytest_tmp/
 *.migration-tmp
+
+# eval 运行期产物（每次跑分重写，带时间戳）：真正入库的是**输入**
+# evals/baseline_predictions.jsonl 与**生成物** evals/baselines/quality.json
+# （由 evals/write_quality_baseline.py 从这些 summary 生成）。
+# CI 用 --results-dir 落到 $RUNNER_TEMP，本地落这里；两者都不该被 git add。
+evals/results/
+evals/ablations/results/
+
+# bench 运行期产物（T1：测量原始数据 + 环境指纹，每次跑落新文件，不入库；
+# 入口默认落点见 bench/run.py 的 --out-dir，README 同口径）
+bench/results/

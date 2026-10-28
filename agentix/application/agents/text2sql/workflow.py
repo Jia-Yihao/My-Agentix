@@ -102,7 +102,7 @@ def _should_execute_or_retry(state: Text2SQLState) -> Literal["execute", "retry"
     if is_valid:
         return "execute"
     if retry_count < max_retries:
-        logger.warning("SQL 验证失败，准备第 %d 次重试", retry_count + 1)
+        logger.warning("SQL 验证失败，准备第 {} 次重试", retry_count + 1)
         return "retry"
 
     logger.error("达到最大重试次数，终止工作流")

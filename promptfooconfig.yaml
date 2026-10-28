@@ -5,10 +5,11 @@
 # 与 run_eval --record 同一调用缝，见 evals/promptfoo_provider.py）。
 # 断言：自定义 python 断言文件 get_assert → 直接 import run_eval 打分函数
 # （口径单源，见 evals/promptfoo_asserts.py；守卫测试 tests/test_p104_promptfoo_contract.py 钉死）。
-# 用例：evals/golden_to_promptfoo.py 从 legal_golden.jsonl 机械转换（默认试点 25 条）。
+# 用例：evals/golden_to_promptfoo.py 从一份评测集机械转换（默认试点 25 条）。
+# 2026-10-26 起仓内评测集已下线 ⇒ 转换脚本需用 --golden 指向另备的评测集。
 #
 # 前置（PowerShell，需真实 LLM 端点——CI 全离线不跑本评测）：
-#   .\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --limit 25
+#   .\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --golden <评测集>.jsonl --limit 25
 #   npx promptfoo@latest eval --ci --no-cache
 #
 # CI 纪律（M-6 修正）：CI 常驻 job 只做"配置可解析 + 转换守卫测试"

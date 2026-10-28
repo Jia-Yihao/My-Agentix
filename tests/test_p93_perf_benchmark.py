@@ -49,9 +49,16 @@ class TestQueries:
 
 class TestStatistics:
     def test_percentile_nearest_rank(self):
+        """最近邻秩的确定性数值（唯一实现：``evals/perf_stats``）。
+
+        2026-10-27（T2）本 runner 的秩下标由 ``sorted[round(p/100*n)-1]`` 换成
+        全仓统一的 ``sorted[round(q*(n-1))]``：n=100 时 p50 由第 50 小变成第 51 小。
+        这是**口径切换的账面代价**，历史 ``baseline.json`` 因此不可直接比，
+        判门禁前应按新口径重录（``perf_gate.py --record``）。
+        """
         samples = [float(i) for i in range(1, 101)]  # 1..100
         stats = summarize(samples)
-        assert stats["p50"] == 50.0
+        assert stats["p50"] == 51.0
         assert stats["p90"] == 90.0
         assert stats["p95"] == 95.0
         assert stats["p99"] == 99.0

@@ -20,6 +20,9 @@
 （``has_handler``）∩ registry 已声明的工具——任务管线**只走治理执行链路**，
 不为 langchain 直连工具开口子（绕过闸门 = 治理失效）。flag-off 时本模块
 不可达（路由侧门控），组合根也不注册两个写工具。
+**不进 LLM 可见工具面的工具额外无条件排除**（``code_execute`` 是其中一项）：
+它是执行面，由 ``code_agent`` 节点直接调用，判据走唯一真源
+``agentix/tools/definitions.py::llm_visible_specs``（见 ``_executable_menu``）。
 """
 
 from __future__ import annotations
@@ -55,6 +58,7 @@ from agentix.domain.agent.types import (
     PlanStep,
     VerificationResult,
 )
+from agentix.observability.metrics import record_approval_decision
 
 __all__ = [
     "TaskStepDecl",
@@ -110,13 +114,22 @@ def _executable_menu() -> Dict[str, Any]:
 
     返回 ``{tool_name: ToolSpec}``。只含经治理执行链路（风险/权限/HITL）
     的工具——任务管线不绕闸（见模块 docstring 的菜单边界）。
+
+    **不进 LLM 可见工具面的工具无条件排除**：菜单会被写进拆解提示词的
+    ``{menu}``，模型看得见就能点名调用——``code_execute`` 出现在这张菜单里
+    等于把"跑任意代码"变成一次普通的工具选择（口径见
+    ``.qoder/rules/code-exec.md`` §4）。判据走**唯一真源**
+    ``agentix/tools/definitions.py::llm_visible_specs``（不依赖任何 flag 组合：
+    flag-on / flag-off、``TASK_EXEC_ENABLED`` 开 / 关，结果一致）——
+    本地另写一份工具名判据就会与真源漂移（纪律 6 ④：同一个判定不许两个源）。
     """
+    from agentix.tools.definitions import llm_visible_specs
     from agentix.tools.definitions import registry as tool_registry
     from agentix.tools.gateway.executor import get_tool_executor
 
     executor = get_tool_executor()
     menu: Dict[str, Any] = {}
-    for spec in tool_registry.get_specs():
+    for spec in llm_visible_specs(tool_registry.get_specs()):
         if executor.has_handler(spec.name):
             menu[spec.name] = spec
     return menu
@@ -337,6 +350,24 @@ def _make_result(
         steps_used=steps_used,
         replans=0,
     )
+
+
+def _record_in_loop_decision(decision: str) -> None:
+    """进环（``interrupt()`` 恢复）裁决打点，与桥路径共用同一指标口径。
+
+    值域按维护者 2026-10-27 裁决收敛为 ``{approved, rejected, edited,
+    resumed, auto, bypass}``（第 1 轮审查发现初稿五值为枚举缺漏：桥路径
+    ``PermissionMode.BYPASS`` 的模式级豁免也写同一 label）。进环只有"放行"
+    一种成功形态 ⇒ ``approved``，其余出口（reject / 未知值 / 批准未落账 /
+    重试仍失败）⇒ ``rejected``。
+    打点只记账，不改变审批语义（未批准仍是 fail-closed 不放行）。
+
+    观测故障不得影响主链（纪律 2）：捕获后降级为 debug 留痕。
+    """
+    try:
+        record_approval_decision(target_type="tool", decision=decision)
+    except Exception as exc:  # noqa: BLE001 - 指标故障不影响审批链，降级留痕
+        logger.debug("record_approval_decision failed: {}", exc)
 
 
 async def run_task_execution(
@@ -588,16 +619,24 @@ async def run_task_execution(
                                     duration_ms=outcome.duration_ms,
                                 )
                                 break
+                        # 出口①：批准且重试成功 ⇒ approved（唯一放行路径）
+                        _record_in_loop_decision("approved")
                     else:
+                        # 出口②：批准落了账但重试仍失败 ⇒ rejected
+                        _record_in_loop_decision("rejected")
                         abort_reason = (
                             f"in_loop_review_failed: {payload['tool']}: "
                             f"{retried.error or 'retry blocked'}"
                         )
                 else:
+                    # 出口③：approve 裁决但闸门未落账 ⇒ rejected（不放行）
+                    _record_in_loop_decision("rejected")
                     abort_reason = (
                         f"in_loop_review_failed: {payload['tool']}: approve not recorded"
                     )
             elif decision == "reject" and payload.get("request_id"):
+                # 出口④：拒绝裁决 ⇒ rejected
+                _record_in_loop_decision("rejected")
                 gate.reject(
                     str(payload["request_id"]),
                     by="in_loop_resume",
@@ -608,6 +647,8 @@ async def run_task_execution(
                     f"{payload.get('error') or 'rejected'}"
                 )
             else:
+                # 出口⑤：未知裁决值 / approve 缺 request_id ⇒ rejected（fail-closed）
+                _record_in_loop_decision("rejected")
                 abort_reason = (
                     f"in_loop_review_failed: {payload['tool']}: "
                     f"bad resume decision {decision!r}"

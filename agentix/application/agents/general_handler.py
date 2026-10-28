@@ -195,7 +195,7 @@ async def _retry_kb_query_with_rewrite(
                 config=config,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("agentic_rag rewrite attempt %s failed (%s); keeping last response.", attempt, exc)
+            logger.warning("agentic_rag rewrite attempt {} failed ({}); keeping last response.", attempt, exc)
             _record_rewrite_attempt(attempt, status="error", hits=len(response.get("sources") or []), error=str(exc))
             break
         current_question = new_question
@@ -261,6 +261,9 @@ async def create_kb_query(state: AgentState, *, config: RunnableConfig) -> Dict[
             filter_expr=kb_filter_expr,
             allow_external=settings.KB_ENABLE_EXTERNAL_SEARCH,
             external_search_url=external_url,
+            # 空串 → None：与加固前「不传」逐位等价（子图内置测试数据集文案）；
+            # 语料换域的部署用这句声明边界，避免 guardrails 按旧域拒答。
+            scope_description=settings.KB_SCOPE_DESCRIPTION.strip() or None,
         )
 
         history_payload = [
@@ -310,7 +313,7 @@ async def create_kb_query(state: AgentState, *, config: RunnableConfig) -> Dict[
             kb_result["clarify_armed"] = False
         return kb_result
     except Exception as exc:
-        logger.warning("KB multi-tool workflow unavailable (%s); falling back to direct search.", exc)
+        logger.warning("KB multi-tool workflow unavailable ({}); falling back to direct search.", exc)
 
     # Fallback: direct KB query
     # P0-3：多工具工作流失败属于系统故障（替代路径降级），最终答复必须

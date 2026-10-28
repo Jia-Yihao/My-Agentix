@@ -10,6 +10,11 @@
 * PII 纯离线正则：命中样本单列且从 applicable 分母排除，原文零留存；
 * ``best_at_k`` 在 repeat≥2 出数；repeat=1 标注 n/a；
 * ``test_ci_gate_contract`` 门键断言不修改、原样通过（在全量批中验证）。
+
+2026-10-26：法律金标集（``evals/legal_golden.jsonl``）随知识图谱/RAG 评测下线。本文件的
+「只增不改」断言需要一个**固定输入**才能钉住旧键取值，因此改为 20 行内联冻结金标
+:func:`_frozen_golden`——输入写死在测试里，快照值随之重钉。被保护的东西没变（旧键值漂移
+仍会红），变的只是它的规模：数据集不再是一个测试依赖。
 """
 
 from __future__ import annotations
@@ -24,7 +29,6 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EVALS_DIR = PROJECT_ROOT / "evals"
-GOLDEN_PATH = EVALS_DIR / "legal_golden.jsonl"
 
 
 def _load_run_eval():
@@ -43,38 +47,38 @@ from evals import claim_check  # noqa: E402  —— 包路径加载（pythonpath
 
 
 # ---------------------------------------------------------------------------
-# 改动前基线快照（Phase 31 落地前对「真实 golden × 空预测」evaluate 的输出）。
+# 改动前基线快照（对 :func:`_frozen_golden` × 空预测的 evaluate 输出中**旧键**的取值）。
 # 锁「只增不改」：这些旧键的值必须逐位等价，新键只能以前缀白名单出现。
 # ---------------------------------------------------------------------------
 
 _PRE_PHASE31_EMPTY: Dict[str, Any] = {
-    "citation_correctness": 0.6667,
+    "citation_correctness": 0.75,
     "citation_correctness_applicable": 0.0,
-    "citation_correctness_expected_count": 34,
-    "citation_expected_count": 46,
-    "citation_free_hit_count": 56,
-    "citation_hit_rate": 0.549,
+    "citation_correctness_expected_count": 5,
+    "citation_expected_count": 6,
+    "citation_free_hit_count": 14,
+    "citation_hit_rate": 0.7,
     "citation_hit_rate_applicable": 0.0,
     "golden_route_distribution": {
-        "additional-query": 11,
-        "file-query": 6,
-        "general-query": 26,
-        "graphrag-query": 17,
-        "image-query": 6,
-        "kb-query": 23,
-        "text2sql-query": 13,
+        "additional-query": 3,
+        "file-query": 2,
+        "general-query": 4,
+        "graphrag-query": 3,
+        "image-query": 2,
+        "kb-query": 4,
+        "text2sql-query": 2,
     },
     "judge_count": 0,
     "judge_enabled": False,
     "judge_mean": None,
     "judge_model": None,
     "mean_task_success": None,
-    "missing_prediction_count": 102,
+    "missing_prediction_count": 20,
     "multi_agent_meta_count": 0,
-    "must_contain": 0.402,
+    "must_contain": 0.7,
     "must_contain_applicable": 0.0,
-    "must_contain_expected_count": 61,
-    "must_contain_free_hit_count": 41,
+    "must_contain_expected_count": 6,
+    "must_contain_free_hit_count": 14,
     "pass_at_k": None,
     "pass_k": None,
     "pass_k_applicable": False,
@@ -82,17 +86,17 @@ _PRE_PHASE31_EMPTY: Dict[str, Any] = {
     "pass_k_requested": None,
     "pass_k_tasks": 0,
     "pass_k_tasks_with_full_runs": 0,
-    "pass_k_tasks_without_predictions": 102,
-    "pass_k_unavailable_reason": "no_predictions_for_any_golden_row（102 条 golden 全部没有对应预测）",
-    "reject_accuracy": 0.8725,
+    "pass_k_tasks_without_predictions": 20,
+    "pass_k_unavailable_reason": "no_predictions_for_any_golden_row（20 条 golden 全部没有对应预测）",
+    "reject_accuracy": 0.75,
     "reject_accuracy_applicable": 0.0,
-    "reject_expected_count": 13,
+    "reject_expected_count": 5,
     "reject_false_refusal_rate": 0.0,
-    "reject_non_reject_count": 89,
-    "reject_ok_count": 89,
+    "reject_non_reject_count": 15,
+    "reject_ok_count": 15,
     "route_accuracy": 0.0,
     "route_ok_count": 0,
-    "total": 102,
+    "total": 20,
 }
 
 #: 新键允许出现的前缀/全名（DoD：summary 新键全部落在这些类别内）
@@ -144,23 +148,69 @@ def _pred(
     return row
 
 
+def _frozen_golden() -> List[Dict[str, Any]]:
+    """20 行内联冻结金标：7 类路由全到齐，且各分母都非零。
+
+    冻结（写死在代码里、不读文件）是这条守卫的关键——快照只有对着**不变输入**才有意义。
+    构成刻意满足：6 条有引用要求 / 14 条空真、6 条声明 must_contain、5 条带
+    expected_citations、5 条越界，因此空预测下的四个全量均值都不是 0 或 1，能真正
+    钉住分母口径；7 类路由分布不均，能钉住 ``golden_route_distribution`` 的计数。
+    """
+    return [
+        _golden_row("P01", route="general-query"),
+        _golden_row("P02", route="general-query", must_contain=["示例"]),
+        _golden_row("P03", route="general-query", reject=True),
+        _golden_row("P04", route="additional-query"),
+        _golden_row("P05", route="additional-query", must_contain=["示例", "条款"]),
+        _golden_row(
+            "P06",
+            sources=["《示例集》第1条"],
+            expected_citations=["《示例集》第1条"],
+            must_contain=["示例"],
+        ),
+        _golden_row(
+            "P07",
+            sources=["《示例集》第2条", "《示例集》第3条"],
+            expected_citations=["《示例集》第2条"],
+        ),
+        _golden_row("P08", reject=True),
+        _golden_row(
+            "P09", route="graphrag-query", sources=["《示例集》第4条"], expected_citations=["《示例集》第4条"]
+        ),
+        _golden_row("P10", route="graphrag-query"),
+        _golden_row("P11", route="image-query", sources=["《示例图》第1页"]),
+        _golden_row("P12", route="image-query", reject=True),
+        _golden_row(
+            "P13", route="file-query", sources=["报告.csv"], expected_citations=["报告.csv"], must_contain=["报告"]
+        ),
+        _golden_row("P14", route="file-query"),
+        _golden_row("P15", route="text2sql-query", must_contain=["共"]),
+        _golden_row("P16", route="text2sql-query"),
+        _golden_row("P17", route="general-query", reject=True),
+        _golden_row("P18", sources=["《示例集》第5条"], expected_citations=["《示例集》第5条"]),
+        _golden_row("P19", route="additional-query", must_contain=["补充"]),
+        _golden_row("P20", route="graphrag-query", reject=True),
+    ]
+
+
+def _frozen_empty_summary() -> Dict[str, Any]:
+    """冻结金标 × 空预测的 summary（本文件三条快照断言的共同输入）。"""
+    return run_eval.evaluate(_frozen_golden(), [])["summary"]
+
+
 # ---------------------------------------------------------------------------
 # 1. 旧 golden 字节等价（DoD：既有键与基线快照逐位等价；新键前缀白名单）
 # ---------------------------------------------------------------------------
 
 
 class TestPreExistingKeysByteEqual:
-    def test_real_golden_empty_predictions_matches_snapshot(self):
-        summary = run_eval.evaluate(
-            run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN), []
-        )["summary"]
+    def test_frozen_golden_empty_predictions_matches_snapshot(self):
+        summary = _frozen_empty_summary()
         for key, expected in _PRE_PHASE31_EMPTY.items():
             assert summary.get(key) == expected, f"旧键 {key} 值漂移"
 
     def test_new_keys_confined_to_phase31_prefixes(self):
-        summary = run_eval.evaluate(
-            run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN), []
-        )["summary"]
+        summary = _frozen_empty_summary()
         new_keys = set(summary) - set(_PRE_PHASE31_EMPTY)
         assert new_keys, "Phase 31 新键缺席——白名单测试空转"
         illegal = sorted(
@@ -172,9 +222,17 @@ class TestPreExistingKeysByteEqual:
         assert not illegal, f"出现白名单外的新 summary 键：{illegal}"
 
     def test_old_golden_rows_need_no_new_fields(self):
-        rows = run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN)
+        """冻结金标刻意只用 Phase 31 之前的字段——旧行不做任何补写也能跑通。
+
+        原来这条读的是真实金标文件（断言其中无 ``difficulty`` / ``source`` 键）。输入
+        下线后，被保护的性质改由**输入的定义**承载：这里的行没有新字段，而上面两条断言
+        成立即证明「缺新字段 ⇒ 只出旧语义、新键诚实缺席或默认」，不会因为字段缺失而
+        抛错或造出假样本。
+        """
+        rows = _frozen_golden()
         assert all("difficulty" not in row for row in rows)
         assert all("source" not in row for row in rows)
+        assert len(rows) == len({row["id"] for row in rows}) == 20
 
     def test_csv_fields_unchanged(self):
         """CSV 列契约不动（privacy/claim 等新字段只进 JSON rows，不进 CSV）。"""
@@ -412,9 +470,7 @@ class TestPrivacyAware:
 
     def test_applicable_counts_sum_invariant_when_clean(self):
         """0 命中时旧不变量保持：expected + free == total。"""
-        summary = run_eval.evaluate(
-            run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN), []
-        )["summary"]
+        summary = _frozen_empty_summary()
         assert (
             summary["citation_expected_count"] + summary["citation_free_hit_count"]
             == summary["total"]
@@ -636,9 +692,7 @@ def test_feedback_candidate_marks_source_feedback():
 
 
 def test_gate_metrics_still_present_in_summary():
-    summary = run_eval.evaluate(
-        run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN), []
-    )["summary"]
+    summary = _frozen_empty_summary()
     for metric in ("citation_hit_rate_applicable", "reject_accuracy_applicable"):
         assert metric in summary
     # 门禁比对用的既有键一个不少

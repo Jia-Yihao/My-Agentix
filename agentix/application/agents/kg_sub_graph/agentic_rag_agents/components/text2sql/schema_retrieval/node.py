@@ -7,7 +7,7 @@ Fetches tables, columns, and relationships directly from MySQL INFORMATION_SCHEM
 
 import re
 import time
-from typing import Any, Callable, Coroutine, Dict, Iterable, List, Set, Tuple
+from typing import Any, Callable, Coroutine, Dict, Iterable, List, Optional, Set, Tuple
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -19,6 +19,7 @@ from ..domain_knowledge import (
     RELATIONSHIP_FACTS,
     TABLE_DESCRIPTIONS,
 )
+from ..target_db import text2sql_database_url
 
 logger = get_logger(service="text2sql.schema_retrieval")
 
@@ -61,14 +62,14 @@ _STOP_WORDS: Set[str] = {
 
 
 # R-P2-4（F2b-c）schema 缓存：TTL 由 TEXT2SQL_SCHEMA_CACHE_TTL_SECONDS 控制
-# （默认 0 = 关闭 = 基线逐位等价）；键 = (DATABASE_URL, 归一问题)——schema_context
+# （默认 0 = 关闭 = 基线逐位等价）；键 = (Text2SQL 目标库连接串, 归一问题)——schema_context
 # 含按问题关键词筛表的结果，故不同问题不同缓存项。失败结果不入缓存。
 _SCHEMA_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _SCHEMA_CACHE_MAX_ENTRIES = 128
 
 
 def _schema_cache_key(question: str) -> str:
-    return f"{settings.DATABASE_URL}|{(question or '').strip().lower()}"
+    return f"{text2sql_database_url()}|{(question or '').strip().lower()}"
 
 
 def _schema_cache_put(key: str, value: Dict[str, Any], ttl: int) -> None:
@@ -80,6 +81,38 @@ def _schema_cache_put(key: str, value: Dict[str, Any], ttl: int) -> None:
         while len(_SCHEMA_CACHE) >= _SCHEMA_CACHE_MAX_ENTRIES:
             _SCHEMA_CACHE.pop(next(iter(_SCHEMA_CACHE)))
     _SCHEMA_CACHE[key] = (time.time() + ttl, value)
+
+
+def schema_cache_size() -> int:
+    """当前缓存条目数（诊断与守卫用）。
+
+    注意这是"**存着几条**"而不是"有几条还有效"：过期项靠取用时判 `exp > now`，
+    所以这个数只用于核对"失效入口到底清掉了多少"，不要拿它当命中率分母。
+    """
+    return len(_SCHEMA_CACHE)
+
+
+def invalidate_schema_cache(database_url: Optional[str] = None) -> int:
+    """主动清 schema 缓存，返回**真清掉的条数**（`docs/design/性能与优化路线图.md` E2）。
+
+    为什么需要它：TTL 只保证"最多旧 N 秒"。DDL 之后运维要立刻看见新表结构，
+    今天只有两条路——等 TTL，或重启进程（而重启会把别的缓存一并清掉）。
+    返回值是刻意的：失效要能被核对成"我确实清到了 N 条"，而不是一个静默 void；
+    清不到返回 0 也照实说，别把"没命中"报成"清好了"。
+
+    为什么按库收窄（`database_url`）：缓存键以目标库连接串开头（见 `_schema_cache_key`），
+    无条件全清会让一次调用打掉所有目标库的热缓存——那是一条"反复调用来放大延迟"的路径，
+    所以默认口径是"你改了哪个库就清哪个库"，`None`（清全局）只留给整套库都变了的场景。
+    """
+    prefix = None if database_url is None else f"{database_url}|"
+    targets = [
+        key
+        for key in list(_SCHEMA_CACHE)
+        if prefix is None or key.startswith(prefix)
+    ]
+    for key in targets:
+        _SCHEMA_CACHE.pop(key, None)
+    return len(targets)
 
 
 def create_schema_retrieval_node(
@@ -101,7 +134,7 @@ def create_schema_retrieval_node(
             cache_key = _schema_cache_key(question)
             hit = _SCHEMA_CACHE.get(cache_key)
             if hit and hit[0] > time.time():
-                logger.info("Schema 缓存命中（TTL=%ds）", ttl)
+                logger.info("Schema 缓存命中（TTL={}s）", ttl)
                 try:
                     from agentix.observability.metrics import record_cache_hit
 
@@ -125,7 +158,7 @@ def create_schema_retrieval_node(
             schema_context = await _retrieve_schema_from_mysql(question)
 
             logger.info(
-                "Schema 检索完成，匹配到 %d 张表", len(schema_context.get("tables", []))
+                "Schema 检索完成，匹配到 {} 张表", len(schema_context.get("tables", []))
             )
 
             if cache_key is not None and ttl > 0:
@@ -138,7 +171,7 @@ def create_schema_retrieval_node(
                 "steps": ["schema_retrieval"],
             }
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("Schema 检索失败: %s", exc)
+            logger.exception("Schema 检索失败: {}", exc)
             return {
                 "schema_context": {},
                 "value_mappings": {},
@@ -190,7 +223,7 @@ async def _retrieve_schema_from_mysql(question: str) -> Dict[str, Any]:
     import asyncio
 
     def _sync_retrieve():
-        engine: Engine = create_engine(settings.DATABASE_URL, future=True)
+        engine: Engine = create_engine(text2sql_database_url(), future=True)
         try:
             with engine.connect() as conn:
                 # 获取所有表信息

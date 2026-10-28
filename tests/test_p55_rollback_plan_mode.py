@@ -49,7 +49,7 @@ from agentix.domain.ports import RollbackPort
 from agentix.tools.gateway.human_review import RiskLevel, effective_risk_level
 
 # ---------------------------------------------------------------------------
-# 基线断言：flag 默认关（flag 治理；见 configuration.md §5）
+# 基线断言：flag 默认关（flag 治理；见 配置管理.md §5）
 # ---------------------------------------------------------------------------
 
 assert settings.AGENT_ROLLBACK_ENABLED is False, "P4 基线：计划态默认关"

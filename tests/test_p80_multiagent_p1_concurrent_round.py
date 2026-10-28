@@ -2,7 +2,7 @@
 
 覆盖 multiagent-optimization §5 的 A-P1-3：
 
-1. **五处同步棘轮**（settings / selfcheck / .env.example / configuration.md /
+1. **五处同步棘轮**（settings / selfcheck / .env.example / 配置管理.md /
    p41 手写清单由既有 p41 守卫），新键 ``AGENT_TOOL_ROUND_CONCURRENCY``
    默认 1（串行 = 与基线逐位等价）、``ge=1``、retrieval 侧透明委托。
 2. **round_gate 共享闸**：``is_dangerous``（有效风险 MEDIUM+ = L1+，含
@@ -85,7 +85,7 @@ class TestFlagSync:
         assert f"{_KEY}=1" in text
 
     def test_configuration_md_section2_and_section5(self):
-        text = (REPO / "docs" / "architecture" / "configuration.md").read_text(encoding="utf-8")
+        text = (REPO / "docs" / "architecture" / "配置管理.md").read_text(encoding="utf-8")
         assert f"`{_KEY}`" in text, "§2 Agent 行为行缺键"
         assert f"| `{_KEY}` | `1` |" in text, "§5 per-key 行缺键"
 

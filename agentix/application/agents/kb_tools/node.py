@@ -125,7 +125,7 @@ def create_knowledge_query_node(
             )
             if result["status"] == "degraded":
                 logger.warning(
-                    "Knowledge search degraded: %s", result.get("error")
+                    "Knowledge search degraded: {}", result.get("error")
                 )
                 documents = []
             else:
@@ -177,7 +177,7 @@ def create_knowledge_query_node(
                     {"query": question, "num_results": web_top_k},
                     direct=lambda: search_tool.search(question, num_results=web_top_k),
                 )
-                logger.info("External search retrieved %s results.", len(web_results))
+                logger.info("External search retrieved {} results.", len(web_results))
             except RuntimeError as exc:
                 logger.warning("External search disabled or misconfigured: {}", exc)
             except Exception as exc:

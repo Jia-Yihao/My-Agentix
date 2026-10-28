@@ -53,7 +53,7 @@ from agentix.domain.policies.error_classification import (
 )
 
 # ---------------------------------------------------------------------------
-# 基线断言：三开关默认关（flag 治理；见 configuration.md §5）
+# 基线断言：三开关默认关（flag 治理；见 配置管理.md §5）
 # ---------------------------------------------------------------------------
 
 assert settings.TOOL_GUARDRAILS_ENABLED is False, "P4 基线：护栏默认关"

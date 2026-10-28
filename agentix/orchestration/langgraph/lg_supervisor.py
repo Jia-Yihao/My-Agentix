@@ -65,6 +65,7 @@ from agentix.application.agents.image_handler import create_image_query
 from agentix.orchestration.langgraph.lg_states import AgentState, InputState
 from agentix.application.agents.router import analyze_and_route_query, route_query
 from agentix.application.agents.task_handler import execute_task
+from agentix.application.agents.code_handler import create_code_query
 from agentix.config import settings
 
 __all__ = [
@@ -73,7 +74,7 @@ __all__ = [
     "ROUTE_HANDLERS",
 ]
 
-#: ``route_query`` 的 7 个目标节点 → handler。与扁平图条件边同一收口，
+#: ``route_query`` 的 8 个目标节点 → handler。与扁平图条件边同一收口，
 #: 保证 supervisor 与扁平的「路由 → 子 agent」映射逐位一致。
 #: 测试可直接替换条目（勿 monkeypatch lg_builder 属性——本 dict 已持有引用）。
 ROUTE_HANDLERS: Dict[str, Any] = {
@@ -84,6 +85,7 @@ ROUTE_HANDLERS: Dict[str, Any] = {
     "create_file_query": create_file_query,
     "create_kb_query": create_kb_query,
     "execute_task": execute_task,
+    "code_agent": create_code_query,
 }
 
 #: supervisor 内 Manager 的轮次上限：结构路径第 1 轮必收敛；

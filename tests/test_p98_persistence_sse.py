@@ -57,8 +57,9 @@ class _FakePipe:
         self._owner = owner
         self._ops: List[Tuple[str, tuple]] = []
 
-    def xadd(self, key: str, fields: Dict[str, Any]):
-        self._ops.append(("xadd", (key, fields)))
+    def xadd(self, key: str, fields: Dict[str, Any], **kw):
+        # T10 起 XADD 带 maxlen/approximate（近似裁剪）；本桩只记传参，不真裁剪。
+        self._ops.append(("xadd", (key, fields, kw)))
         return self
 
     def set(self, key: str, value: str, **kw):
@@ -80,7 +81,7 @@ class _FakePipe:
         out = []
         for name, args in self._ops:
             if name == "xadd":
-                out.append(self._owner._apply_xadd(*args))
+                out.append(self._owner._apply_xadd(*args[:2]))
             elif name == "set":
                 out.append(self._owner._apply_set(*args))
             elif name == "rpush":
@@ -124,7 +125,8 @@ class _FakeRedis:
         self.direct_calls.append(("delete", keys))
         return n
 
-    async def xadd(self, key: str, fields: Dict[str, str]):
+    async def xadd(self, key: str, fields: Dict[str, str], **kw):
+        # T10 起 XADD 带 maxlen/approximate；本桩只记传参，不真裁剪。
         eid = self._apply_xadd(key, fields)
         self.direct_calls.append(("xadd", (key,)))
         return eid
@@ -710,7 +712,7 @@ class TestCombinedGate:
 
 
 # ===========================================================================
-# 6. 五处同步守卫（p41 主检 configuration.md，这里补 selfcheck/.env）
+# 6. 五处同步守卫（p41 主检 配置管理.md，这里补 selfcheck/.env）
 # ===========================================================================
 
 

@@ -35,8 +35,20 @@ class TestConfigContract:
         assert data.get("tests"), "缺 tests"
 
     def test_referenced_files_exist(self):
-        for path in (PROVIDER, ASSERTS, "evals/promptfoo_tests.jsonl"):
+        """provider/断言模块必须真实存在；`tests:` 指向的是**派生物**，不入库。
+
+        `evals/promptfoo_tests.jsonl` 由 `golden_to_promptfoo.py` 从金标集机械转换得到。
+        2026-10-26 评测集下线后它没有输入了，所以这里只钉两件事：可入库的代码件在位、
+        配置里的 tests 路径与转换器默认产物同名（改了任何一边，promptfoo 就找不到用例）。
+        """
+        for path in (PROVIDER, ASSERTS):
             assert (PROJECT_ROOT / path).exists(), f"配置引用的文件缺失：{path}"
+        yaml = pytest.importorskip("yaml")
+        data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+        assert data["tests"] == "file://evals/promptfoo_tests.jsonl"
+        from evals.golden_to_promptfoo import DEFAULT_OUT
+
+        assert str(DEFAULT_OUT).replace("\\", "/").endswith("evals/promptfoo_tests.jsonl")
 
     def test_provider_and_asserts_importable(self):
         """provider/断言模块可被真实 import（promptfoo worker 加载的前提）。"""
@@ -59,44 +71,71 @@ class TestConfigContract:
 class TestConverterContract:
     @pytest.fixture(scope="class")
     def converted(self, tmp_path_factory):
-        """真实跑一次转换（写入 class 级 tmp），供断言复用。"""
+        """真实跑一次转换，输入是**内联 fixture 金标**（不是已下线的 legal_golden）。
+
+        契约测的是转换器的形状（机械映射 / 可复现 / 期望零加工 / 断言指向 get_assert），
+        跟具体数据集无关，所以喂它一份 30 行的合成金标就够了——把数据集断言和代码断言
+        分开的意义正在这里：数据集可以下线，代码契约不用跟着陪葬。
+        """
         from evals.golden_to_promptfoo import main as convert_main
 
-        out = tmp_path_factory.mktemp("pf") / "promptfoo_tests.jsonl"
-        rc = convert_main(["--out", str(out), "--limit", "25"])
+        routes = [
+            "general-query",
+            "additional-query",
+            "kb-query",
+            "graphrag-query",
+            "image-query",
+            "file-query",
+            "text2sql-query",
+        ]
+        fixture_rows = []
+        for i in range(30):
+            route = routes[i % len(routes)]
+            fixture_rows.append(
+                {
+                    "id": f"FX{i:03d}",
+                    "question": f"fixture 问题 {i}（{route}）",
+                    "route_type": route,
+                    "expected_sources": ["《示例法》第1条"] if route == "kb-query" else [],
+                    "must_contain": ["示例"] if route == "general-query" else [],
+                    "expect_reject": i == 7,
+                    "notes": "p104 内联 fixture，非数据集内容",
+                }
+            )
+        tmp = tmp_path_factory.mktemp("pf")
+        golden = tmp / "fixture_golden.jsonl"
+        golden.write_text(
+            "\n".join(json.dumps(r, ensure_ascii=False) for r in fixture_rows) + "\n",
+            encoding="utf-8",
+        )
+        out = tmp / "promptfoo_tests.jsonl"
+        rc = convert_main(["--golden", str(golden), "--out", str(out), "--limit", "25"])
         assert rc == 0
         rows = [
             json.loads(line)
             for line in out.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-        return out, rows
+        return golden, out, rows, fixture_rows
 
     def test_row_count_matches_golden_subset(self, converted):
         """产物条数 == golden 子集条数（25 条试点，确定性断言）。"""
-        _, rows = converted
+        _, _, rows, _ = converted
         assert len(rows) == 25
 
     def test_reproducible(self, converted, tmp_path):
         """同一输入两次转换逐字节一致（取前 N 而非随机抽样的可复现性）。"""
         from evals.golden_to_promptfoo import main as convert_main
 
-        out, rows = converted
+        golden, out, _, _ = converted
         again = tmp_path / "again.jsonl"
-        assert convert_main(["--out", str(again), "--limit", "25"]) == 0
+        assert convert_main(["--golden", str(golden), "--out", str(again), "--limit", "25"]) == 0
         assert again.read_text(encoding="utf-8") == out.read_text(encoding="utf-8")
 
     def test_expectations_come_from_golden_only(self, converted):
         """vars 里的期望值必须与 golden 原行一致（机械映射，零语义加工）。"""
-        _, rows = converted
-        golden_rows = [
-            json.loads(line)
-            for line in (PROJECT_ROOT / "evals/legal_golden.jsonl")
-            .read_text(encoding="utf-8")
-            .splitlines()
-            if line.strip()
-        ]
-        golden_by_q = {g["question"]: g for g in golden_rows}
+        _, _, rows, fixture_rows = converted
+        golden_by_q = {g["question"]: g for g in fixture_rows}
         for row in rows[:5]:
             q = row["vars"]["question"]
             g = golden_by_q[q]
@@ -108,7 +147,7 @@ class TestConverterContract:
 
     def test_asserts_reference_get_assert_file(self, converted):
         """每条用例的断言都指向 file://evals/promptfoo_asserts.py（get_assert）。"""
-        _, rows = converted
+        _, _, rows, _ = converted
         for row in rows:
             assert any(
                 a.get("value") == f"file://{ASSERTS}" for a in row.get("assert", [])

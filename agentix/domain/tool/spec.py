@@ -4,7 +4,7 @@
 （旧路径 re-export，M6 清尾）。
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, Tuple
 
 from agentix.domain.tool.sandbox import SANDBOX_DEFAULT, SANDBOX_LADDER
@@ -16,6 +16,7 @@ __all__ = [
     "CONTROL_REQUIRED_FROM",
     "SANDBOX_DEFAULT",
     "SANDBOX_LADDER",
+    "diff_spec_fields",
     "_strip_control_chars",
 ]
 
@@ -35,6 +36,22 @@ FORBIDDEN_RISK_LEVEL = "L3"
 
 #: 需要显式声明控制措施的最低等级（§2.1.5⑤：L2 及以上）。
 CONTROL_REQUIRED_FROM = 2
+
+
+def diff_spec_fields(kept: "ToolSpec", incoming: "ToolSpec") -> Tuple[str, ...]:
+    """返回两份声明取值不同的字段名（按 ``ToolSpec`` 声明序）；无差异时为空元组。
+
+    **只报字段名，不返回值**：``description`` 可能是远端 MCP 塞进来的长文本
+    （甚至含凭据形态的串），把内容搬进启动日志是另一类事故。这条判据放在
+    domain 层，是为了让 executor 与 registry 两个注册入口读**同一份**「什么算
+    不同」——两份实现就是下一次「声明了什么 / 执行读到什么」各说一套的起点
+    （PROJECT_SPEC §24.2 G14）。
+    """
+    return tuple(
+        item.name
+        for item in fields(kept)
+        if getattr(kept, item.name) != getattr(incoming, item.name)
+    )
 
 
 def _strip_control_chars(text: str) -> str:

@@ -2,7 +2,7 @@
 """F2b-c · Stage F2：R-P2-4 Text2SQL 加固守卫（rag-optimization §6）。
 
 覆盖：
-1. 键同步（settings 默认 / selfcheck / .env.example / configuration.md 双落表 / p41 清单）
+1. 键同步（settings 默认 / selfcheck / .env.example / 配置管理.md 双落表 / p41 清单）
 2. 显式失败（correctness，无 flag）：formatter 不再把未执行 SQL 包装成结果摘要
 3. 路由器重试耗尽 → end 契约
 4. dry-run（`TEXT2SQL_DRY_RUN_ENABLED` 默认关）：EXPLAIN 试跑喂重试环、
@@ -64,10 +64,10 @@ class TestKeySync:
 
         text = (
             Path(__file__).resolve().parents[1]
-            / "docs/architecture/configuration.md"
+            / "docs/architecture/配置管理.md"
         ).read_text(encoding="utf-8")
         for key in ("TEXT2SQL_DRY_RUN_ENABLED", "TEXT2SQL_SCHEMA_CACHE_TTL_SECONDS"):
-            assert text.count(f"`{key}`") >= 2, f"{key} 未在 configuration.md 双落表"
+            assert text.count(f"`{key}`") >= 2, f"{key} 未在 配置管理.md 双落表"
 
     def test_p41_manual_list_contains_new_keys(self):
         from pathlib import Path

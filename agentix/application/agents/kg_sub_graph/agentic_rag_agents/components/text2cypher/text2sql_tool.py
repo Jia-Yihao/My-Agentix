@@ -80,7 +80,7 @@ def create_text2sql_tool_node(
                 graph = get_neo4j_graph()
                 logger.info("Obtained Neo4j graph connection for Text2SQL tool.")
             except Exception as exc:  # pragma: no cover - defensive logging
-                logger.error("Failed to obtain Neo4j graph connection: %s", exc)
+                logger.error("Failed to obtain Neo4j graph connection: {}", exc)
                 errors.append(f"无法连接图数据库: {exc}")
                 graph = None
 
@@ -156,7 +156,7 @@ def create_text2sql_tool_node(
                 direct=lambda: workflow.ainvoke(input_state),
             )
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("Text2SQL workflow execution failed: %s", exc)
+            logger.exception("Text2SQL workflow execution failed: {}", exc)
             error_message = f"执行数据库查询失败：{exc}"
             errors.append(error_message)
             answer = "抱歉，执行数据库查询时发生异常，请稍后再试。"

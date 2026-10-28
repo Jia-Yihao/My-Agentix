@@ -126,6 +126,8 @@ def _verify_retrieval_entry(
     from agentix.retrieval.usecases.chat_service import build_retriever
 
     try:
+        # 刻意不走 retriever_cache：本函数的职责就是**独立地**从磁盘重新加载
+        # 刚落盘的产物来核对（拿进程内缓存对象等于自证，校验就失效了）。
         _, vectorstore = build_retriever(index_path)
     except Exception as e:
         result.fail("verification", f"向量库加载失败: {e}")

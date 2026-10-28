@@ -440,7 +440,7 @@ class TestExitContract:
 
 
 # ===========================================================================
-# 5. 五处同步守卫（p41 主检 configuration.md + 手写清单，这里补其余）
+# 5. 五处同步守卫（p41 主检 配置管理.md + 手写清单，这里补其余）
 # ===========================================================================
 
 
@@ -470,6 +470,6 @@ class TestW5FlagSync:
     def test_configuration_md_documents_all_keys(self):
         from pathlib import Path
 
-        doc = Path("docs/architecture/configuration.md").read_text(encoding="utf-8")
+        doc = Path("docs/architecture/配置管理.md").read_text(encoding="utf-8")
         for key in self.W5_KEYS:
-            assert key in doc, f"{key} 不在 configuration.md"
+            assert key in doc, f"{key} 不在 配置管理.md"

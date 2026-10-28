@@ -17,7 +17,7 @@
    ``read_artifact`` 可取回；外置失败 fail-open 回裸引用。
 
 外加 3 新键五处同步棘轮（settings / selfcheck / .env.example /
-configuration.md / p41 手写清单）。
+配置管理.md / p41 手写清单）。
 """
 
 from __future__ import annotations
@@ -152,11 +152,11 @@ class TestFlagSync:
             assert f"{key}=false" in active, f".env.example 缺少 {key}=false 活跃行"
 
     def test_configuration_doc_rows(self):
-        text = (REPO / "docs" / "architecture" / "configuration.md").read_text(
+        text = (REPO / "docs" / "architecture" / "配置管理.md").read_text(
             encoding="utf-8"
         )
         for key in _NEW_KEYS:
-            assert f"| `{key}` |" in text, f"configuration.md §5 缺少 {key} 行"
+            assert f"| `{key}` |" in text, f"配置管理.md §5 缺少 {key} 行"
         assert "`MEMORY_INDEX_ENABLED`" in text  # §2 记忆分组行也收录
 
     def test_p41_hand_written_list_contains_keys(self):

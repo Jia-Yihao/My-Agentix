@@ -5,7 +5,7 @@
     python scripts/gen_staging_matrix.py             # 打印**生成**的矩阵（含手写列占位）
     python scripts/gen_staging_matrix.py --check      # 与 runbook 已提交的表逐行比对，漂移即退出 1
 
-为什么需要它：`docs/runbooks/staging-environment.md` 的「配置矩阵」是运维照着做的那张表，
+为什么需要它：`docs/runbooks/预发环境与配置矩阵.md` 的「配置矩阵」是运维照着做的那张表，
 但它原先三列里只有第 1 列（键名）是硬事实，第 2、3 列靠人抄。本轮审计里它已经错过两次
 （G13：矩阵写 `TOOL_SYNC_OFFLOAD_ENABLED` 的 staging=true 而 override 压根没设；
 G13 第二例：矩阵写 `UVICORN_RELOAD`/`DB_ECHO` 的 staging=false 而 override 没钉，
@@ -50,7 +50,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 COMPOSE = ROOT / "docker-compose.yml"
 OVERRIDE = ROOT / "docker/compose.override.staging.yml"
-RUNBOOK = ROOT / "docs/runbooks/staging-environment.md"
+RUNBOOK = ROOT / "docs/runbooks/预发环境与配置矩阵.md"
 SERVICE = "backend"
 
 # Windows 默认 GBK 控制台打不出中文行，会 UnicodeEncodeError 非零退出

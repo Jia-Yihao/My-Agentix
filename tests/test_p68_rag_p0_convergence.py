@@ -1,6 +1,6 @@
 """RAG P0 收敛契约测试（Stage B2 / R-P0-1 … R-P0-5）。
 
-覆盖 ``docs/design/rag-optimization.md`` §4 的五项 P0：
+覆盖 ``docs/design/检索增强深度优化.md`` §4 的五项 P0：
 
 * **R-P0-1 LightRAG 去重**——``customer_tools/node.py`` 的 ``LightRAGAPI``
   是 ``agentix/application/services/lightrag_service.py`` 单实现之上的兼容

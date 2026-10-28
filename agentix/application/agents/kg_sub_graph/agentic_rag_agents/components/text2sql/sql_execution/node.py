@@ -16,6 +16,7 @@ from agentix.infrastructure.text2sql.wren_adapter import (
     WrenSQLBackend,
     get_wren_backend,
 )
+from ..target_db import text2sql_database_url
 
 logger = get_logger(service="text2sql.sql_execution")
 
@@ -60,7 +61,7 @@ def create_sql_execution_node(
 
         conn_str = connection_string or _get_connection_string(connection_id)
         if not conn_str:
-            logger.error("无法获取数据库连接信息 connection_id=%s", connection_id)
+            logger.error("无法获取数据库连接信息 connection_id={}", connection_id)
             return {
                 "execution_results": None,
                 "execution_error": "无法获取数据库连接信息",
@@ -84,7 +85,7 @@ def create_sql_execution_node(
                     wren_backend.execute, sql_statement, max_rows
                 )
                 logger.info(
-                    "SQL 经 Wren 语义层执行成功，返回 %d 行结果", len(results)
+                    "SQL 经 Wren 语义层执行成功，返回 {} 行结果", len(results)
                 )
                 return {
                     "execution_results": results,
@@ -92,10 +93,10 @@ def create_sql_execution_node(
                     "steps": ["sql_execution_wren"],
                 }
             except WrenNotAvailable as exc:
-                logger.warning("Wren 后端不可用，降级 MySQL 直连: %s", exc)
+                logger.warning("Wren 后端不可用，降级 MySQL 直连: {}", exc)
                 wren_degraded = True
             except Exception as exc:  # noqa: BLE001 - 语义校验/执行失败 → 降级
-                logger.warning("Wren 执行失败（%s），降级 MySQL 直连", exc)
+                logger.warning("Wren 执行失败（{}），降级 MySQL 直连", exc)
                 wren_degraded = True
 
         if wren_degraded:
@@ -110,14 +111,14 @@ def create_sql_execution_node(
 
         try:
             results = await _execute_sql_query(conn_str, sql_statement, max_rows=max_rows)
-            logger.info("SQL 执行成功，返回 %d 行结果", len(results))
+            logger.info("SQL 执行成功，返回 {} 行结果", len(results))
             return {
                 "execution_results": results,
                 "execution_error": None,
                 "steps": ["sql_execution_wren_degraded"] if wren_degraded else ["sql_execution"],
             }
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("SQL 执行失败: %s", exc)
+            logger.exception("SQL 执行失败: {}", exc)
             return {
                 "execution_results": None,
                 "execution_error": str(exc),
@@ -133,13 +134,16 @@ def create_sql_execution_node(
 # NoSuchModuleError。该函数全仓无调用者（_get_connection_string 直接返回
 # settings.DATABASE_URL，驱动由 URL scheme 决定），属死代码，故整段删除。
 def _get_connection_string(connection_id: Optional[int]) -> Optional[str]:
-    """返回 Text2SQL 的目标库连接串，即应用自身的 ``settings.DATABASE_URL``。
+    """返回 Text2SQL 的目标库连接串（`target_db.text2sql_database_url` 单源）。
 
     不再查 dbconnection 表、不再按 db_type 换驱动：驱动名内嵌在 URL scheme 里
     （如 ``postgresql+psycopg`` / ``mysql+pymysql``），与 requirements.txt 声明一致。
+
+    ``TEXT2SQL_DATABASE_URL`` 留空时它回退应用自身 ``DATABASE_URL``，即接线前的行为。
     """
-    logger.debug("使用应用 DATABASE_URL 作为 Text2SQL 目标库: %s", settings.DATABASE_URL)
-    return settings.DATABASE_URL
+    conn_str = text2sql_database_url()
+    logger.debug("Text2SQL 目标库: {}", conn_str)
+    return conn_str
 
 
 async def _execute_sql_query(

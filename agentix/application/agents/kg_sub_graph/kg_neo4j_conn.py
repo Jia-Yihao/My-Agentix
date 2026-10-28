@@ -54,6 +54,8 @@ _graph_cache: Optional[Neo4jGraph] = None
 _graph_lock = threading.Lock()
 #: 首建/最近一次 schema 刷新的 monotonic 时刻（R-P0-4 TTL 刷新）
 _schema_refreshed_at: Optional[float] = None
+#: 主动失效标记（roadmap E2）：True = 下一次取用必须在锁内重刷 schema，与 TTL 无关
+_schema_stale: bool = False
 
 
 def _build_graph() -> Neo4jGraph:
@@ -83,8 +85,15 @@ def _schema_refresh_interval() -> float:
 
 def _schema_refresh_due() -> bool:
     """是否已到周期刷新时刻（需要拿锁后重检——快路径仅无锁读）。"""
+    if _graph_cache is None:
+        return False
+    if _schema_stale:
+        # 主动失效（E2）优先于 TTL：`NEO4J_SCHEMA_REFRESH_SECONDS` 出厂是关的，
+        # 若把失效也挂在"周期刷新开着"这个条件下，默认部署里这个入口就是装饰品
+        # （p126 钉的正是这条）。
+        return True
     ttl = _schema_refresh_interval()
-    if ttl <= 0 or _graph_cache is None or _schema_refreshed_at is None:
+    if ttl <= 0 or _schema_refreshed_at is None:
         return False
     return (time.monotonic() - _schema_refreshed_at) >= ttl
 
@@ -97,7 +106,7 @@ def get_neo4j_graph() -> Neo4jGraph:
     - 后续调用：TTL 未到直接返回缓存；``NEO4J_SCHEMA_REFRESH_SECONDS > 0``
       且已到期时在锁内刷新 schema（失败保留旧 schema + warning）
     """
-    global _graph_cache, _schema_refreshed_at
+    global _graph_cache, _schema_refreshed_at, _schema_stale
     # 快路径：无锁读（CPython 对象引用读写原子）
     if _graph_cache is not None and not _schema_refresh_due():
         return _graph_cache
@@ -110,6 +119,7 @@ def get_neo4j_graph() -> Neo4jGraph:
             graph.refresh_schema()
             _graph_cache = graph
             _schema_refreshed_at = time.monotonic()
+            _schema_stale = False  # 首建已带 schema，失效标记到此消费掉
         elif _schema_refresh_due():
             # R-P0-4 周期刷新：失败保留旧 schema（进程不挂，按 TTL 重试）；
             # 无论成败都推进时间戳，避免每次取用都重试打成风暴
@@ -119,6 +129,9 @@ def get_neo4j_graph() -> Neo4jGraph:
                 logger.warning(f"Neo4j schema refresh failed (old schema kept): {exc}")
             finally:
                 _schema_refreshed_at = time.monotonic()
+                # 主动失效与 TTL 到期走同一条出口：标记必须在**尝试过**之后消费掉，
+                # 否则一次失败刷新会让每次取用都重刷（风暴），与上面的口径矛盾。
+                _schema_stale = False
     return _graph_cache
 
 
@@ -127,10 +140,29 @@ def reset_neo4j_graph() -> None:
 
     用途：测试隔离、Neo4j 连接配置热更新后强制重建。
     """
-    global _graph_cache, _schema_refreshed_at
+    global _graph_cache, _schema_refreshed_at, _schema_stale
     with _graph_lock:
         _graph_cache = None
         _schema_refreshed_at = None
+        _schema_stale = False
+
+
+def invalidate_neo4j_schema() -> bool:
+    """标记 Neo4j schema 过期：下一次 ``get_neo4j_graph()`` 在锁内重刷一次（roadmap E2）。
+
+    与 ``reset_neo4j_graph()`` 的区别是刻意的——失效**只作废 schema，不作废连接**：
+    重建 driver 要重握手，而"改了一节点/一关系"根本不需要断连。
+
+    返回 ``False`` = 当前没有实例可标记，且**不顺手建连**：调用这枚入口的通常是
+    "刚导完数据"的脚本或运维面，把建连开销与建连失败塞进它们的调用栈毫无必要，
+    而"返回 True 但其实没刷"更是假告警（纪律 6 ④）。
+    """
+    global _schema_stale
+    with _graph_lock:
+        if _graph_cache is None:
+            return False
+        _schema_stale = True
+        return True
 
 
 # ---------------------------------------------------------------------------

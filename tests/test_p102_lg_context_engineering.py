@@ -24,7 +24,7 @@
    消息尾部（append-only，绝不进静态前缀）。
 
 外加 3 新键五处同步棘轮（settings / selfcheck / .env.example /
-configuration.md / p41 手写清单）。
+配置管理.md / p41 手写清单）。
 
 已知边界（有意为之，记档）：流式路径（``_stream_events_impl``）无
 BudgetLedger ⇒ 状态尾注的预算段仅非流式 ask 出现，轮次/历史量两段两路径
@@ -96,11 +96,11 @@ class TestFlagSync:
             assert f"{key}=" in text, f"{key} 未写入 .env.example"
 
     def test_configuration_md_documents_keys(self):
-        text = (REPO / "docs" / "architecture" / "configuration.md").read_text(
+        text = (REPO / "docs" / "architecture" / "配置管理.md").read_text(
             encoding="utf-8", errors="replace"
         )
         for key in (*_NEW_KEYS, *_NEW_ZERO_KEYS):
-            assert f"`{key}`" in text, f"{key} 未写入 configuration.md §5 表"
+            assert f"`{key}`" in text, f"{key} 未写入 配置管理.md §5 表"
 
     def test_p41_handwritten_list_covers_keys(self):
         text = (REPO / "tests" / "test_p41_doc_consistency.py").read_text(

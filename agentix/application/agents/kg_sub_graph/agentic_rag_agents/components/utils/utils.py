@@ -113,7 +113,7 @@ def _lookup_cell(
 
 def _format_legal_schema_from_docs() -> str:
     """
-    Build a concise, LLM-friendly schema summary based on docs/design/legal_domain_schema.md.
+    Build a concise, LLM-friendly schema summary based on docs/design/测试数据域-本体Schema.md.
 
     领域迁移（2026-09-12）：路径由原先的 `parents[6]`（指向不存在的 `agentix/docs/`，
     使本函数始终返回空串）修正为仓库根目录 `parents[7]`，让测试数据集 Schema 说明
@@ -123,7 +123,7 @@ def _format_legal_schema_from_docs() -> str:
         Path(__file__).resolve().parents[7]
         / "docs"
         / "design"
-        / "legal_domain_schema.md"
+        / "测试数据域-本体Schema.md"
     )
     if not doc_path.exists():
         return ""

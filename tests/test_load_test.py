@@ -3,6 +3,10 @@
 本文件存在的理由：``perf-baseline.yml`` 每天调用该脚本并把 ``p95_seconds``
 与基线比对，但脚本**曾经只被引用、从未被实现**——workflow 一跑就崩，
 "性能门禁"从来没运行过。这里把它的契约钉住，防止再次悄悄消失。
+
+分位数口径：2026-10-27（规划文档 T2）起 ``percentile`` 委托全仓唯一实现
+``evals/perf_stats.nearest_rank_quantile``（最近邻秩）。此前的线性插值实现已删
+⇒ 该日期之前录制的基线与新读数不同尺，跨日期比对前必须重跑。
 """
 
 from __future__ import annotations
@@ -37,16 +41,31 @@ class TestPercentile:
     def test_single_sample(self):
         assert percentile([0.5], 95) == 0.5
 
-    def test_linear_interpolation(self):
+    def test_nearest_rank_values(self):
+        """2026-10-27（T2）起全仓一把尺子：最近邻秩 ``sorted[round(q*(n-1))]``。
+
+        本用例此前钉的是**线性插值**（p50 of [1,2,3,4] == 2.5）。插值实现已删，
+        数字随之变成一个位次——改这里等于改评测口径，不是"测试跟不上代码"的顺手修。
+        """
         values = [1.0, 2.0, 3.0, 4.0]
         assert percentile(values, 0) == 1.0
         assert percentile(values, 100) == 4.0
-        assert percentile(values, 50) == pytest.approx(2.5)
+        assert percentile(values, 50) == 3.0  # round(0.5*3)=2 → 第 3 小
+        assert percentile(values, 95) == 4.0  # round(0.95*3)=3 → 第 4 小
 
-    def test_p95_and_p99_are_distinguishable(self):
-        """最近秩会让小样本的 p95 == p99，丢掉尾部信息；线性插值必须分得开。"""
+    def test_p95_and_p99_collapse_on_small_samples(self):
+        """小样本上 p95 == p99 是**新口径的既有代价**，不是缺陷。
+
+        旧用例的名字与断言（"线性插值必须分得开"）钉的正是被废止的那把尺子。
+        保留这一条是为了让口径的代价可见：尾部区分度靠加大样本量买来
+        （``--requests`` / ``--iterations`` ≥5），不靠每处各挑一把尺子——
+        后者已经让同一份延迟在不同入口得出不同 p95，而性能门禁就建在这个数上。
+        """
         values = [float(i) for i in range(1, 12)]  # 1..11
-        assert percentile(values, 95) != percentile(values, 99)
+        assert percentile(values, 95) == percentile(values, 99) == 11.0
+        # 样本量上来之后尾部才分得开（n=200 与线上默认请求数同量级）
+        big = [float(i) for i in range(1, 201)]
+        assert percentile(big, 95) != percentile(big, 99)
 
     def test_summarize_orders(self):
         summary = summarize([1.0, 2.0, 3.0, 4.0, 5.0])

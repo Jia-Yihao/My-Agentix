@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import importlib
+import inspect
 import pathlib
 from typing import Any, Dict, List, TypedDict
 
@@ -230,6 +232,51 @@ class TestFailOpen:
         )
         assert cmd.goto == END
         assert len(_rows(factory)) == 1
+
+
+class TestStoreNotAssembled:
+    """``store=None``（``HITL_PENDING_PERSIST_ENABLED`` 关或装配失败）不得兜底建表。
+
+    库面装配判据唯一源是 ``hitl_bridge._resolve_pending_store``；handler 若自己
+    兜底建表，flag 关时仍会建表写行（纪律 6 ④ 的第二装配源）。
+    """
+
+    def test_none_store_skips_write_and_still_returns_failure_exit(self, monkeypatch):
+        store_module = importlib.import_module(
+            "agentix.infrastructure.persistence.hitl_pending_store"
+        )
+        touched: List[str] = []
+
+        def _forbidden_builder(*args: Any, **kwargs: Any):
+            touched.append("built")
+            raise AssertionError("store=None 时 handler 不得兜底建表")
+
+        monkeypatch.setattr(
+            store_module, "build_default_hitl_pending_store", _forbidden_builder
+        )
+        # 即便 flag 开着，handler 也无权自行装配（判据不在这里）
+        monkeypatch.setattr(settings, "HITL_PENDING_PERSIST_ENABLED", True)
+        records, handler_id = _capture_logs()
+        try:
+            cmd = _invoke_handler(
+                node_error_handler(store=None),
+                node="execute_task",
+                exc=RuntimeError("boom"),
+            )
+        finally:
+            logger.remove(handler_id)
+
+        assert isinstance(cmd, Command)
+        assert cmd.goto == END
+        content = cmd.update["messages"][0].content
+        assert "本轮未能完成" in content
+        assert "execute_task" in content and "RuntimeError" in content
+        assert "已记录补偿项" not in content, "没写记录就不能声称已记录"
+        assert any("compensation store 未装配" in r for r in records)
+        assert touched == [], "handler 触达了 store 装配点"
+        assert "build_default_hitl_pending_store" not in inspect.getsource(
+            policies
+        ), "policies 里不应再有兜底建表符号"
 
 
 # ---------------------------------------------------------------------------

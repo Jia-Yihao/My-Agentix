@@ -1,6 +1,6 @@
 import hashlib
 import json
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Tuple, Type
 
 from loguru import logger
 
@@ -11,7 +11,73 @@ from agentix.domain.tool.spec import (  # noqa: F401
     FORBIDDEN_RISK_LEVEL,
     RISK_LEVELS,
     ToolSpec,
+    diff_spec_fields,
 )
+
+
+# ---------------------------------------------------------------------------
+# LLM 可见工具面：唯一判定源
+# ---------------------------------------------------------------------------
+
+#: **不进 LLM 可见工具面**的工具名（**唯一真源**）。
+#:
+#: 口径见 ``.qoder/rules/code-exec.md`` §4：code exec 工具是**执行面**——
+#: 由 ``code_agent`` 节点直接经 ``ToolExecutor.execute`` 调用，不交给模型自由挑选
+#: （把它挂进工具面等于把"跑任意代码"变成一次普通的工具选择）。
+#:
+#: 为什么放在本模块：``agentix/tools/adapters/code_exec.py`` 已经 import 本模块，
+#: 反向依赖会成环；本模块是 spec 与注册表的公共底座，判定放在这里，
+#: 各拼装点（``agentix/tools/__init__.py``、任务拆解菜单）只需 import 一次。
+#:
+#: 工具名字面量在仓内只允许出现在两处：本集合与
+#: ``agentix/tools/adapters/code_exec.py::CODE_EXEC_TOOL_NAME``；
+#: ``tests/test_p131_code_exec.py`` 的守卫用例把两处钉在一起（工具改名即红）。
+NON_LLM_VISIBLE_TOOL_NAMES: FrozenSet[str] = frozenset({"code_execute"})
+
+
+def is_llm_visible_tool(tool_name: str) -> bool:
+    """该工具能否进入 LLM 可见工具面（唯一判据，别处不许另立一份）。"""
+    return tool_name not in NON_LLM_VISIBLE_TOOL_NAMES
+
+
+def llm_visible_specs(specs: Iterable[ToolSpec]) -> List[ToolSpec]:
+    """按唯一真源过滤声明：只留允许进入 LLM 可见工具面的那些。"""
+    return [spec for spec in specs if is_llm_visible_tool(spec.name)]
+
+
+#: 同名重复注册的稳定前缀：运维与 CI 按这个短语 grep，别在调用点各写一份。
+DUPLICATE_REGISTRATION_PREFIX = "TOOL DUPLICATE REGISTRATION"
+
+
+def _duplicate_registration_strict() -> bool:
+    """严格模式开关（默认关）；惰性 import，避免 tools 包在 settings 之前加载时成环。"""
+    from agentix.config import settings
+
+    return bool(getattr(settings, "TOOL_DUPLICATE_REGISTRATION_STRICT", False))
+
+
+def duplicate_spec_message(tool_name: str, changed: Iterable[str], *, consequence: str) -> str:
+    """组装「同名但声明不同」的点名告警（两个注册入口共用一份措辞）。
+
+    ``consequence`` 由调用点给：executor 是「后一份被丢弃、第一次赢」，registry
+    是「后一份覆盖、最后一次赢」。两种语义**不许合成一句**——运维照着告警修
+    的时候，第一步得知道执行时到底读哪一份。
+    """
+    return (
+        f"{DUPLICATE_REGISTRATION_PREFIX}: tool {tool_name!r} was declared again with a "
+        f"different ToolSpec (differs in: {', '.join(changed)}); {consequence} "
+        "Set TOOL_DUPLICATE_REGISTRATION_STRICT=true to refuse this registration instead."
+    )
+
+
+def duplicate_spec_error_message(tool_name: str, changed: Iterable[str]) -> str:
+    """严格模式的拒绝理由（与告警同一前缀、同一字段清单，便于对照 grep）。"""
+    return (
+        f"{DUPLICATE_REGISTRATION_PREFIX} REFUSED: tool {tool_name!r} was already declared "
+        f"with a different ToolSpec (differs in: {', '.join(changed)}); "
+        "TOOL_DUPLICATE_REGISTRATION_STRICT=true refuses the duplicate without changing "
+        "the registry or the handler"
+    )
 
 
 class ToolRegistry:
@@ -32,6 +98,24 @@ class ToolRegistry:
                 spec.name,
             )
             return
+        # G14：同名再声明且字段不同 ⇒ 默认响亮告警（仍按基线「最后一次赢」），
+        # 严格模式才拒绝。冻结期已在上面拒绝过并告警，不再叠一层抛错。
+        existing = self._specs.get(spec.name)
+        if existing is not None:
+            changed = diff_spec_fields(existing, spec)
+            if changed:
+                if _duplicate_registration_strict():
+                    raise ValueError(duplicate_spec_error_message(spec.name, changed))
+                logger.warning(
+                    duplicate_spec_message(
+                        spec.name,
+                        changed,
+                        consequence=(
+                            "the later declaration OVERWRITES the earlier one "
+                            "(spec and factory both replaced)"
+                        ),
+                    )
+                )
         self._specs[spec.name] = spec
         self._factories[spec.name] = factory
 

@@ -39,7 +39,7 @@ _NOT_RECORDED_BLOCKS = {
     # 决策链三块的现状：判定结果只进日志（citation/grounding）或内存
     # （route），轨迹按 trace_id 落文件但与 answer_id 无关联——在建立
     # 持久化关联前显式 not_recorded，绝不编造。
-    "route_decision": "路由理由未持久化（仅 trajectory 文件）",
+    "route_decision": "路由决策值已进 span（agentix.route.decision），理由文本仍未持久化",
     "citation_verifier": "引用校验判定未持久化（未通过项以答案尾部标注呈现）",
     "grounding": "grounding 报告未持久化（v1 仅内存/日志，见 R3-6 决策）",
     "prompt_version": "prompt 版本未随答案落库",

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import re
@@ -38,61 +39,33 @@ run_eval = _load_module("cg_run_eval", EVALS_DIR / "run_eval.py")
 quality_gate = _load_module("cg_quality_gate", EVALS_DIR / "quality_gate.py")
 
 
-def _ci_gate_metrics() -> list[str]:
-    """从 ci.yml 的 heredoc 里抽出质量门禁要比对的指标名列表。"""
-    text = CI_PATH.read_text(encoding="utf-8")
-    match = re.search(r"METRICS\s*=\s*\(([^)]*)\)", text)
-    assert match, "ci.yml 里找不到 METRICS 元组——门禁步骤写法变了，请同步本测试"
-    return re.findall(r'"([^"]+)"', match.group(1))
 
 
-def _summary_keys() -> set[str]:
-    """对真实 golden + 空预测跑一遍 evaluate，取 summary 的键集合。"""
-    golden = run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN)
-    return set(run_eval.evaluate(golden, [])["summary"])
 
 
-# ---------------------------------------------------------------------------
-# 1. 口径一致性
-# ---------------------------------------------------------------------------
 
 
-def test_ci_metric_list_is_not_empty():
-    assert _ci_gate_metrics(), "门禁指标列表为空等于没门禁"
 
 
-def test_ci_gate_metrics_all_exist_in_summary():
-    """CI 门禁引用的每个指标都必须是 evaluate() 真会产出的键。"""
-    unknown = [m for m in _ci_gate_metrics() if m not in _summary_keys()]
-    assert not unknown, (
-        f"ci.yml 门禁引用了 summary 里不存在的指标 {unknown}——"
-        f"CI 会以 KeyError 崩溃，看起来像代码故障，实为口径脱钩"
-    )
-
-
-def test_ci_gate_uses_applicable_denominators():
-    """门禁必须盯「真实分母」口径，不能盯被空真稀释的均值。"""
-    metrics = _ci_gate_metrics()
-    diluted = [
-        m
-        for m in ("citation_hit_rate", "citation_correctness", "must_contain", "reject_accuracy")
-        if m in metrics
-    ]
-    assert not diluted, (
-        f"门禁不得直接使用全量口径指标 {diluted}：它们的均值含空真免费满分"
-        f"（citation 地板 ≈0.549、reject 地板 ≈0.8725），拦不住真实退化。"
-        f"请改用同名 *_applicable 变体。"
-    )
-    assert "citation_hit_rate_applicable" in metrics
-    assert "reject_accuracy_applicable" in metrics
 
 
 def test_applicable_metrics_are_stricter_or_equal_than_diluted():
-    """空真条目存在时，适用口径必须 ≤ 全量口径（否则说明口径写反了）。"""
-    golden = run_eval.load_jsonl(run_eval.DEFAULT_GOLDEN)
+    """空真条目存在时，适用口径必须 ≤ 全量口径（否则说明口径写反了）。
+
+    2026-10-26：金标集下线，原断言读的是真实 golden。口径本身与数据集无关，改用
+    3 行内联数据（含 1 条无引用要求的空真条目）即可覆盖。
+    """
+    golden = [
+        {"id": "G1", "question": "q1", "route_type": "kb-query", "expected_sources": ["《示例集》第1条"],
+         "must_contain": [], "expect_reject": False},
+        {"id": "G2", "question": "q2", "route_type": "kb-query", "expected_sources": ["《示例集》第2条"],
+         "must_contain": [], "expect_reject": False},
+        {"id": "G3", "question": "q3", "route_type": "general-query", "expected_sources": [],
+         "must_contain": [], "expect_reject": False},
+    ]
     s = run_eval.evaluate(golden, [])["summary"]
 
-    assert s["citation_free_hit_count"] > 0, "真实 golden 存在无引用要求条目"
+    assert s["citation_free_hit_count"] > 0, "存在无引用要求的空真条目"
     assert s["citation_hit_rate_applicable"] <= s["citation_hit_rate"]
     assert s["reject_accuracy_applicable"] <= s["reject_accuracy"]
 
@@ -143,8 +116,13 @@ def test_lower_is_better_direction(tmp_path, monkeypatch):
     assert _run_gate(monkeypatch, [*common, "--current", "0.20"]) == 1
 
 
-def test_missing_baseline_file_is_loud_but_not_blocking(tmp_path, monkeypatch, capsys):
-    """基线文件不存在：首跑建档语义 ⇒ 不阻断，但必须显式声明「未生效」。"""
+def test_missing_baseline_file_is_loud_and_blocks_by_default(tmp_path, monkeypatch, capsys):
+    """基线文件不存在：默认**不放行**——"没把关"不许被读成"把关通过"。
+
+    旧口径是 rc==0 + 建档（首跑友好），代价是 CI 里"删掉基线文件"这条路只要不被
+    workflow 的 skip 判定拦住，就一路绿灯。2026-10-26 起改为默认硬失败，
+    首跑建档退成一个必须显式声明的动作（`--allow-bootstrap`，见下一条）。
+    """
     rc = _run_gate(
         monkeypatch,
         [
@@ -153,14 +131,54 @@ def test_missing_baseline_file_is_loud_but_not_blocking(tmp_path, monkeypatch, c
         ],
     )
     out = capsys.readouterr().out
+    assert rc != 0, "缺基线 = 门禁未武装，必须阻断"
+    assert "::error" in out
+    assert "NOT-ARMED" in out
+
+
+def test_missing_baseline_file_can_still_bootstrap_behind_the_flag(
+    tmp_path, monkeypatch, capsys
+):
+    """`--allow-bootstrap` 保留首跑建档语义：不阻断、但照样声明未生效。"""
+    rc = _run_gate(
+        monkeypatch,
+        [
+            "--baseline-file", str(tmp_path / "nope.json"),
+            "--metric", "route_accuracy", "--current", "0.9",
+            "--allow-bootstrap",
+        ],
+    )
+    out = capsys.readouterr().out
     assert rc == 0
     assert "NOT-ENFORCED" in out
     assert "::warning" in out
 
 
+def test_missing_key_blocks_and_leaves_the_committed_baseline_untouched(
+    tmp_path, monkeypatch, capsys
+):
+    """缺键 ⇒ 硬失败，且**不写文件**：CI 悄悄改写 committed 基线是最坏的一种假绿。"""
+    baseline = tmp_path / "quality.json"
+    original = json.dumps({"other_metric": 0.5})
+    baseline.write_text(original, encoding="utf-8")
+
+    rc = _run_gate(
+        monkeypatch,
+        ["--baseline-file", str(baseline), "--metric", "route_accuracy", "--current", "0.9"],
+    )
+    out = capsys.readouterr().out
+    assert rc != 0
+    assert "NOT-ARMED" in out
+    assert baseline.read_text(encoding="utf-8") == original, "拒绝的一刻起不许改动基线文件"
+
+
 def test_empty_baseline_dict_is_also_loud(tmp_path, monkeypatch, capsys):
-    """仓库里 committed 的 quality.json 就是 `{}`——每个指标都会走建档路径，
-    因此必须同样打出 NOT-ENFORCED，否则门禁「每跑必绿」且日志无迹可查。"""
+    """空基线（``{}``）里每个指标都算"键不存在" ⇒ 与缺键同一形态：响亮且阻断。
+
+    仓内那份 committed 质量基线曾由 ``evals/write_quality_baseline.py`` 从真实录制的
+    summary 生成、不再为空（该文件已随评测集于 2026-10-26 删除）；
+    本用例守的是**生成物退化成空档**——旧口径下它会"每跑必绿"且日志无迹可查。
+    """
     baseline = tmp_path / "quality.json"
     baseline.write_text("{}", encoding="utf-8")
 
@@ -169,12 +187,30 @@ def test_empty_baseline_dict_is_also_loud(tmp_path, monkeypatch, capsys):
         ["--baseline-file", str(baseline), "--metric", "route_accuracy", "--current", "0.9"],
     )
     out = capsys.readouterr().out
+    assert rc != 0, "空基线不是「通过」，是「什么都没比对」"
+    assert "NOT-ARMED" in out
+    assert json.loads(baseline.read_text(encoding="utf-8")) == {}, "默认不许改写基线"
+
+
+def test_empty_baseline_bootstrap_is_still_available_behind_the_flag(tmp_path, monkeypatch):
+    """显式选择首跑建档时，写入行为照旧可用（脚本与本地录制仍要这条路）。"""
+    baseline = tmp_path / "quality.json"
+    baseline.write_text("{}", encoding="utf-8")
+
+    rc = _run_gate(
+        monkeypatch,
+        [
+            "--baseline-file", str(baseline),
+            "--metric", "route_accuracy", "--current", "0.9",
+            "--allow-bootstrap",
+        ],
+    )
     assert rc == 0
-    assert "NOT-ENFORCED" in out
     assert json.loads(baseline.read_text(encoding="utf-8"))["route_accuracy"] == 0.9
 
 
-def test_step_summary_written_on_not_enforced(tmp_path, monkeypatch):
+def test_step_summary_written_on_not_armed(tmp_path, monkeypatch):
+    """默认（硬失败）路径也要往 step summary 写一行：CI 页面上看得见"没比对"。"""
     summary_file = tmp_path / "summary.md"
     monkeypatch.setenv(quality_gate.STEP_SUMMARY_ENV, str(summary_file))
 
@@ -183,6 +219,23 @@ def test_step_summary_written_on_not_enforced(tmp_path, monkeypatch):
         [
             "--baseline-file", str(tmp_path / "nope.json"),
             "--metric", "route_accuracy", "--current", "0.9",
+        ],
+    )
+    text = summary_file.read_text(encoding="utf-8")
+    assert "NOT-ARMED" in text
+
+
+def test_step_summary_written_on_not_enforced(tmp_path, monkeypatch):
+    """显式首跑建档（``--allow-bootstrap``）时，step summary 仍写 NOT-ENFORCED。"""
+    summary_file = tmp_path / "summary.md"
+    monkeypatch.setenv(quality_gate.STEP_SUMMARY_ENV, str(summary_file))
+
+    _run_gate(
+        monkeypatch,
+        [
+            "--baseline-file", str(tmp_path / "nope.json"),
+            "--metric", "route_accuracy", "--current", "0.9",
+            "--allow-bootstrap",
         ],
     )
     text = summary_file.read_text(encoding="utf-8")
@@ -211,24 +264,8 @@ def test_step_summary_env_absent_is_safe(tmp_path, monkeypatch):
     assert _run_gate(monkeypatch, ["--baseline-file", str(baseline), "--metric", "m", "--current", "1.0"]) == 0
 
 
-# ---------------------------------------------------------------------------
-# 3. CI workflow 自身的健壮性
-# ---------------------------------------------------------------------------
 
 
-def test_ci_offline_skip_emits_warning_and_summary():
-    """跳过离线评估必须是「响亮」的：warning 注解 + step summary 齐备。"""
-    text = CI_PATH.read_text(encoding="utf-8")
-    assert "baseline_predictions.jsonl" in text
-    assert "::warning" in text, "跳过评估必须产生 warning 注解，不能只 ::notice"
-    assert "GITHUB_STEP_SUMMARY" in text, "跳过评估必须写入 job summary"
-
-
-def test_ci_gate_fails_loudly_on_missing_metric():
-    """summary 缺指标时应以明确错误退出，而不是抛出难懂的 KeyError 堆栈。"""
-    text = CI_PATH.read_text(encoding="utf-8")
-    assert "::error title=quality-gate::" in text
-    assert "missing" in text
 
 
 # ---------------------------------------------------------------------------
@@ -318,3 +355,102 @@ def test_perf_gate_is_actually_enforcing():
         "比对步骤用 `|| echo warning` 吞掉了 quality_gate 的非零退出码，"
         "与文件头部声明的「阻断」不符"
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. 门禁的两个输入文件必须是"真武装"状态（2026-10-26 基线录制后收紧）
+# ---------------------------------------------------------------------------
+
+
+
+
+
+
+def test_workflow_bootstrap_posture_is_explicit_where_it_is_needed() -> None:
+    """perf 门禁的"首跑无基线"是常态（缓存可能被清），必须**显式**声明建档而不是靠默认放行。
+
+    默认值翻成硬失败之后，这条守的是：谁在 quality_gate 里改默认，不会连带把
+    perf-baseline 的 nightly 首跑打成一堆假红。
+    """
+    text = _workflow_text(PERF_PATH)
+    assert "--allow-bootstrap" in text, (
+        "perf-baseline 的首跑建档必须显式声明；缺了这一行，缓存未命中时该 job 会硬失败"
+    )
+
+
+
+
+# ---------------------------------------------------------------------------
+# 5. 「谁来阻断性能冒烟」必须与 ci.yml 的实际形状同源
+# ---------------------------------------------------------------------------
+
+PERF_SMOKE_TEST = PROJECT_ROOT / "tests" / "test_perf_smoke.py"
+
+
+def _marker_expressions(path: Path) -> list[str]:
+    """AST 取模块级 ``pytestmark`` 赋值与所有装饰器的源码形状。
+
+    不用"文件文本里没出现过 ``integration``"当判据：注释里写过一次就永远读成"标了"，
+    而真标了 marker 也可能因为写在别处（如 ``conftest`` 的 ``addini``）读成"没标"。
+    判据必须与 pytest 实际选择用例的那个结构同源（AGENTS.md 纪律 6 ④）。
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "pytestmark" for target in node.targets
+        ):
+            found.append(ast.unparse(node.value))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            found.extend(ast.unparse(dec) for dec in node.decorator_list)
+    return found
+
+
+def test_perf_smoke_blocks_through_the_test_job_it_actually_runs_in() -> None:
+    """性能冒烟的阻断力来自 ``test`` job，而不是一个"独立性能冒烟 job"——文档只能这么写。
+
+    **为什么需要这条**：``docs/migration/PhaseH_高性能运行时优化规划.md`` 与 CHANGELOG 的 W7 条
+    都记着"perf-smoke 摘 ``continue-on-error`` 转阻塞（job 改名「性能冒烟」）"。后来 ``.github/``
+    整目录在快照里缺失、按契约重建成 8 个 job（CHANGELOG 的 M·CI 重建条自己记着这个数），那个 job
+    **没有被恢复**。于是没有任何一步变红：测试照跑（被 ``test`` job 收走）、超预算照样阻断汇总，
+    但三份文档指向的 job 名在 CI 里根本找不到——按图找的那一格是空的。这正是纪律 6 ④ 说的形态：
+    **诊断（文档）口径与执行链判定不同源，两边都"看起来正常"**。
+
+    四条**合取**，任一断掉就说明 §2 E5 那句是假的：① ``test`` job 真跑 ``pytest -m "not integration"``
+    （选择器决定谁被收进来）；② ``tests/test_perf_smoke.py`` 没有 integration 标记（AST 扫）；
+    ③ ``ci-gate`` 的 ``needs`` 含 ``test``（红能传到汇总 job 才叫阻断）；④ ``ci.yml`` 里确实**没有**
+    独立 perf job——第 ④ 条刻意"过严"：有人恢复那个 job 时它必须红一次，逼着把措辞一起改回来。
+    """
+    text = _workflow_text(CI_PATH)
+
+    # ① test job：锚点带行首缩进（"  test:" 在 needs 列表里不会出现，但 strategy/matrix 里
+    # 有 python-version 之类的行，切片必须落在 job 定义上而不是别处）。
+    assert "\n  test:\n" in text, "ci.yml 里没有 `test` job——本守卫的作用面消失了，请同步 §2 E5"
+    test_job = text.split("\n  test:\n", 1)[1].split("\n  architecture-guards:\n", 1)[0]
+    assert test_job.startswith("    name: Unit tests"), "切片没落在 test job 上（防空真）"
+    assert 'pytest -m "not integration"' in test_job, (
+        "test job 不再用 `not integration` 选择器 ⇒ 『性能冒烟被 test job 收走』这句措辞失效，"
+        "要么它跑了全量（选择器变了），要么它根本不跑 perf smoke（命令变了）"
+    )
+
+    # ② perf smoke 文件确实被那个选择器收进来：没有任何 integration marker。
+    markers = _marker_expressions(PERF_SMOKE_TEST)
+    blocked = [m for m in markers if "integration" in m]
+    assert not blocked, (
+        f"tests/test_perf_smoke.py 带上了 integration 标记（{blocked}）⇒ CI 的 test job 不再跑它，"
+        "性能冒烟只剩夜间 workflow，§2 E5 的『阻塞』措辞必须改写"
+    )
+
+    # ③ ci-gate 的 needs 含 test。
+    assert "\n  ci-gate:\n" in text, "ci.yml 里没有 ci-gate 汇总 job"
+    gate_block = text.split("\n  ci-gate:\n", 1)[1]
+    needs = re.findall(r"^\s+- ([\w-]+)\s*$", gate_block.split("needs:")[1].split("if:")[0], re.M)
+    assert (
+        "test" in needs
+    ), f"ci-gate 的 needs 不含 test（当前 {needs}）⇒ 性能冒烟红传不到汇总，阻断是假的"
+
+    # ④ 没有那个"文档里存在、CI 里不存在"的独立 job。
+    for ghost in ("perf-smoke", "perf_smoke", "性能冒烟"):
+        assert (
+            ghost not in text
+        ), f"ci.yml 出现了 {ghost}：独立性能 job 被恢复了，请把 §2 E5 与本条的措辞改成按 job 阻断"

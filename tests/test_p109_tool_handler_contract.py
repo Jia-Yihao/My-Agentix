@@ -13,9 +13,9 @@ G1 的教训是「`timeout_ms` 对非协程 handler 形同虚设」，但那件�
 2. **真实入口**：真的调用 `ToolExecutor.register_handler` 与 `execute`，
    断言 flag-off 不产生任何日志（与加固前逐位等价）、flag-on 只对该告的那些响。
 3. **同步面**：新键在 `settings.py` / `.env.example` /
-   `selfcheck.DEFAULT_IGNORED_MISSING` / `configuration.md` 表 /
-   `runtime-guardrails.md` 表五处都在。
-4. **部署面**：`docs/runbooks/staging-environment.md` 的配置矩阵、
+   `selfcheck.DEFAULT_IGNORED_MISSING` / `配置管理.md` 表 /
+   `运行时护栏.md` 表五处都在。
+4. **部署面**：`docs/runbooks/预发环境与配置矩阵.md` 的配置矩阵、
    `docker/compose.override.staging.yml` 与基线 `docker-compose.yml` 的转发三者对齐
    ——矩阵里写「staging=true」而 override 没设，等于给运维一张假图。
    第 6 节已从「三个已知 flag」推广成**整表通则**（凡加粗声明具体值的 staging 单元格
@@ -238,8 +238,8 @@ def test_settings_field_exists_and_defaults_off() -> None:
     [
         ".env.example",
         "agentix/config/selfcheck.py",
-        "docs/architecture/configuration.md",
-        "docs/architecture/runtime-guardrails.md",
+        "docs/architecture/配置管理.md",
+        "docs/architecture/运行时护栏.md",
     ],
 )
 def test_key_declared_everywhere(rel: str) -> None:
@@ -257,7 +257,7 @@ def test_env_example_pins_it_off() -> None:
 # 6. 部署面：runbook 的配置矩阵与 staging override 不许各说一套
 #
 # 这一节是**修出来的**：⑧ 落文档时把三个执行边界 flag 写进了
-# `docs/runbooks/staging-environment.md` 的「配置矩阵」，声称 staging 为 true，
+# `docs/runbooks/预发环境与配置矩阵.md` 的「配置矩阵」，声称 staging 为 true，
 # 但 `docker/compose.override.staging.yml` 里一个都没设——矩阵那一列纯属愿望。
 # runbook 验收清单第 5 条要求「配置矩阵逐项 diff（`docker compose config` 输出比对）」，
 # 于是这张表是被当真用的。表里写了什么，override 就得是什么。
@@ -298,7 +298,7 @@ def test_staging_override_pins_every_boundary_flag() -> None:
 
 @pytest.mark.parametrize("key,expected", sorted(BOUNDARY_FLAGS.items()))
 def test_runbook_matrix_staging_column_matches_override(key: str, expected: str) -> None:
-    text = (PROJECT_ROOT / "docs/runbooks/staging-environment.md").read_text(encoding="utf-8")
+    text = (PROJECT_ROOT / "docs/runbooks/预发环境与配置矩阵.md").read_text(encoding="utf-8")
     rows = _matrix_rows(text, key)
     assert len(rows) == 1, f"{key} 在矩阵里应当只有一行，实际 {len(rows)} 行"
     cells = rows[0]
@@ -318,7 +318,7 @@ def _matrix_violations(env: dict) -> list[str]:
     抽成纯函数是为了能做反向钉子——同一段判定喂给一份被删掉键的 override，
     必须报出漂移，否则这条守卫等于没写。
     """
-    text = (PROJECT_ROOT / "docs/runbooks/staging-environment.md").read_text(encoding="utf-8")
+    text = (PROJECT_ROOT / "docs/runbooks/预发环境与配置矩阵.md").read_text(encoding="utf-8")
     violations: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
@@ -379,7 +379,7 @@ def test_compose_forwards_the_contract_flag_off_by_default() -> None:
 
 def test_guard_is_not_a_tautology() -> None:
     """反向钉子：把矩阵里的声明改掉，比对必须报错（否则上面那条等于没测）。"""
-    text = (PROJECT_ROOT / "docs/runbooks/staging-environment.md").read_text(encoding="utf-8")
+    text = (PROJECT_ROOT / "docs/runbooks/预发环境与配置矩阵.md").read_text(encoding="utf-8")
     tampered = text.replace("| `TOOL_SYNC_OFFLOAD_ENABLED` | false | **false**", "| `TOOL_SYNC_OFFLOAD_ENABLED` | false | **true**", 1)
     assert tampered != text, "篡改锚点没命中，本钉子已失效"
     cells = _matrix_rows(tampered, "TOOL_SYNC_OFFLOAD_ENABLED")[0]

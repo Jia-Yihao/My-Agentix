@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """F1b · Stage F：Memory P1 接线守卫（M-P1-1 向量召回 / M-P1-2 后台评审 LLM 路由 / M-P1-5 真分词计数）。
 
-对应 ``docs/design/memory-optimization.md`` §5 与统一执行链方案 §4 Stage F。
+对应 ``docs/design/记忆域深度优化.md`` §5 与统一执行链方案 §4 Stage F。
 纪律：全部 flag 默认关、flag-off 与基线逐位等价；向量/LLM/tokenizer 任何
 失败均 fail-open（断向量服务仍可答、评审不炸主链、估算不炸构建）。
 """
@@ -41,7 +41,7 @@ def _read(rel: str) -> str:
 
 
 # ===========================================================================
-# 1. Flag 五处同步：settings / selfcheck / .env.example / p41 / configuration.md
+# 1. Flag 五处同步：settings / selfcheck / .env.example / p41 / 配置管理.md
 # ===========================================================================
 
 
@@ -69,7 +69,7 @@ class TestFlagSync:
             assert f'"{key}"' in text, key
 
     def test_configuration_md_documents_keys(self):
-        text = _read("docs/architecture/configuration.md")
+        text = _read("docs/architecture/配置管理.md")
         for key in self.NEW_KEYS:
             assert f"`{key}`" in text, key
 

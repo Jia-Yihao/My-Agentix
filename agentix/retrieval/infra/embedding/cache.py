@@ -18,6 +18,7 @@ Embedding 结果本地缓存（stdlib sqlite3，无新增依赖）
 
 返回值顺序与输入严格一一对应（含重复项），不改变调用方既有语义。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -181,6 +182,23 @@ class CachedEmbeddings(Embeddings):
             self._cache.put_many(items, model=self._model)
         except Exception:
             logger.warning("embedding cache write failed; result not cached", exc_info=True)
+
+    def cached_count_for(self, texts: Sequence[str]) -> int:
+        """这些文本里**已有缓存**的条数（按键去重后计）。只读：不发网络请求、不写缓存。
+
+        存在的理由是 E4 预热要报告"刷了几条、其中几条本来就命中"，而键计算
+        （``embedding_cache_key``）与模型名是本类的内部事实——让调用方自己算键等于给
+        同一套键逻辑造第二个源，换模型/改键格式时那份会静默对上号不上。
+        读取失败按 0 命中处理（与 ``_safe_get`` 同口径：缓存是加速件，不是正确性件）。
+        """
+        if not texts:
+            return 0
+        keys = list(dict.fromkeys(embedding_cache_key(text, self._model) for text in texts))
+        try:
+            return len(self._cache.get_many(keys))
+        except Exception:
+            logger.warning("embedding cache probe failed; treating as empty", exc_info=True)
+            return 0
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         if not texts:

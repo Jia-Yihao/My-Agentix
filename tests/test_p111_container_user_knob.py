@@ -30,7 +30,7 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = PROJECT_ROOT / "docker-compose.yml"
 DOCKERFILE = PROJECT_ROOT / "Dockerfile"
-RUNBOOK = PROJECT_ROOT / "docs" / "runbooks" / "staging-environment.md"
+RUNBOOK = PROJECT_ROOT / "docs" / "runbooks" / "预发环境与配置矩阵.md"
 
 #: 共享 `./data` + `./uploads` 的两个应用服务
 APP_SERVICES = ("backend", "retrieval-worker")

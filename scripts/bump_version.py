@@ -11,7 +11,7 @@
     3. web/package.json       version
     4. .env.example           APP_VERSION   （可选文件，存在才校验）
 
-设计依据：docs/VERSIONING.md §2「单一版本事实来源」。
+设计依据：docs/版本管理策略.md §2「单一版本事实来源」。
 CI 的 version-consistency 作业以 --check 模式运行，不一致即失败。
 
 第 4 处是批次 13 补上的：`settings.APP_VERSION` 现由 `agentix.__version__`

@@ -9,7 +9,7 @@
    改写语句进 ``graph.query``、只读闸仍在最前；
 2. ``MILVUS_NPROBE`` 配置化：默认 16 = 原硬编码值、可调、越界回落下限 1；
 3. 配置治理：两键默认值、五处同步落点在位（settings / selfcheck /
-   .env.example / configuration.md / p41 名单）。
+   .env.example / 配置管理.md / p41 名单）。
 
 运行：./.venv/Scripts/python.exe -m pytest tests/test_p96_graph_cost_guard.py -q
 """
@@ -210,7 +210,7 @@ class TestGovernanceSync:
 
     def test_configuration_md_documents_two_keys(self):
         doc = (
-            self.ROOT / "docs/architecture/configuration.md"
+            self.ROOT / "docs/architecture/配置管理.md"
         ).read_text(encoding="utf-8")
         assert "`NEO4J_COST_GUARD_ENABLED`" in doc
         assert "`MILVUS_NPROBE`" in doc

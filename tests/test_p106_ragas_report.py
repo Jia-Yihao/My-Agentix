@@ -3,20 +3,16 @@
 覆盖：
 ① 缺依赖 / 缺 judge 端点 / 缺输入 / 无可评估样本 ⇒ exit 2 诚实降级
 ② build_samples 纯函数：按 id 对齐取最小 attempt、空 sources/answer 跳过
-③ 报告键族固定（REPORT_KEYS）且与 CI METRICS 五键元组**交集为空**（防守卫破）
-④ p90 / test_ci_gate_contract 门禁契约零变化（源级棘轮）
+③ 报告键族固定（REPORT_KEYS）且键族命名收敛（防守卫破）
+④ 报告键族与门禁契约零接触（2026-10-26 起：CI 侧 METRICS 元组随
+   ``eval-offline`` 机位下线而消失，改由键族本身守住"只进报告、不进门禁"）
 """
 
 from __future__ import annotations
 
 import json
-import re
-from pathlib import Path
-
 
 from evals.ragas_report import REPORT_KEYS, build_samples, main
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 # ---------- ② build_samples 纯函数 ----------
@@ -85,21 +81,14 @@ class TestHonestDegradation:
 
 
 # ---------- ③/④ 门禁契约零变化 ----------
+#
+#: 2026-10-26 起本类少了两条「与 ci.yml METRICS 元组比对」的用例：CI 的 `eval-offline`
+#: 质量门禁机位随评测集下线撤除 ⇒ 那份 METRICS 元组不存在了，守卫的前提随前提一起消失
+#: （断言一个不存在的集合不包含任何键，是恒真的假守卫）。
+#: 「ragas_* 只进报告键族、绝不混入门禁」的纪律仍然成立，改由下面这条**不依赖 CI 文件**
+#: 的用例守住：键族命名 + 精确键集本身就是那条纪律的载体。
 
 class TestGateContractUnchanged:
-    def _ci_metrics(self) -> tuple:
-        text = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        m = re.search(r"METRICS\s*=\s*\(([^)]*)\)", text, re.S)
-        assert m, "ci.yml 中未找到 METRICS 元组"
-        return tuple(re.findall(r'"([^"]+)"', m.group(1)))
-
-    def test_report_keys_disjoint_from_ci_metrics(self):
-        metrics = self._ci_metrics()
-        assert metrics, "METRICS 元组解析为空"
-        assert set(REPORT_KEYS).isdisjoint(set(metrics))
-        # ragas_* 键族只进 summary 新键族，绝不混入门禁
-        assert all(k.startswith("ragas_") for k in REPORT_KEYS)
-
     def test_report_keys_exact_family(self):
         assert REPORT_KEYS == (
             "ragas_faithfulness",
@@ -107,14 +96,5 @@ class TestGateContractUnchanged:
             "ragas_questions",
             "ragas_unavailable",
         )
-
-    def test_p90_guard_still_pins_five_metrics(self):
-        """p90/ci_gate 守卫所锁的 ci.yml METRICS 五键零变化（ragas_* 绝不混入）。"""
-        metrics = set(self._ci_metrics())
-        assert metrics == {
-            "route_accuracy",
-            "citation_hit_rate_applicable",
-            "citation_correctness_applicable",
-            "must_contain_applicable",
-            "reject_accuracy_applicable",
-        }
+        # ragas_* 键族只进 summary 新键族，绝不混入门禁
+        assert all(k.startswith("ragas_") for k in REPORT_KEYS)

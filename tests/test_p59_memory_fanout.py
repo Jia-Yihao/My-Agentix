@@ -33,7 +33,7 @@ from agentix.config import settings
 from agentix.domain.agent.types import MemoryItem, MemoryKind, MemoryScope
 
 # ---------------------------------------------------------------------------
-# 基线断言：flag 默认关（flag 治理；见 configuration.md §5）
+# 基线断言：flag 默认关（flag 治理；见 配置管理.md §5）
 # ---------------------------------------------------------------------------
 
 assert settings.MEMORY_FANOUT_ENABLED is False, "P6 基线：记忆扇出默认关"
