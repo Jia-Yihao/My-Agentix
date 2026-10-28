@@ -257,6 +257,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "ROUTING_FASTPATH_ENABLED",
         # T8：路由结果跨请求缓存（进程内 LRU+TTL，默认关，属合法省略）
         "ROUTING_CACHE_ENABLED",
+        # T30（审批恢复规划）：单层路由业务总闸默认关，属合法省略
+        "ROUTING_SINGLE_LAYER_ENABLED",
         "LLM_TIER_ROUTING_ENABLED",
         "LLM_ROLE_TIER_MAP",
         "VERIFICATION_MAX_LLM_CALLS",

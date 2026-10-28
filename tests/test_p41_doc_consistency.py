@@ -332,6 +332,8 @@ class TestDocumentedConfigKeys:
             "EVENT_LOOP_LAG_METRIC_ENABLED",
             "ROUTING_FASTPATH_ENABLED",
             "ROUTING_CACHE_ENABLED",
+            # T30：单层路由业务总闸（默认关 = 现三层路由逐位等价）
+            "ROUTING_SINGLE_LAYER_ENABLED",
             "LLM_TIER_ROUTING_ENABLED",
             "LLM_ROLE_TIER_MAP",
             "VERIFICATION_MAX_LLM_CALLS",

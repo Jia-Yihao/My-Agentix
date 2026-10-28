@@ -12,6 +12,43 @@
 
 ## [Unreleased]
 
+### 路由层 · T30 三层路由收敛为单层（flag 门控，默认关）（2026-10-28）
+
+T29 实测显示一次 kb-query 请求要做**两次**独立的模型路由：L1 意图分类只产意图，KB 检索通道
+（`route` / `tools`）还要在 KB 子图的 `router` 节点（A3）再判一次。这一轮立一条**默认关闭**的
+单层通道：L1 在同一次调用里一并产出检索通道参数，A3 直接消费。**本条只写机制**——跳数差值的
+前后取证属 T30-3（本批未跑 bench），不在此声称任何实测降幅。
+
+- **[新增开关] `ROUTING_SINGLE_LAYER_ENABLED`（默认 `false`）**：flag-off 与基线**逐项等价**
+  （纪律 1）——路由提示词（`_router_prompt_text` 不拼 `SINGLE_LAYER_ROUTE_BLOCK`）、结构化输出
+  schema（`_router_class` 返回与现网同一批四个基线类，基类 `Router` 的 `Literal` 一字未动）、
+  `sanitized_kwargs`（`single_layer_on` 为假时连 `kb_route`/`kb_tools` 两个键都不加）三处逐位等价；
+  三个判定只有 `_exec_flags` 一个源，缓存换代令牌复用同一组函数（纪律 6 ④）。配置键按纪律 4
+  五处同步（`settings.py`、`selfcheck.py`、`.env.example`、`docs/architecture/配置管理.md` §5、
+  `tests/test_p41_doc_consistency.py` 手写清单）。
+- **[单层机制，flag-on]** L1（`agentix/application/agents/router.py::analyze_and_route_query`）在
+  `type` 为 `kb-query` 时额外产出 `kb_route`（`local`/`external`/`hybrid`）与 `kb_tools`（元素仅
+  `postgres`/`milvus`）；`general_handler.create_kb_query` 经 KB 子图输入面以 `route` / `kb_tools`
+  两键转发；子图 `router` 节点消费转发参数时**0 次模型调用** ⇒ 单次 kb-query 请求少一次模型调用。
+  兜底出口（异常 / 白名单外 / fast-path / 缓存命中）**一律不产参数**，此时 A3 照常自判
+  （跳数回到基线，**不伪造默认通道**，不算错也不省）。
+- **[三段安全钳同源]** A3 的三段钳制——`allow_external_search` 关时把 `external`/`hybrid` 降级
+  `local`（`KB_ENABLE_EXTERNAL_SEARCH` 是安全边界，不因决策者是谁而放宽）、tools 与
+  `{milvus, postgres}` 取交集、`route != external` 且 tools 为空时回落 postgres 优先默认——对
+  **转发参数与子图自判两个来源共用同一段代码**，不按来源各写一份（纪律 6 ④）。
+- **[输入面扩键（必要落点）]** `KBInputState` 新增两个 **`NotRequired`** 键（`route` / `kb_tools`）：
+  框架只把 `input=` schema 认识的键写进状态通道——不声明则转发键被输入面**静默丢弃**（不报错）
+  ⇒ 单层化「永不生效」。不传两键时与改动前行为相同，flag-off 的等价性是结构性的而非靠约定。
+- **[已登记能力缺口（规划 §8.2 表 M，实名）]**：① `agentix/application/agents/routing_cache.py` 的
+  `_CACHED_FIELDS` 仍只有 `type/logic/decision/confidence` 四个基线字段 ⇒ **缓存命中不携带单层
+  参数**，同时开 `ROUTING_CACHE_ENABLED` 时该次请求由 A3 自行判路由（跳数回到基线）；扩缓存值面
+  会改 T8 的缓存语义，本批刻意不做。② `general_handler._retry_kb_query_with_rewrite`（Agentic RAG
+  空检索重写重试）**未接转发**，该路径 flag-on 仍有子图模型调用（G-1）。③ 模型回传越域 `kb_route`
+  值时在 `router_cls.model_validate` 抛 `ValidationError` 使节点失败——**刻意不回退**，与 `type`
+  字段越域的既有口径一致（fail-closed，G-2）。②③ 已同步登记为代码注释。
+- **[回滚]** 置回 `ROUTING_SINGLE_LAYER_ENABLED=false`：提示词退回基线段、schema 退回基线四类、
+  转发键不加、A3 恢复自判；无残留任务、无新增指标序列。
+
 ### 流式审批 · T23 流内审批帧下发（默认关）（2026-10-28）
 
 流式链路此前**没有审批车道**：`astream_events` 里遇到需要审批的工具，`preflight` 抛

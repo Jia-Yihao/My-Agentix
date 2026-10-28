@@ -1536,6 +1536,15 @@ class Settings(BaseSettings):
         default=False,
         description="Cache routing results in-process (bounded LRU + TTL) so repeated identical questions skip the LLM intent classifier; default off",
     )
+    # T30（审批与中断恢复优化规划 §4.3）：三层路由收敛为一层的**业务总闸**。
+    # 开 = L1 一次调用同时产意图与执行参数、KB 检索路由并入 L1（A3 检索通道
+    # 选择不再留在 KB 子图内）；**默认关** ⇒ 走现有三层路由（L1 只产意图，
+    # A3 检索路由留在 KB 子图内），路由链、提示词与图可达性与现网**逐位等价**
+    # （Strangler 纪律 1）。本批（T30-1）只落配置面，零行为变更；收敛实现属 T30-2。
+    ROUTING_SINGLE_LAYER_ENABLED: bool = Field(
+        default=False,
+        description="T30 single-layer routing: one L1 call emits both intent and execution params, KB retrieval routing folded into L1; default off = existing three-layer routing byte-for-byte baseline-equal",
+    )
     # Phase 28（Ch9 §9.3.2 需求澄清决策）：歧义输入先澄清再执行（默认**关**）。
     # flag-on = general_handler 各入口 _maybe_clarify 前置（词表/confidence 确定性
     # 启发，零新增 LLM）；澄清应答走消息区，不入 HITL、不计失败、不改路由终态；

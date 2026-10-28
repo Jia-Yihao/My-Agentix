@@ -100,6 +100,40 @@ CODE_EXEC_ROUTE_BLOCK = """
 - 纯闲聊、寒暄选 `general-query`
 """
 
+# T30-2（单层路由）：KB 检索通道参数段。仅当 settings.ROUTING_SINGLE_LAYER_ENABLED
+# =true 时由 router.analyze_and_route_query 追加到提示词**末尾**——flag-off 时该段
+# 不进入任何提示词，路由提示与基线字节等价（同 P1/P2 段的拼接纪律）。
+# 判据**搬自** A3 的 KB 检索路由模板（kb_prompts.KB_ROUTER_SYSTEM_TEMPLATE），
+# 措辞与取值域都跟着它走：这套机制里有两套通道词汇，钳制就要按两套写。
+SINGLE_LAYER_ROUTE_BLOCK = """
+
+## KB 检索通道参数（单层路由：只在 `type` 为 `kb-query` 时额外输出）
+当且仅当分类结果是 `kb-query` 时，请在**同一次输出**里额外给出下面两个字段，
+让知识库检索直接按此通道执行（不再进行第二次路由判断）：
+
+- `kb_route`：检索通道，取值 `local`（仅本地知识源）/ `external`（仅外部检索）/ `hybrid`（本地 + 外部）
+- `kb_tools`：本地知识源检索工具列表，元素只能是 `postgres` 和/或 `milvus`
+
+本地知识源说明（**postgres 第一优先级，milvus 仅兜底**）：
+- **postgres**：结构化测试数据知识库，数据更准确、查询更快、覆盖面广；
+  系统会**先查 postgres**，有结果就不再查 milvus
+- **milvus**：向量库，只在 postgres 无结果时兜底，存放长文本、说明与解读
+
+通道判据（与知识库检索路由一致，严格执行）：
+1. **通用数据条目说明查询（默认推荐）**——概念说明、数据来源、沿革、规则、背景、原则
+   ⇒ `kb_route: local`、`kb_tools: ['postgres', 'milvus']`
+2. **明确的结构化查询**——数据集名称、数据分类、条目编号、来源机构等简短事实查询
+   ⇒ `kb_route: local`、`kb_tools: ['postgres']`
+3. **明确需要长文本叙事**——要求"完整说明"、"详细沿革"、"长篇介绍"
+   ⇒ `kb_route: local`、`kb_tools: ['milvus']`
+4. **外部检索类**——需要外网资料，本地知识库可能不足
+   ⇒ `kb_route: hybrid`、`kb_tools: ['milvus']`
+5. **超出范围类**——非数据说明内容（个案代办、政治敏感、医疗诊断等）
+   ⇒ `kb_route: local`、`kb_tools: []`（空列表表示无法处理）
+
+> 注意：`type` 不是 `kb-query` 时**不要**输出这两个字段（省略即可）。
+"""
+
 # 一般查询提示，即用户的问题与测试数据业务无关或只需轻量对话
 GENERAL_QUERY_SYSTEM_PROMPT = """你是一个测试数据集领域的智能助手。你的工作是帮助用户解决与数据条目、条目适用、数据概念、字段含义相关的问题。
 

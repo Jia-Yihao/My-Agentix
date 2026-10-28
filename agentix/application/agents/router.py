@@ -3,7 +3,7 @@ Query routing module - intent classification and dispatch.
 """
 
 import re
-from typing import Literal, Optional, Set, Tuple
+from typing import Any, Dict, Literal, Optional, Set, Tuple
 
 from langchain_core.runnables import RunnableConfig
 from loguru import logger
@@ -11,14 +11,19 @@ from loguru import logger
 from agentix.orchestration.langgraph.lg_states import (
     AgentState,
     CodeRouter,
+    CodeSingleLayerRouter,
     Router,
+    SingleLayerRouter,
     TaskCodeRouter,
+    TaskCodeSingleLayerRouter,
     TaskRouter,
+    TaskSingleLayerRouter,
 )
 from agentix.application.agents.llm_factory import get_llm_client
 from agentix.application.agents.lg_prompts import (
     CODE_EXEC_ROUTE_BLOCK,
     ROUTER_SYSTEM_PROMPT,
+    SINGLE_LAYER_ROUTE_BLOCK,
     TASK_EXEC_ROUTE_BLOCK,
 )
 from agentix.config import ablation, settings
@@ -284,15 +289,27 @@ def _record_router_fallback(reason: str) -> None:
         logger.debug("router fallback counter failed (non-fatal)")
 
 
-def _router_class(task_exec_on: bool, code_exec_on: bool):
-    """按 flag 组合选结构化输出 schema：都不开⇒基类 Router（逐位等价）。
+def _router_class(task_exec_on: bool, code_exec_on: bool, single_layer_on: bool):
+    """按 flag 组合选结构化输出 schema：单层闸关⇒与现网**同一批四类**。
 
     为什么用四个类而不是"运行时给 Literal 加值"：``Literal`` 是静态类型，
     结构化输出的 schema 在 ``with_structured_output(cls)`` 那一刻就按 cls 固化
     了——基类 ``Router`` 的 ``type`` 字面量若被放宽，基线消费者（任何按
     ``router.type`` 分派的既有代码）都要跟着重新审一遍。改用子类 ⇒ 基类字面量
     一个字不动，flag-off 时生产链路仍只构造基类 ``Router``（逐字节等价）。
+
+    T30-2（单层路由）同理：KB 检索通道参数也做成**子类**（
+    ``SingleLayerRouter`` 等四个，与 task/code 两闸的四种组合一一对应）。
+    往基类加字段会让 flag-off 的 JSON schema 也变，等价性当场就破。
     """
+    if single_layer_on:
+        if task_exec_on and code_exec_on:
+            return TaskCodeSingleLayerRouter
+        if task_exec_on:
+            return TaskSingleLayerRouter
+        if code_exec_on:
+            return CodeSingleLayerRouter
+        return SingleLayerRouter
     if task_exec_on and code_exec_on:
         return TaskCodeRouter
     if task_exec_on:
@@ -302,23 +319,24 @@ def _router_class(task_exec_on: bool, code_exec_on: bool):
     return Router
 
 
-def _exec_flags() -> Tuple[bool, bool]:
-    """P1（任务执行）/ P2（代码执行）两个业务开关的当前取值。
+def _exec_flags() -> Tuple[bool, bool, bool]:
+    """P1（任务执行）/ P2（代码执行）/ T30（单层路由）三个业务开关的当前取值。
 
-    单独提出来是因为现在有**三处**要用同一对判定——结构化输出 schema、
+    单独提出来是因为现在有**三处判定共用**这一个来源——结构化输出 schema、
     路由提示词、以及缓存换代令牌（``routing_cache.generation_token``）。
     各写一份 ``bool(getattr(settings, ...))`` 就是"同一个判定两个源"（纪律 6 ④）。
     """
     return (
         bool(getattr(settings, "TASK_EXEC_ENABLED", False)),
         bool(getattr(settings, "CODE_EXEC_ENABLED", False)),
+        bool(getattr(settings, "ROUTING_SINGLE_LAYER_ENABLED", False)),
     )
 
 
-def _router_prompt_text(task_exec_on: bool, code_exec_on: bool) -> str:
+def _router_prompt_text(task_exec_on: bool, code_exec_on: bool, single_layer_on: bool) -> str:
     """路由提示词**实际生效文本**：基座 + flag-on 才拼入的支路段。
 
-    flag-off 两段都不拼 ⇒ 与基线逐字节相同。缓存换代令牌取的就是本函数的返回值
+    flag-off 三段都不拼 ⇒ 与基线逐字节相同。缓存换代令牌取的就是本函数的返回值
     ——提示词变了（含"某段被拼入/移除"）就必须换代，否则旧结论会跨提示词版本复用。
     """
     prompt = ROUTER_SYSTEM_PROMPT
@@ -326,6 +344,8 @@ def _router_prompt_text(task_exec_on: bool, code_exec_on: bool) -> str:
         prompt += TASK_EXEC_ROUTE_BLOCK
     if code_exec_on:
         prompt += CODE_EXEC_ROUTE_BLOCK
+    if single_layer_on:
+        prompt += SINGLE_LAYER_ROUTE_BLOCK
     return prompt
 
 
@@ -343,6 +363,12 @@ async def _lookup_routing_cache(question_text: str) -> Optional[Router]:
     ``route.cache_hit``（``cached=True`` + 有界 ``route_type``），trajectory 因此
     能证明"这次真的没调模型"；决策属性照常由 ``record_route_decision`` 单点写入
     （与 LLM 路径同一个 helper、同一个键，不另立第二源）。
+
+    T30-2 的**已知能力缺口**（本批刻意不补）：缓存值只有 ``_CACHED_FIELDS`` 四个
+    基线字段，**不含** ``kb_route``/``kb_tools``——扩它会改 T8 的缓存语义，不在本批
+    边界内。后果是可预期的：同时开 ``ROUTING_CACHE_ENABLED`` 时，命中请求拿不到单层
+    参数，KB 子图内的 A3 检索路由**照常自己调一次模型**（跳数回到基线，不会算错，
+    只是没省）。因此命中路径重建出的 router 上那两个字段恒为缺省值。
     """
     # 惰性 import 是本任务 flag-off 等价性的实现手段之一：flag 判真之前
     # 缓存模块连加载都不发生（用例读 sys.modules 钉死这条）。
@@ -459,14 +485,14 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
     # （llm_factory 的既有语义），即路由用 0.0，属预期行为。
     model = get_llm_client(temperature=0.7, tags=["router"], role="router")
 
-    # P1（任务执行）/ P2（代码执行）：flag-on 才把对应段拼进路由提示 + 换结构化
-    # 输出 schema + 放宽白名单；flag-off 三处均与基线逐字节相同（两段提示词都不
-    # 进入任何提示词，router_cls 仍是基类 Router，allowed_types 仍是 7 项基线）。
-    # 三个判定各只有一个源（``_exec_flags`` / ``_router_class`` /
+    # P1（任务执行）/ P2（代码执行）/ T30（单层路由）：flag-on 才把对应段拼进路由
+    # 提示 + 换结构化输出 schema +（P1/P2）放宽白名单；flag-off 三处均与基线逐字节
+    # 相同（三段提示词都不进入任何提示词，router_cls 仍是基类 Router，allowed_types
+    # 仍是 7 项基线）。三个判定各只有一个源（``_exec_flags`` / ``_router_class`` /
     # ``_router_prompt_text``），缓存换代令牌复用同一组函数。
-    task_exec_on, code_exec_on = _exec_flags()
-    router_cls = _router_class(task_exec_on, code_exec_on)
-    router_prompt = _router_prompt_text(task_exec_on, code_exec_on)
+    task_exec_on, code_exec_on, single_layer_on = _exec_flags()
+    router_cls = _router_class(task_exec_on, code_exec_on, single_layer_on)
+    router_prompt = _router_prompt_text(task_exec_on, code_exec_on, single_layer_on)
     allowed_types: Set[str] = set(ALLOWED_TYPES)
     if task_exec_on:
         allowed_types.add("task-query")
@@ -490,6 +516,7 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
         _record_router_fallback("exception")
         return {"router": fallback_router}
 
+    # 越域 kb_route 在此抛 ValidationError 使节点失败（G-2，见规划 §8.2 表 M）：刻意不做回退重写，与 type 字段越域的既有口径一致（fail-closed）
     response = raw_response if isinstance(raw_response, Router) else router_cls.model_validate(raw_response)
     router_type = response.type
     logic = response.logic or ""
@@ -511,14 +538,27 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
             )
         }
 
-    sanitized_router = router_cls(
-        type=router_type,
-        logic=logic,
-        question=response.question or question_text,
-        decision=response.decision,
-        confidence=response.confidence,
-        reasoning=response.reasoning,
-    )
+    sanitized_kwargs: Dict[str, Any] = {
+        "type": router_type,
+        "logic": logic,
+        "question": response.question or question_text,
+        "decision": response.decision,
+        "confidence": response.confidence,
+        "reasoning": response.reasoning,
+    }
+    if single_layer_on:
+        # T30-2 A1 产参：KB 检索通道参数必须**一并带出去**，否则参数在最后一跳被
+        # 丢掉，A3 只能自己再问一次模型（单层化就只剩"多一段提示词"）。
+        # 显式取值，不靠基类 ``extra="allow"`` 的透传：透传只在模型真的回传多余键时
+        # 才成立，而且会把"这次没给参数"与"参数被丢在半路"混成同一种形态——那是
+        # 静默失败，不是降级。
+        # 兜底出口（异常 / 白名单外 / fast-path / 缓存命中）**一律不产这两个字段**：
+        # 那是有意的降级，保持返回无参数的 Router，A3 照常自调模型（跳数回到基线），
+        # **不伪造默认通道**。
+        sanitized_kwargs["kb_route"] = getattr(response, "kb_route", None)
+        sanitized_kwargs["kb_tools"] = list(getattr(response, "kb_tools", None) or [])
+
+    sanitized_router = router_cls(**sanitized_kwargs)
 
     # PhaseK 任务 4：路由决策值上 span 的**唯一落点**——白名单校验通过后的最终
     # route（有界枚举，纪律 3；理由文本不落）。兜底出口另有 _record_router_fallback
