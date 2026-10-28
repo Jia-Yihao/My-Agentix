@@ -6,6 +6,8 @@ import asyncio
 import os
 import re
 import secrets
+import signal
+import threading
 import time
 import uvicorn
 from contextlib import asynccontextmanager
@@ -611,6 +613,138 @@ async def _startup_crash_recovery() -> None:
         logger.warning("Crash recovery check failed: {}", exc)
 
 
+# ---------------------------------------------------------------------------
+# LG-3-6：优雅关闭（SIGTERM/SIGINT → 原生 ``RunControl`` drain）
+# ---------------------------------------------------------------------------
+#: 已安装的信号处理器（signum → 原处理器）。``signal.signal`` 是**进程级**状态，
+#: 安装/卸载必须成对，否则用例之间会互相污染，且 uvicorn 的退出路径会被永久替换。
+_drain_prev_handlers: dict = {}
+#: drain 上限计时器（daemon 线程）。到点仍在跑 ⇒ 强制退出，不无限等（验收第 ③ 条）。
+_drain_deadline_timer: Optional[threading.Timer] = None
+
+
+def _arm_drain_deadline(timeout: float) -> None:
+    """起一条上限计时线程：到点仍未退出就强制退出。
+
+    为什么是线程而不是 ``asyncio.wait_for``：信号处理函数在事件循环**之外**
+    执行，而且此刻 uvicorn 的关停流程正占着 loop；``threading.Timer`` 只依赖
+    解释器。为什么是 ``os._exit``：这是"强制"二字的兑现——checkpoint 已在
+    超步边界落盘（``GraphDrained`` 的语义），恢复走启动链，不依赖进程内的
+    善后钩子。只在 ``RUN_CONTROL_ENABLED`` 开时被调用。
+    """
+    global _drain_deadline_timer
+    if _drain_deadline_timer is not None or timeout <= 0:
+        return
+
+    def _force_exit() -> None:
+        logger.error(
+            "graceful drain exceeded {}s; forcing exit (checkpoints are resumable)",
+            timeout,
+        )
+        os._exit(1)
+
+    timer = threading.Timer(float(timeout), _force_exit)
+    timer.daemon = True
+    timer.start()
+    _drain_deadline_timer = timer
+
+
+def _cancel_drain_deadline() -> None:
+    global _drain_deadline_timer
+    if _drain_deadline_timer is not None:
+        _drain_deadline_timer.cancel()
+        _drain_deadline_timer = None
+
+
+def _make_drain_signal_handler(coordinator: Any, previous: Any) -> Any:
+    """包一层信号处理器：先请求 drain，再把信号交给原处理器。
+
+    **必须串接**：uvicorn 在 ``Server.serve()`` 里装了自己的处理器（置
+    ``should_exit``）。覆盖而不串接，进程就再也不响应 SIGTERM——"优雅关闭"
+    会从"停不下来"变成"根本不停"。
+    """
+
+    def _handle(signum: int, _frame: Any) -> None:
+        try:
+            active = coordinator.request_drain(f"signal:{signum}")
+            logger.warning(
+                "shutdown signal {}: draining {} active run(s) at the next superstep",
+                signum,
+                active,
+            )
+            _arm_drain_deadline(settings.RUN_DRAIN_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - 信号处理函数里抛错会吞掉关停信号本身
+            logger.warning("drain request failed on signal {}: {}", signum, exc)
+        if callable(previous):
+            previous(signum, _frame)
+
+    return _handle
+
+
+def _install_drain_signal_handlers() -> bool:
+    """把 SIGTERM/SIGINT 接到 drain 协调器，返回是否至少装上一个。
+
+    开关在函数内判：`RUN_CONTROL_ENABLED` 关 = 直接返回 False，一个处理器都不装
+    （调用方无需各自复制判据，纪律 6 ④）。
+    """
+    if not settings.RUN_CONTROL_ENABLED:
+        return False
+    if _drain_prev_handlers:
+        return True
+    from agentix.orchestration.langgraph.policies import get_drain_coordinator
+
+    coordinator = get_drain_coordinator()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        try:
+            previous = signal.getsignal(signum)
+            signal.signal(signum, _make_drain_signal_handler(coordinator, previous))
+        except (ValueError, OSError) as exc:
+            # 非主线程 / 平台不支持：fail-open——关停退回「uvicorn 自己退 + 启动恢复」
+            # （纪律 2：辅助能力装不上不得阻断启动）。
+            logger.warning("drain signal handler not installed for {}: {}", signum, exc)
+            continue
+        _drain_prev_handlers[int(signum)] = previous
+    if _drain_prev_handlers:
+        logger.info("drain signal handlers installed: {}", sorted(_drain_prev_handlers))
+    return bool(_drain_prev_handlers)
+
+
+def _uninstall_drain_signal_handlers() -> None:
+    for signum, previous in list(_drain_prev_handlers.items()):
+        try:
+            signal.signal(signum, previous)
+        except (ValueError, OSError, TypeError):
+            pass
+    _drain_prev_handlers.clear()
+
+
+async def _drain_in_flight_runs() -> None:
+    """关停前把在跑的图执行从"被杀"改成"协作式停摆"（``RUN_CONTROL_ENABLED`` 门内）。
+
+    drain 在**超步边界**生效：正在跑的那一步跑完、checkpoint 落盘后抛
+    ``GraphDrained``，线程随之可被 ``alist()`` 列出（与 LG-2-1 的启动恢复衔接）。
+    等待有上限：超时只告警并继续，上限计时器会兜底强制退出。开关关 = 立即返回。
+    """
+    if not settings.RUN_CONTROL_ENABLED:
+        return
+    from agentix.orchestration.langgraph.policies import get_drain_coordinator
+
+    coordinator = get_drain_coordinator()
+    active = coordinator.request_drain("shutdown")
+    logger.info("graceful drain: {} active run(s) requested to stop", active)
+    if await coordinator.wait_for_drain(settings.RUN_DRAIN_TIMEOUT_S):
+        # 运行都停了：上限计时器不再有意义（否则会在正常退出的尾巴上误杀）。
+        _cancel_drain_deadline()
+        logger.info("graceful drain complete")
+        return
+    logger.warning(
+        "graceful drain timed out after {}s ({} run(s) still active); "
+        "forcing exit at the deadline",
+        settings.RUN_DRAIN_TIMEOUT_S,
+        coordinator.active_count(),
+    )
+
+
 async def _startup() -> None:
     """应用启动逻辑（企业化 P2-1.1：由 lifespan 协议驱动，替代 on_event("startup")）。"""
     logger.info("Starting {} v{}", settings.APP_NAME, settings.APP_VERSION)
@@ -926,6 +1060,11 @@ async def _startup() -> None:
     except Exception as exc:  # noqa: BLE001 - 审计是诊断，不阻断启动
         logger.debug("tool registry audit skipped: {}", exc)
 
+    # LG-3-6：优雅关闭信号（`RUN_CONTROL_ENABLED` 关 = 安装函数内部直接返回，
+    # 一个处理器都不装）。装在崩溃恢复之前：恢复跑的是图执行，若此刻收到
+    # SIGTERM，也要能被 drain 覆盖。
+    _install_drain_signal_handlers()
+
     # Crash recovery: resume any interrupted threads
     await _startup_crash_recovery()
 
@@ -933,6 +1072,13 @@ async def _startup() -> None:
 async def _shutdown() -> None:
     """应用退出逻辑（企业化 P2-1.1：由 lifespan 协议驱动）。"""
     logger.info("Shutting down {}", settings.APP_NAME)
+
+    # LG-3-6：先把在跑的图执行 drain 掉（`RUN_CONTROL_ENABLED` 关 = 立即返回）。
+    # 放在最前面：其它清理（cron / flush / 连接池）都不该占用 drain 的等待预算。
+    try:
+        await _drain_in_flight_runs()
+    except Exception as exc:  # noqa: BLE001 - drain 失败退回「直接退出 + 启动恢复」
+        logger.warning("graceful drain skipped: {}", exc)
 
     # P5：先取消 cron 后台 tick 循环（不再起新任务；执行中任务被取消 ⇒
     # _execute 先 release 簿记再透传 CancelledError——重启后按计划恢复）。
@@ -995,6 +1141,9 @@ async def _shutdown() -> None:
         await lightrag_service.cleanup()
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning(f"Failed to cleanup LightRAG service: {exc}")
+
+    # LG-3-6：关停走完，把信号处理器还原（`signal.signal` 是进程级状态）。
+    _uninstall_drain_signal_handlers()
 
 
 @application.exception_handler(Exception)
@@ -1060,12 +1209,20 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 if __name__ == "__main__":
     # G6：reload 与 DEBUG 解耦；UVICORN_RELOAD 未显式设置时沿用旧行为（=DEBUG）。
     _reload = settings.DEBUG if settings.UVICORN_RELOAD is None else settings.UVICORN_RELOAD
+    # LG-3-6：`python -m agentix.main` 的关停等待也给上限（容器里走 uvicorn CLI，
+    # 那条路径由信号处理器起的 `os._exit` 计时线程兜底，见 `_arm_drain_deadline`）。
+    _graceful_kwargs = (
+        {"timeout_graceful_shutdown": max(1, int(settings.RUN_DRAIN_TIMEOUT_S))}
+        if settings.RUN_CONTROL_ENABLED
+        else {}
+    )
     uvicorn.run(
         "agentix.main:application",
         host=settings.HOST,
         port=settings.PORT,
         reload=_reload,
         log_level="info",
+        **_graceful_kwargs,
     )
 
 # Backwards-compatible alias for tooling expecting `app` symbol

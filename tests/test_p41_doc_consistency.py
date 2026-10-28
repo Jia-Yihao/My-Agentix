@@ -348,6 +348,9 @@ class TestDocumentedConfigKeys:
             "NODE_ERROR_HANDLER_ENABLED",
             # LG-3-4：恢复期步骤清单（默认关 = 不建表、零读写）
             "RECOVERY_STEP_LEDGER_ENABLED",
+            # LG-3-6：优雅关闭（默认关 = 不装信号处理器、不传 control 形参）
+            "RUN_CONTROL_ENABLED",
+            "RUN_DRAIN_TIMEOUT_S",
             "ADAPTIVE_TOOL_TIMEOUT_ENABLED",
             "LOAD_SHEDDING_ENABLED",
             "BULKHEAD_RETRIEVAL_SIZE",

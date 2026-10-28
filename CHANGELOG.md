@@ -12,6 +12,21 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-3-6 优雅关闭（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P3 第 6 条：此前收到 SIGTERM 是直接杀进程，在跑的图要么被硬切断、要么整轮 500，只能靠下次启动去猜哪些线程没跑完。这一轮接上框架原生的**协作式停摆**：信号到达后，在跑的图在**超步边界**停下、留下可恢复 checkpoint，然后进程才退出。
+
+- **[新增开关] `RUN_CONTROL_ENABLED`**（默认 `false`）：开 = `_startup` 安装 SIGTERM/SIGINT 处理器、`chat_service` 每次流式运行新建 `RunControl` 并 `astream_events(..., control=ctl)`；默认关 = **不装任何信号处理器**、**不传 `control` 形参**，调用形状与基线逐位等价（纪律 1）。
+- **[新增配置] `RUN_DRAIN_TIMEOUT_S`**（默认 `30`，`>=1`）：drain 的**上限**。信号处理函数起一条 daemon `threading.Timer`，到点仍有运行在跑 ⇒ `logger.error` 后 `os._exit(1)` 强制退出（checkpoint 已在超步边界落盘，恢复走启动链）；`_shutdown` 里排队清空即撤销计时器。容器里走 uvicorn CLI，`__main__` 的 `timeout_graceful_shutdown` 管不到，所以硬上限由进程自己持有。
+- **[drain 是调用级的] 每次运行新建 `RunControl`**：框架源码注释与 1.2.18 实测都明确——复用已 `request_drain()` 的实例等于**永久 drain**（第一个超步边界就抛，一个节点都不跑）。`policies.py::DrainCoordinator` 因此维护「在跑控制面」登记簿：`begin()` 新建 + 登记，`end()` 注销（正常/异常/断连都走），信号到达时统一置位；关停期间新运行拿到**预置位**控制面（第一超步即退出，不接新任务）。
+- **[信号必须串接]** 包装的处理器先 `request_drain()`，再把信号交给**原处理器**（uvicorn 的 `should_exit` 才是进程退出的推手）。覆盖而不串接，进程就再也不响应 SIGTERM——「优雅关闭」会从「停不下来」变成「根本不停」。
+- **[流式外层如实收口]** `GraphDrained` 在 `chat_service` 被单独捕获（与 `interrupt` 同层）：按 `cancelled` 收口运行记录、发 `error` 帧「服务正在重启，本轮任务已保存」、仍发唯一 `done`——不落进通用 `except Exception` 的「处理请求时出错」。
+- **[恢复链路衔接]** `GraphDrained` 抛出时 checkpoint 已保存（1.2.18 实测：`alist()` 能列出该线程、`aget_state().next` 指向未跑的下一步），与 LG-2-1 的启动恢复 / 续跑入口直接接上。
+- **[守卫#11 不增行]** `RunControl` / `GraphDrained` 从 `orchestration/langgraph/policies.py`（既在白名单内的适配层汇聚点）转出，`chat_service` 不直接 import langgraph ⇒ `test_p66_arch_guards.py` 的等式棘轮**未改一行**。
+- **[新增守卫] `tests/test_p164_run_drain.py`（25 条）**：开关默认关、上限 `>=1`；协调器每运行新建控制面、注销幂等、统一置位、关停期预置位、`wait_for_drain` 有界；真图 drain 在超步边界停摆（`trail == ["a","b"]`、`alist` 非空、`next` 非空）；不传 `control` 正常跑完；复用已 drain 的控制面一个节点都不跑；信号处理器先 drain 再串接原处理器、安装/卸载可逆、flag 关不装；强制退出计时器到点真调 `os._exit` 且不叠计时器；`_shutdown` 的等待有界、没排空不撤计时器；`chat_service` flag 关不传 `control`、flag 开每请求新建且运行期登记、`GraphDrained` 如实报告。
+- **[配置五处同步]** `settings.py` / `selfcheck.py::DEFAULT_IGNORED_MISSING` / `.env.example` / `docs/architecture/配置管理.md` §5 / `test_p41_doc_consistency.py` 手写清单。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十九段读数；`docs/项目实现手册.md` 补优雅关闭一段。
+
 ### LangGraph 原生对齐 · LG-3-5 节点级错误补偿（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P3 第 5 条：`execute_task` / `code_agent` 是**有副作用**的节点，一旦抛错整轮 500，「哪些副作用已经发生」就丢给调用方猜。这一轮用框架原生 `add_node(error_handler=)` 接住失败：写一条可查的补偿记录，并把如实的失败回执交给用户，而不是让整轮静默失败。

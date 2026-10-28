@@ -1153,6 +1153,23 @@ class Settings(BaseSettings):
         default=False,
         description="Persist completed task steps (run_step_ledger) and skip them when execute_task is re-run after an in-loop suspension; default off",
     )
+    # LG-3-6：优雅关闭——SIGTERM/SIGINT 先对在跑的每次图执行请求 drain
+    # （langgraph 1.2 原生 ``RunControl``，调用级，每次运行新建），等到超步
+    # 边界留下可恢复 checkpoint 再退出；默认关 = 不装信号处理器、不新建控制面、
+    # ``astream_events`` 不传 ``control`` 形参，与基线逐位等价（纪律 1）。
+    RUN_CONTROL_ENABLED: bool = Field(
+        default=False,
+        description="Drain in-flight graph runs on SIGTERM/SIGINT via native RunControl (default off = no signal handler, no control kwarg)",
+    )
+    # drain 的**上限**（秒）：到点仍在跑的运行不再等——信号处理函数起一条
+    # daemon 计时线程，超时 ``os._exit`` 强制退出（Docker 里 uvicorn 走 CLI，
+    # `__main__` 里的 ``timeout_graceful_shutdown`` 管不到它，所以硬上限必须
+    # 由进程自己持有）。只在 ``RUN_CONTROL_ENABLED`` 开时生效。
+    RUN_DRAIN_TIMEOUT_S: float = Field(
+        default=30.0,
+        ge=1.0,
+        description="Upper bound (seconds) for graceful drain; force exit if runs are still active at the deadline",
+    )
     # Phase 21（Skills 渐进披露）：SKILL.md 元数据常驻注入 + read_skill 惰性读正文。
     # 默认 False = 零注入零注册（Strangler，flag-off 行为字节等价）。
     SKILLS_ENABLED: bool = False

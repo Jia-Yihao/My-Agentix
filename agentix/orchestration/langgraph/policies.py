@@ -28,19 +28,29 @@ LG-1-2 把 ``retry_on`` 换成业务分类 ``is_retryable``（唯一真源）；
 LG-3-5 的 ``node_error_handler`` 只给**有副作用**的节点（``execute_task`` /
 ``code_agent``）注册：它对失败只做补偿与收尾，**不重跑节点**，因此与 LG-1-1
 「这两个节点不挂 retry_policy」的铁律不冲突。
+
+LG-3-6 的 ``DrainCoordinator`` 也放在这里，因为它构造的是同一类**框架原生
+对象**（``RunControl``）——只是作用域从「节点」变成「一次运行」。放置动机是
+守卫而不是偏好：``tests/test_p66_import_guards.py`` 的 #11 棘轮把"哪些文件
+可以 import langgraph"冻结成等式集合（只减不增），而 ``chat_service`` 必须能
+新建/捕获 drain 控制面与 ``GraphDrained``。让它们从本模块（白名单内的适配层
+汇聚点）转出，比给棘轮新增一行更符合「不弱化既有守卫」。
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import itertools
+import threading
 import time
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple
 
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.errors import NodeError
+from langgraph.errors import GraphDrained, NodeError
 from langgraph.graph import END
+from langgraph.runtime import RunControl
 from langgraph.types import Command, RetryPolicy, TimeoutPolicy
 from loguru import logger
 
@@ -68,6 +78,9 @@ __all__ = [
     "node_timeout",
     "node_error_handler",
     "NODE_ERROR_RECORD_DECIDED_BY",
+    "DrainCoordinator",
+    "get_drain_coordinator",
+    "GraphDrained",
 ]
 
 #: 原生默认快照。LG-1-3 要"三层自研退避与原生默认同源"，比对基准就是它——
@@ -260,3 +273,101 @@ def node_error_handler(
         )
 
     return _handle
+
+
+class DrainCoordinator:
+    """在跑 ``RunControl`` 的进程级登记簿（LG-3-6 · 优雅关闭）。
+
+    ## 为什么需要一张登记簿
+
+    LangGraph 1.2 的 drain 是**调用级**的：``astream(..., control=ctl)`` 只对
+    那一次运行生效，``RunControl`` 的源码注释还明确要求**每次运行新建**——
+    复用一个已 ``request_drain()`` 的实例等于永久 drain（spike 实测：控制面
+    置位后再跑，第一个超步边界就直接抛 ``GraphDrained``，一个节点都不执行）。
+    于是"收到 SIGTERM 让所有在跑的图停下来"需要两层：每次运行把**自己的**
+    控制面登记进来，信号到达时把登记簿里的控制面统一置位。
+
+    ## 线程模型
+
+    ``request_drain()`` 由信号处理函数调用（主线程、事件循环之外），
+    ``begin()`` / ``end()`` 由事件循环里的请求协程调用 ⇒ 用 ``threading.Lock``
+    而不是 ``asyncio.Lock``。控制面自身的置位是单次属性写（框架保证无锁安全），
+    出锁之后再逐个置位，避免在持锁期间调用框架对象。
+
+    ## 关停期间的新运行
+
+    ``request_drain()`` 之后 ``begin()`` 仍会返回控制面，但**预先置位**：新运行
+    会被允许写出入口 checkpoint，然后在第一个超步边界退出（不接新任务，也不
+    静默变成长任务）。这比直接拒绝更温和：客户端拿到的是可恢复的"已保存"回执。
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._active: Dict[int, RunControl] = {}
+        self._keys = itertools.count(1)
+        self._draining = False
+
+    @property
+    def drain_requested(self) -> bool:
+        with self._lock:
+            return self._draining
+
+    def begin(self) -> Tuple[int, RunControl]:
+        """登记一次运行并返回 ``(注销键, 新建的控制面)``。
+
+        控制面**每次调用都新建**（调用级 API 的硬要求，验收第 ④ 条）：
+        复用已 drain 的实例会永久 drain，等于把后续所有请求一起关掉。
+        """
+        control = RunControl()
+        with self._lock:
+            key = next(self._keys)
+            draining = self._draining
+            self._active[key] = control
+        if draining:
+            control.request_drain("shutdown")
+        return key, control
+
+    def end(self, key: int) -> None:
+        """注销一次运行（幂等：运行结束/异常/客户端断连都走这里）。"""
+        with self._lock:
+            self._active.pop(key, None)
+
+    def active_count(self) -> int:
+        with self._lock:
+            return len(self._active)
+
+    def request_drain(self, reason: str = "shutdown") -> int:
+        """把登记簿里的所有控制面置位，返回本次受影响的运行数。"""
+        with self._lock:
+            self._draining = True
+            controls: List[RunControl] = list(self._active.values())
+        for control in controls:
+            control.request_drain(reason)
+        return len(controls)
+
+    async def wait_for_drain(self, timeout: float, *, interval: float = 0.05) -> bool:
+        """等所有已登记运行退出，最多 ``timeout`` 秒；返回是否全部清空。
+
+        轮询而不是 ``asyncio.Event``：协调器是进程级单例，可能被多个事件循环
+        （测试里的 ``asyncio.run``）碰到，而 ``Event`` 一建就绑循环。间隔 50ms
+        对关停路径的代价可以忽略。
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, float(timeout))
+        while loop.time() < deadline:
+            if self.active_count() == 0:
+                return True
+            await asyncio.sleep(interval)
+        return self.active_count() == 0
+
+
+#: 进程级单例。惰性创建：模块导入不建控制面、不碰事件循环。
+_coordinator: Optional[DrainCoordinator] = None
+
+
+def get_drain_coordinator() -> DrainCoordinator:
+    """取进程级 drain 协调器（首次调用才创建；测试可替换模块属性）。"""
+    global _coordinator
+    if _coordinator is None:
+        _coordinator = DrainCoordinator()
+    return _coordinator
