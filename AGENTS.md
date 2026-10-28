@@ -89,3 +89,5 @@ cd web && npm run lint && npm run test           # 前端 vue-tsc + vitest
 `.env.example` · `agentix/config/selfcheck.py` · 本文件。
 
 > code exec 机制（运行时写代码执行任务，业务总闸 `CODE_EXEC_ENABLED` 默认关）的口径见 `.qoder/rules/code-exec.md`。
+> 任务排序、状态判定与提交边界的口径见 `.qoder/rules/task-order.md`；排序真源是它指向的
+> `docs/design/审批与中断恢复优化规划.md` §8.3。
