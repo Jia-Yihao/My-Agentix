@@ -12,6 +12,70 @@
 
 ## [Unreleased]
 
+### 流式审批 · T23 流内审批帧下发（默认关）（2026-10-28）
+
+流式链路此前**没有审批车道**：`astream_events` 里遇到需要审批的工具，`preflight` 抛
+`ReviewRequired` 就直接变成一次失败，用户没有「在这条流上点批准」的入口，也不会走到
+`STREAM_IDLE_TIMEOUT` 的判定。这一轮补上**默认关闭**的流内审批：需要审批时下发 `approval`
+帧，裁决落在既有 ops 审批 API 上，裁决后流继续跑到治理终局。
+
+- **[新增开关] `STREAM_HITL_ENABLED`（默认 `false`）+ `STREAM_HITL_HEARTBEAT_S`（默认 `15`）**：
+  flag-off **逐字节等价**（纪律 1）——`build_stream_hitl()` 返回 `None` 且**不触碰** `config`，
+  `chat_service` 仍走原来那句 `asyncio.wait_for(..., STREAM_IDLE_TIMEOUT)`，帧序列里不会出现
+  `approval` / `heartbeat`，`configurable` 不新增 `hitl_in_loop` / `stream_hitl` 键。
+  flag-on 的前置链：`HITL_IN_LOOP_ENABLED` 且 `HUMAN_REVIEW_ENABLED` 为真，否则告警一次并退回
+  flag-off 行为（不另造开关语义）。
+- **[为什么不挂起图]** 一个 SSE 响应只能下发一次：`langgraph.types.interrupt` 的恢复需要
+  **第二个**请求来 `Command(resume=)`，流式面拿不到。因此等待发生在 `execute_task` **节点内部**
+  （`agentix/application/services/stream_hitl.py`，回调允许 async），由 `chat_service` 的取事件
+  循环把帧写进同一条流；`lg_builder._wrap_execute_task_in_loop` 按 `configurable["stream_hitl"]`
+  选「节点内等待」而不是 `interrupt()`。
+- **[帧契约]** `{"type":"approval","metadata":{status,request_id,sidecar_request_id,tool,
+  risk_level,reason,decide_url?,decision?}}`：`status ∈ {"pending","decided"}`，
+  `decision ∈ {"approve","reject"}` 仅 `decided` 帧带；`decide_url` 由服务端给出
+  （`API_V1_PREFIX` 是前缀唯一真源），桥里查不到映射时**不带**该字段，不伪造 id。
+  `{"type":"heartbeat","metadata":{status:"waiting_approval",request_id,tool,waited_s,
+  heartbeat_s}}` 只用于占位（带 `waited_s` 是为了排障时能区分「心跳在走」与「心跳停了」）。
+- **[时限口径]** 新增四层尺子分家（详见 `docs/architecture/运行时护栏.md` §16）：
+  `STREAM_IDLE_TIMEOUT` 判的是「图有没有产出事件」，审批等待期间由心跳占位 ⇒ **不算空闲**；
+  `AGENT_TIMEOUT` 仍是单次调用墙钟，**包住**审批等待（粒度 = 一个心跳周期）；T19 的
+  `HITL_APPROVAL_DEADLINE_S` 数的是 pending 存活时长，先到者生效、归因不同；节点内另有
+  `wait_cap_s = AGENT_TIMEOUT` 兜底，到期交出 **fail-closed `reject`** ⇒ 节点侧
+  `gate.reject(by="in_loop_resume", note="in-loop reject")` **闭合**那条 pending（终态
+  `REJECTED`），归因是「流内等待上限触发的拒绝」——这条**不**计入 `stats()["auto_reject_timeout"]`、
+  也**不**打超时指标，与 T19 的 `decided_by=system:deadline` 是两个不同来源；库行不由流内路径
+  写（仍是 `pending`）：`HITL_APPROVAL_DEADLINE_S>0` 时由到期扫描继续处理——扫描在**持闸门记录的
+  进程**里按既有裁决补偿闭合（`in_loop_resume`，不重复计数），在**另一个 worker** 里则重建出未决
+  闸门记录后按 T19 口径裁决（库行落 `system:deadline` / `auto_reject_timeout`），跨 worker 时
+  同一条 pending 因此**两个面两个归因**；`=0`（默认）时扫描不跑、库行一直停在 `pending`。
+  「把 `STREAM_IDLE_TIMEOUT` 调大来等审批」是错的解法。
+- **[裁决单一真源]** `task_execution` 的批准 / 拒绝只读闸门账本（`ReviewGate.get().decision`），
+  `approval` 帧里的 `decision` 是同一值的投影（纪律 6 ④）。桥先落批准、节点随后
+  `gate.approve()` 返回 `False`（已存在 / 已消费）时按「闸门已是 `APPROVED`」继续重试，不判成
+  「批准未落地」。
+- **[拥塞]** `stream_gate._CRITICAL_TYPES` 收 `approval`（丢帧会把运行困在等待里），**不收**
+  `heartbeat`（丢一次只是少一次占位，下个周期补上）。
+- **[前端]** **未交付**：`web/` 零改动（`grep -rn approval web/src` 与
+  `grep -rn heartbeat web/src` 均零命中）；`chatStream.ts` 的 `ChatStreamChunk.type` 仍是
+  六值、`dispatchChunk` 对这两型走 `default` 直接丢弃。这两帧目前只在后端产出，
+  浏览器端渲染另立排期。
+- **[跨 worker]** 裁决真源是 T18 的库行（本地闸门是快路径）：等流侧判定顺序为
+  「本地闸门优先、未决时按 `sidecar_request_id` 回捞库」——`--workers 2` 下裁决落在
+  另一个 worker 也能被这条流看见；回捞粒度即既有 `DECISION_POLL_S`（不新增配置键），
+  读库失败 fail-open（当作未命中、本地闸门照旧轮询 + warning 留痕，不抛进流、不提前收口）。
+  守卫：`tests/test_p174_stream_hitl.py::TestCrossWorkerDecisionLookup`。
+- **[与 T18 落库的关系]** 流内审批**复用** executor 拦截钩子那条链（`open_from_gate`）：
+  需审批的工具在执行点被拦下 ⇒ 钩子登记 sidecar 请求 ⇒ `HITL_PENDING_PERSIST_ENABLED=true`
+  时照旧写 `hitl_pending_approvals`，重启与跨实例裁决仍吃这一行。本卡没有新增库面。
+- **[已知限制]** ① 流内审批的 `edit`（改参数后重试）复用不到「改后的参数」——重试走的是
+  节点里原始 `payload`；② 跨实例裁决靠**回捞库**看见，延迟上界是一个 `DECISION_POLL_S`
+  轮询窗口，且**要求 `HITL_PENDING_PERSIST_ENABLED=true`**（关着时库面装配判据返回 `None`，
+  流侧只有本地闸门这一个来源）；③ 钩子本身有 **2 秒**超时（`executor._REVIEW_HOOK_TIMEOUT_S`），
+  落库慢于该超时时节点侧仍按 `review_required` 继续等，此时 `approval` 帧可能先不带
+  `sidecar_request_id`（下一拍查到映射后补上），不伪造 id。
+- **[回滚]** 置回 `STREAM_HITL_ENABLED=false`：立即退回「遇到需审批即失败」的基线，
+  `stream_hitl.py` 不再被 `chat_service` 调用，无残留任务、无指标新增序列。
+
 ### 路由层 · T8 路由结果跨请求缓存 + fast-path 扩面（默认关）（2026-10-28）
 
 意图分类每来一个问题都要构造一次 `router` 角色客户端并发一次分类请求；同一问句在缓存 TTL 内

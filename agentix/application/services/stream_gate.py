@@ -46,9 +46,11 @@ COALESCE_WINDOW_S = 0.05
 #: 可合并的 token 帧类型（两域流式词汇；终态 answer_chunk 带 finished 不合）。
 _TOKEN_TYPES = frozenset({"message", "answer_chunk", "thinking_chunk"})
 
-#: 关键帧（背压满时绝不丢）：终态 + 流首帧会话锚定（meta 丢了前端无法关联会话）。
+#: 关键帧（背压满时绝不丢）：终态 + 流首帧会话锚定（meta 丢了前端无法关联会话）
+#: + T23 审批帧（丢了这场运行就没人可批，只能干等到 AGENT_TIMEOUT——决策面不是
+#: 可丢弃的观测数据；心跳帧刻意**不在**此列：它本来就是可丢的占位帧）。
 _CRITICAL_TYPES = frozenset(
-    {"done", "error", "tool_end", "status", "tool_result", "meta"}
+    {"done", "error", "tool_end", "status", "tool_result", "meta", "approval"}
 )
 
 

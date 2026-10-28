@@ -315,6 +315,9 @@ class TestDocumentedConfigKeys:
             "AGENT_TOOL_ROUND_CONCURRENCY",
             "HITL_IN_LOOP_ENABLED",
             "HITL_PENDING_PERSIST_ENABLED",
+            # T23：流内审批（默认关）+ 等待期心跳间隔
+            "STREAM_HITL_ENABLED",
+            "STREAM_HITL_HEARTBEAT_S",
             "RUN_STATE_PERSIST_ENABLED",
             "CONTEXT_PRECOMPACT_REINJECT_ENABLED",
             "MEMORY_PROFILE_SCOPE_ENABLED",

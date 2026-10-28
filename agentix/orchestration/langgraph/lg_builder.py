@@ -316,11 +316,17 @@ def _wrap_execute_task_in_loop(node_fn):
     ``tests/test_p32_tool_guards.py`` 特征化，故 3.10 诚实降级=不注入、
     沿用 review_required 快速失败）、② ``HITL_IN_LOOP_ENABLED``、
     ③ ``HUMAN_REVIEW_ENABLED``、④ 调用方声明进环意图
-    （``configurable.hitl_in_loop``，仅非 stream ask 注入——stream 恒 L2
-    不进环）四条时，把 ``langgraph.types.interrupt`` 经 config 递给
-    ``execute_task`` → ``task_execution``：遇 review_required 挂起
-    （checkpointer 快照 thread_id），恢复值 ``approve`` ⇒ 落批准后重试
-    一次，其余 fail-closed。flag-off/不满足时透传原 config——与基线逐位等价。
+    （``configurable.hitl_in_loop``，非 stream ask 注入）四条时，把
+    ``langgraph.types.interrupt`` 经 config 递给 ``execute_task`` →
+    ``task_execution``：遇 review_required 挂起（checkpointer 快照
+    thread_id），恢复值 ``approve`` ⇒ 落批准后重试一次，其余 fail-closed。
+
+    T23（流内审批）：config 里带 ``stream_hitl`` 通道时**优先**用它的
+    ``request`` 回调替代 ``interrupt``——流只有一条 SSE 响应，图一挂起就没帧可发，
+    故流侧改为节点内等待（等待期由流侧循环下发审批帧/心跳帧）；该回调是 async，
+    且不依赖 langgraph ``interrupt`` ⇒ **不受 ①的版本门控**。
+
+    flag-off/不满足时透传原 config——与基线逐位等价。
     """
     import sys as _sys
 
@@ -328,20 +334,38 @@ def _wrap_execute_task_in_loop(node_fn):
         state: AgentState, *, config: RunnableConfig
     ) -> Dict[str, Any]:
         cfg_map = config if isinstance(config, dict) else dict(config or {})
-        if (
-            _sys.version_info >= (3, 12)
-            and settings.HITL_IN_LOOP_ENABLED
-            and settings.HUMAN_REVIEW_ENABLED
-            and isinstance(cfg_map.get("configurable"), dict)
-            and cfg_map["configurable"].get("hitl_in_loop")
-        ):
-            from langgraph.types import interrupt
+        configurable = (
+            cfg_map.get("configurable")
+            if isinstance(cfg_map.get("configurable"), dict)
+            else None
+        )
+        if configurable is not None and configurable.get("hitl_in_loop"):
+            callback = None
+            stream_channel = configurable.get("stream_hitl")
+            if stream_channel is not None:
+                # T23：**流**内审批通道优先。流只有一条 SSE 响应可写——图一挂起
+                # （interrupt）就没有后续帧，客户端只能等 idle 超时，所以流侧用
+                # 「节点内等待」：回调是 async 的，等待期把审批帧/心跳帧交给流侧
+                # 循环下发。它不依赖 langgraph 的 async interrupt ⇒ 不受下面
+                # py3.12 版本门控（门控只为 interrupt 的死锁问题存在）。
+                callback = stream_channel.request
+            elif (
+                _sys.version_info >= (3, 12)
+                and settings.HITL_IN_LOOP_ENABLED
+                and settings.HUMAN_REVIEW_ENABLED
+            ):
+                from langgraph.types import interrupt
 
-            cfg = dict(cfg_map)
-            configurable = dict(cfg_map["configurable"])
-            configurable["hitl_in_loop_interrupt"] = interrupt
-            cfg["configurable"] = configurable
-            return await node_fn(state, config=cfg)
+                callback = interrupt
+            if callback is not None:
+                cfg = dict(cfg_map)
+                new_configurable = dict(configurable)
+                # 通道本体不往节点里带（节点只需要回调）：config 会被框架与
+                # 追踪层一路传下去，少挂一个本层内部对象少一处意外。
+                new_configurable.pop("stream_hitl", None)
+                new_configurable["hitl_in_loop_interrupt"] = callback
+                cfg["configurable"] = new_configurable
+                return await node_fn(state, config=cfg)
         return await node_fn(state, config=config)
 
     return _in_loop_execute_task
