@@ -429,6 +429,57 @@ class TestStaticGuard:
             "p147 对 ** 展开豁免，所以这里补一条按实参来源的绊线"
         )
 
+    def test_helper_passes_store_from_hitl_bridge_single_source(self):
+        """``store=`` 实参必须来自 ``hitl_bridge.resolve_pending_store()``。
+
+        这条接缝是「补偿记录到底写不写」的唯一装配判据（store 为 ``None`` 时
+        handler 只出「补偿记录未写（补偿存储未装配）」回执，一条记录都不写）。别的用例都
+        显式注入 store，``store=`` 被删掉或改成 ``None`` 时它们仍然全绿，而生产上
+        补偿记录永久为零——所以按 AST 钉实参来源，而不是断言 handler 挂没挂上。
+        """
+        fn = _function_source("_node_error_handler_kwargs")
+        imported = {
+            alias.name
+            for node in ast.walk(fn)
+            if isinstance(node, ast.ImportFrom)
+            and node.module == "agentix.policies.hitl.hitl_bridge"
+            for alias in node.names
+        }
+        assert "resolve_pending_store" in imported, (
+            "lg_builder 必须从 agentix.policies.hitl.hitl_bridge 导入 resolve_pending_store："
+            "补偿存储的装配判据只有一个源（纪律 6 ④），另立判据或兜底建表都会漂移"
+        )
+
+        store_values = [
+            kw.value
+            for call in ast.walk(fn)
+            if isinstance(call, ast.Call)
+            and (
+                (isinstance(call.func, ast.Name) and call.func.id == "node_error_handler")
+                or (
+                    isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "node_error_handler"
+                )
+            )
+            for kw in call.keywords
+            if kw.arg == "store"
+        ]
+        assert store_values, (
+            "node_error_handler(...) 必须显式传 store=；不传 ⇒ 补偿存储恒为未装配，"
+            "生产上补偿记录一条都不会写"
+        )
+        value = store_values[0]
+        assert (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "resolve_pending_store"
+            and not value.args
+            and not value.keywords
+        ), (
+            "store 实参必须是 resolve_pending_store() 的返回值（不另判 flag、不兜底建表）；"
+            f"实际是 {ast.dump(value)[:120]}"
+        )
+
     def test_handler_kwargs_expanded_at_side_effecting_nodes_only(self):
         """``**node_error_handler_kwargs`` 只出现在两个有副作用节点的 add_node 上。"""
         tree = ast.parse(LG_BUILDER_PATH.read_text(encoding="utf-8"))
