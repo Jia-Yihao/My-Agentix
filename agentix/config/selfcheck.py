@@ -264,6 +264,8 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "NODE_RETRY_ENABLED",
         # LG-3-2：节点级原生超时，不设 = 0（不传 timeout 形参），属合法省略
         "NODE_TIMEOUT_SECONDS",
+        # LG-3-5：节点级错误补偿，不设 = false（不传 error_handler），属合法省略
+        "NODE_ERROR_HANDLER_ENABLED",
         "RETRY_BUDGET_ENABLED",
         "RETRY_BUDGET_TOKENS",
         "RETRY_BACKOFF_ALIGNED",

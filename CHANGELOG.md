@@ -12,6 +12,21 @@
 
 ## [Unreleased]
 
+### LangGraph 原生对齐 · LG-3-5 节点级错误补偿（2026-10-28）
+
+《LangGraph 原生对齐与恢复链优化》P3 第 5 条：`execute_task` / `code_agent` 是**有副作用**的节点，一旦抛错整轮 500，「哪些副作用已经发生」就丢给调用方猜。这一轮用框架原生 `add_node(error_handler=)` 接住失败：写一条可查的补偿记录，并把如实的失败回执交给用户，而不是让整轮静默失败。
+
+- **[新增开关] `NODE_ERROR_HANDLER_ENABLED`**（默认 `false`）：开 = 主图给 `execute_task` / `code_agent` 挂原生 `error_handler`；默认关 = 注册处**完全不传**该形参，编译图里没有 `__error_handler__*` 节点，与基线逐位等价（纪律 1）。
+- **[触发语义] 重试耗尽后才进 handler**：langgraph 1.2.18 实测——同节点挂 `retry_policy` 时节点跑满 `max_attempts` 次才调用 handler；无 `retry_policy` 时「耗尽」即首次失败。`GraphBubbleUp`（`interrupt` 同族）**不交给** handler，HITL 挂起语义不变。
+- **[失败出口] `Command(update={"messages": [...]}, goto=END)`**：失败回执写进 `messages`（含节点名与异常类型），图以明确终态结束而不是抛 500；出口可用 `exit_node` 改。
+- **[补偿记录复用 `hitl_pending_approvals`（Q7 真源），不新建存储]**：写一条**已闭合**记录——`status=rejected`、`decided_by=system:node_error_handler`、`decision_reason` 含节点与异常。刻意**不用** `pending`：未决行会被启动恢复重新装配成审批请求，节点失败记录混进去就是幽灵审批。
+- **[幂等主键] `nodeerr:<sha256(thread|node|异常类型|异常文本)[:32]>`**：节点失败会被重入（恢复 / 重试 / 同轮重放）重复触发，主键收敛保证「一条失败一条记录」，不让真源表变成事件流水。
+- **[不重跑节点]** handler 只记录 + 收尾；`execute_task` / `code_agent` 开关打开后仍无 `retry_policy`（整节点重跑会重放工具副作用，LG-1-1 铁律）。
+- **[fail-open]** 写库失败只 `logger.warning`，失败回执与路由照常；且回执如实改口「补偿记录写入失败」（handler 自身抛错会让整轮失败，补偿动作必须自带兜底）。
+- **[新增守卫] `tests/test_p163_node_error_handler.py`（20 条）**：配置默认关与工厂导出；`Command` 改 state / 路由 / 自定义出口 / 回执内容如实；记录落既有表且 `list_unresolved` 为空（反幽灵审批）、同因幂等、异线程/异因分行；写库失败降级并 warning；真实图里「重试耗尽才进 handler」「无 retry_policy 首次失败即进」`Command` 目标节点真被执行；`GraphBubbleUp` 穿透；主图关时零注册 / 开时只挂两个有副作用节点且不新增 `retry_policy`；`**node_error_handler_kwargs` 只出现在两个 add_node（AST，补 p147 对 `**` 的豁免）与实参来自 `policies`。
+- **[配置五处同步]** `settings.py` / `selfcheck.py::DEFAULT_IGNORED_MISSING` / `.env.example` / `docs/architecture/配置管理.md` §5 / `test_p41_doc_consistency.py` 手写清单。
+- **[文档同步]** `README.md` §11 基线与口径链 re-cite；`docs/工程口径日志.md` 追加第十八段读数；`docs/项目实现手册.md` 补节点错误补偿一段。
+
 ### LangGraph 原生对齐 · LG-3-4 恢复期幂等（2026-10-28）
 
 《LangGraph 原生对齐与恢复链优化》P3 第 4 条：`execute_task` 是节点重入语义——in-loop HITL 挂起后恢复会**重跑挂起点之前已经成功过的步骤**，非幂等写工具的副作用因此发生两次。checkpoint 记得「图走到哪」，不记得「哪一步的业务副作用已经发生过」；这一轮把后者落成显式清单。
