@@ -1,12 +1,15 @@
 # My-Agentix · Agent Core 2.0 迁移规划（v1.1）
 
+> **文档状态**：历史 · 这是**当时**的规划或快照，**不代表当前实现**，不要按它判断现状。
+> 文档分层：唯一现行总览是根 [README](../../README.md)，实现细节见 [PROJECT_SPEC](../项目实现手册.md)；在办的优化见 [优化路线图台账](../design/性能与优化路线图.md)。
+
 - 版本：v1.1（在 v1.0 基础上按《Agent 全书笔记》10 章 + 附录对照修订）
 - 日期：2026-09-23
 - 模式：Strangler Migration + 接口先行 + 测试保护
-- 基线：**2463 passed, 14 skipped, 0 failed**（`pytest -m "not integration"`，2026-09-28 审计批次 A（会话/上传归属校验 + 限流口径收口，见 `audit-2026-09-28.md` §1）+ Phase 28 自主护栏 + Phase 31 评估二期 + Phase 30 进化闭环 + Phase 29 记忆结构化（`profile_card` JSON Cards + `derive_profile` 派生幂等，见 `Phase28-31_优化规划.md` §4）后实测；规划起点 1814；skip 含 10 条 Redis Stream 契约用例无 Redis 时诚实跳过）；`ruff` / `mypy` / `vue-tsc` 全绿
+- 基线：**2463 passed, 14 skipped, 0 failed**（`pytest -m "not integration"`，2026-09-28 审计批次 A（会话/上传归属校验 + 限流口径收口，见 `架构审计-2026-09-28.md` §1）+ Phase 28 自主护栏 + Phase 31 评估二期 + Phase 30 进化闭环 + Phase 29 记忆结构化（`profile_card` JSON Cards + `derive_profile` 派生幂等，见 `Phase28-31_优化规划.md` §4）后实测；规划起点 1814；skip 含 10 条 Redis Stream 契约用例无 Redis 时诚实跳过）；`ruff` / `mypy` / `vue-tsc` 全绿〔历史读数，现值只认根 `README.md` §11「测试真源」；本文件不重复抄数（纪律 7）〕
 - 范围决策：**先 P0 = Phase 0–5**，P1 = 6–9，P2 = 10–14，分批验收
 
-> **终态注记（2026-10-04）**：本文为 v1.1 蓝图存档（Phase 0–14 期规划）。行文中 `infrastructure/tools/**`、`mcp/*`、`capabilities/tools/**`、`application/runtime/**`、`domain/ports/agent_core.py` 等路径已随统一执行链 A4/M1/M3/M6 删除或迁移，「现状落点」列不代表当前树——现状以 `docs/migration/current-tree.md` 与 `docs/migration/架构重构_统一执行链方案_v2.md` §5 终态对照矩阵为准；测试基线以 README §11 唯一真源为准（L6 的 2463 为 2026-09-28 历史数字）。
+> **终态注记（2026-10-04）**：本文为 v1.1 蓝图存档（Phase 0–14 期规划）。行文中 `infrastructure/tools/**`、`mcp/*`、`capabilities/tools/**`、`application/runtime/**`、`domain/ports/agent_core.py` 等路径已随统一执行链 A4/M1/M3/M6 删除或迁移，「现状落点」列不代表当前树——现状以 `docs/migration/现有目录树.md` 与 `docs/migration/架构重构_统一执行链方案_v2.md` §5 终态对照矩阵为准；测试基线以 README §11 唯一真源为准（L6 的 2463 为 2026-09-28 历史数字）。
 
 ---
 
@@ -91,7 +94,7 @@ agentix/
   capabilities/          # Phase 6 起：tools 汇聚、mcp/ 迁入、能力检索
 ```
 
-### 2.2 分层守卫增量（进 `test_p17` + `docs/architecture/layers.md`）
+### 2.2 分层守卫增量（进 `test_p17` + `docs/architecture/分层架构与依赖规则.md`）
 
 在现有规则（domain 零第三方、domain 不依赖 infrastructure/interfaces、application 依赖 domain.ports）之上：
 
@@ -127,9 +130,9 @@ agentix/
 
 #### Phase 0 — Inventory（只读产物）
 产出三件套（已执行落盘）：
-- `docs/migration/current-tree.md` — 目录树与新建缺口
-- `docs/migration/dependency-map.md` — import 依赖与违规风险点
-- `docs/migration/module-inventory.md` — 现有模块 → 新包映射
+- `docs/migration/现有目录树.md` — 目录树与新建缺口
+- `docs/migration/依赖关系图.md` — import 依赖与违规风险点
+- `docs/migration/模块清单.md` — 现有模块 → 新包映射
 
 **DoD**：三文件存在且与代码一致；不改任何 `.py`。
 
@@ -137,7 +140,7 @@ agentix/
 - 扩展 `agentix/domain/`（或新建 agentix/agent/core/types.py 若 domain 语义冲突）：`TaskSpec`（已有雏形 `application/services/task_plan.py`）、`Plan`、`Observation`、`VerificationResult`、`MemoryItem`、`ContextSnapshot`。
 - 七个 Protocol：`PlannerPort`、`VerifierPort`、`ToolSelectorPort`、`MemoryPort`、`ContextPort`、`EventPort`、`RollbackPort`（落 `domain/ports/agent_core.py` 等，零第三方）。
 - **不动** `application/runtime/` 实现；加 Adapter 桥接。
-- `docs/architecture/interfaces.md` 补 Harness 五职责对照。
+- `docs/architecture/接口与契约.md` 补 Harness 五职责对照。
 
 **DoD**：新类型/Protocol 有单测；全量仍绿；domain 零第三方守卫仍绿。
 
@@ -196,7 +199,7 @@ agentix/
 
 ---
 
-## 5. 旧路径 → 新包映射（摘要，详见 module-inventory.md）
+## 5. 旧路径 → 新包映射（摘要，详见 模块清单.md）
 
 | 现有路径 | 目标 | Phase |
 |----------|------|-------|
@@ -250,7 +253,7 @@ agentix/
 
 ## 9. 执行状态
 
-> 2026-09-24 收口：Phase 0–14 全部完成；勾选真源见 `module-inventory.md` §6。
+> 2026-09-24 收口：Phase 0–14 全部完成；勾选真源见 `模块清单.md` §6。
 > 深化规划 Phase 15–20 见 `Phase15-20_深化规划.md`（Harness 点亮 / HITL 统一 / 评估武装 / 上下文分层 / multi_agent / 进化点亮）。
 > 下一版优化迭代 Phase 21–26 见 `Phase21-26_规划.md`（2026-09-27 立项：Skills+Hooks / 上下文二期 / 交互二期 / 记忆知识 / multi-agent 防线 / 评估三期+解阻）。
 > 当前优化迭代 Phase 28–31 见 `Phase28-31_优化规划.md`（2026-09-28 立项：自主护栏 / 记忆结构化 / 进化闭环 / 评估二期；审计批次 A 前置、B/C 穿插）。
@@ -258,24 +261,24 @@ agentix/
 | Phase | 状态 |
 |-------|------|
 | 0 Inventory | **完成** — 四文档落盘（规划 + tree + dependency + inventory） |
-| 1 Interface Freeze | **完成** — Protocol + 类型 + interfaces.md；守卫 p17/p40/p41 全绿 |
+| 1 Interface Freeze | **完成** — Protocol + 类型 + 接口与契约.md；守卫 p17/p40/p41 全绿 |
 | 2–5 | **完成** — Agent Core 循环 / 四层故障 / Memory / Context |
 | 6–9 | **完成** — Tool Intelligence / Verifier / HITL / Long-running |
 | 10–12 | **完成** — Evaluation 2.0 / Multi-Agent / Continuous Evolution |
 | 13–14 | **完成** — Docs + Runtime 物理迁移（`agentix/runtime/**` 真源） |
-| 最终审查 + README 深化 | **完成**（2026-09-24）— 全量 1982 passed / 4 skipped |
+| 最终审查 + README 深化 | **完成**（2026-09-24）— 全量 1982 passed / 4 skipped（历史读数，现值见根 `README.md` §11） |
 | 15–20 深化 | **完成**（除 Phase 17 全栈 **blocked**）— 规划见 `Phase15-20_深化规划.md`；Phase 15/16/18/19/20 + 17 离线部分完成 + 接口审查修复与收尾 |
-| 21 Skills + Hooks | **完成**（2026-09-27）— 批一启动项，规划见 `Phase21-26_规划.md`；阶段终值 2164 passed / 4 skipped |
-| 22 上下文二期 | **完成**（2026-09-27）— 批一，规划见 `Phase21-26_规划.md`；缓存纪律（工具序冻结 / 配置变更 `system_notice` append）+ L4 auto-compact（`CONTEXT_AUTOCOMPACT` 默认关，五要素机制断言）；阶段终值 2183 passed / 4 skipped |
-| 23 交互二期 | **完成**（2026-09-27）— 批二启动项，规划见 `Phase21-26_规划.md`；`notify_user` 出站通知（`NOTIFY_USER_ENABLED` 默认关）+ `EVENT_PORT_BACKEND=redis_stream` 第三实现 + `GET /ops/events` + 事件矩阵；现 2220 passed / 14 skipped |
-| 24 记忆/知识深化 | **完成**（2026-09-27）— 批二，规划见 `Phase21-26_规划.md`；淘汰归档红线（摘要保留 + 证据可回溯）+ 重要性三因素纯函数 + `memory_consolidation` handler（幂等时间窗）+ Agentic RAG 空检索改写重试 ≤2（`MEMORY_CONSOLIDATION_ENABLED` / `AGENTIC_RAG_ENABLED` 默认关）；阶段终值 2245 passed / 14 skipped |
-| 25 multi-agent 运行时防线 | **完成**（2026-09-27）— 批三，规划见 `Phase21-26_规划.md`；ControlPlane 并发/深度准入 fail-closed + 进程内 `InProcessBus`（flag `MULTIAGENT_BUS_ENABLED` 默认关）+ Manager 冲突/级联只标记 meta + `lg_supervisor` 接线 + echo_overlap 修复（六模式防线）；阶段终值 2271 passed / 14 skipped |
-| 26 评估三期 | **完成**（2026-09-27）— 批三，规划见 `Phase21-26_规划.md`；judge 去 stub（真实端点出分 + `judge_model` 标注 + 无端点/不可解析诚实失败，默认关不进门禁）+ `--compare` 配对 percentile bootstrap 显著性（纯 stdlib 可复现）+ `evals/README.md` 校准四步流程；阶段终值 2290 passed / 14 skipped |
-| 27 死代码清理 + 文档收尾 | **完成**（2026-09-27）— 批外收口，见 `evolution-assessment.md` §4/§8；`search_service`/`search_prompts`/空包 `application/prompts/` 整体删除（零调用两步流程 + 防复活守卫）+ Phase15-20 陈旧勾选同步；2291 passed / 14 skipped |
-| 接口审查批次（非 Phase） | **完成**（2026-09-28）— 前后端同步审查：流式助手落库 / 历史最近 N 条窗口 + limit 下界 / SSE 终态解析器 / 会话切换竞态守卫 / `serverResponded` 不回退等 30+ 修复；`test_chat_api.py` 零断言脚本重写为 12 条离线契约测试（integration 标记清零）；现 2303 passed / 14 skipped |
-| 优化迭代 28–31 | **完成**（2026-09-28）— 规划见 `Phase28-31_优化规划.md` §8；批一 = 审计批次 A（IDOR 归属 / 上传读鉴权 / 限流口径）+ Phase 28 自主护栏 ∥ Phase 31 评估二期；批二 = Phase 30 进化闭环；批三 = Phase 29 记忆结构化；穿插批次 B（B1/B3/B4/B2）+ 批次 C（C1/C2/C3）；现 2463 passed / 14 skipped |
+| 21 Skills + Hooks | **完成**（2026-09-27）— 批一启动项，规划见 `Phase21-26_规划.md`；阶段终值 2164 passed / 4 skipped（历史读数，现值见根 `README.md` §11） |
+| 22 上下文二期 | **完成**（2026-09-27）— 批一，规划见 `Phase21-26_规划.md`；缓存纪律（工具序冻结 / 配置变更 `system_notice` append）+ L4 auto-compact（`CONTEXT_AUTOCOMPACT` 默认关，五要素机制断言）；阶段终值 2183 passed / 4 skipped（历史读数，现值见根 `README.md` §11） |
+| 23 交互二期 | **完成**（2026-09-27）— 批二启动项，规划见 `Phase21-26_规划.md`；`notify_user` 出站通知（`NOTIFY_USER_ENABLED` 默认关）+ `EVENT_PORT_BACKEND=redis_stream` 第三实现 + `GET /ops/events` + 事件矩阵；现 2220 passed / 14 skipped（历史读数，现值见根 `README.md` §11） |
+| 24 记忆/知识深化 | **完成**（2026-09-27）— 批二，规划见 `Phase21-26_规划.md`；淘汰归档红线（摘要保留 + 证据可回溯）+ 重要性三因素纯函数 + `memory_consolidation` handler（幂等时间窗）+ Agentic RAG 空检索改写重试 ≤2（`MEMORY_CONSOLIDATION_ENABLED` / `AGENTIC_RAG_ENABLED` 默认关）；阶段终值 2245 passed / 14 skipped（历史读数，现值见根 `README.md` §11） |
+| 25 multi-agent 运行时防线 | **完成**（2026-09-27）— 批三，规划见 `Phase21-26_规划.md`；ControlPlane 并发/深度准入 fail-closed + 进程内 `InProcessBus`（flag `MULTIAGENT_BUS_ENABLED` 默认关）+ Manager 冲突/级联只标记 meta + `lg_supervisor` 接线 + echo_overlap 修复（六模式防线）；阶段终值 2271 passed / 14 skipped（历史读数，现值见根 `README.md` §11） |
+| 26 评估三期 | **完成**（2026-09-27）— 批三，规划见 `Phase21-26_规划.md`；judge 去 stub（真实端点出分 + `judge_model` 标注 + 无端点/不可解析诚实失败，默认关不进门禁）+ `--compare` 配对 percentile bootstrap 显著性（纯 stdlib 可复现）+ `evals/README.md` 校准四步流程；阶段终值 2290 passed / 14 skipped（历史读数，现值见根 `README.md` §11） |
+| 27 死代码清理 + 文档收尾 | **完成**（2026-09-27）— 批外收口，见 `架构演进评估.md` §4/§8；`search_service`/`search_prompts`/空包 `application/prompts/` 整体删除（零调用两步流程 + 防复活守卫）+ Phase15-20 陈旧勾选同步；2291 passed / 14 skipped（历史读数，现值见根 `README.md` §11） |
+| 接口审查批次（非 Phase） | **完成**（2026-09-28）— 前后端同步审查：流式助手落库 / 历史最近 N 条窗口 + limit 下界 / SSE 终态解析器 / 会话切换竞态守卫 / `serverResponded` 不回退等 30+ 修复；`test_chat_api.py` 零断言脚本重写为 12 条离线契约测试（integration 标记清零）；现 2303 passed / 14 skipped（历史读数，现值见根 `README.md` §11） |
+| 优化迭代 28–31 | **完成**（2026-09-28）— 规划见 `Phase28-31_优化规划.md` §8；批一 = 审计批次 A（IDOR 归属 / 上传读鉴权 / 限流口径）+ Phase 28 自主护栏 ∥ Phase 31 评估二期；批二 = Phase 30 进化闭环；批三 = Phase 29 记忆结构化；穿插批次 B（B1/B3/B4/B2）+ 批次 C（C1/C2/C3）；现 2463 passed / 14 skipped（历史读数，现值见根 `README.md` §11） |
 
-每完成一 Phase，更新本表与 `module-inventory.md` §6，并跑全量守卫命令：
+每完成一 Phase，更新本表与 `模块清单.md` §6，并跑全量守卫命令：
 
 ```powershell
 & ".\.venv\python.exe" -m pytest tests/ -m "not integration" -q

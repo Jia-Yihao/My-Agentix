@@ -1,11 +1,14 @@
 # Phase 32–34 · Memory / RAG / Multi-Agent 深度优化总纲（v1.1）
 
+> **文档状态**：历史 · 这是**当时**的规划或快照，**不代表当前实现**，不要按它判断现状。
+> 文档分层：唯一现行总览是根 [README](../../README.md)，实现细节见 [PROJECT_SPEC](../项目实现手册.md)；在办的优化见 [优化路线图台账](../design/性能与优化路线图.md)。
+
 - 版本：v1.1（2026-10-01）；v1.0 → v1.1：上位约束落到正式文档，守卫清单并入唯一真源，执行路线并入 v2 六段式
-- 前置：Phase 0–31 收口 + 优化批次 P1–P6 完成（勾选真源见 `docs/migration/module-inventory.md`）
+- 前置：Phase 0–31 收口 + 优化批次 P1–P6 完成（勾选真源见 `docs/migration/模块清单.md`）
 - 上位约束：`docs/migration/架构重构_统一执行链方案_v2.md`（唯一执行蓝图）；本纲及其三分文档为其下位分册
 - 模式：Strangler 不变；flag 默认关、flag-off 字节等价；domain 零第三方；LangGraph 仅 `agentix/agent/graph/`；不新增数据库 / 新框架 / 新中间件
-- 分文档：记忆详见 `docs/design/memory-optimization.md`；检索详见 `docs/design/rag-optimization.md`；多智能体详见 `docs/design/multiagent-optimization.md`
-- 对标基线：OpenAI Codex harness（AGENTS.md 级联 + Guardian + 沙箱）、Claude Code（7 法：CLAUDE.md / rules / skills / subagents / hooks / output styles / prompt append）、Hermes Agent（ContextEngine / MemoryManager / delegate 隔离 / cron 分半，研读见 `docs/source-code-study.md`）、智谱系 Agent（企业知识挂载 + 工具分级审批 + 多智能体分工）、生产 RAG SOTA（Dense + Sparse → RRF → Cross-encoder）
+- 分文档：记忆详见 `docs/design/记忆域深度优化.md`；检索详见 `docs/design/检索增强深度优化.md`；多智能体详见 `docs/design/多智能体深度优化.md`
+- 对标基线：OpenAI Codex harness（AGENTS.md 级联 + Guardian + 沙箱）、Claude Code（7 法：CLAUDE.md / rules / skills / subagents / hooks / output styles / prompt append）、Hermes Agent（ContextEngine / MemoryManager / delegate 隔离 / cron 分半，研读见 `docs/源码研读笔记.md`）、智谱系 Agent（企业知识挂载 + 工具分级审批 + 多智能体分工）、生产 RAG SOTA（Dense + Sparse → RRF → Cross-encoder）
 
 ---
 
@@ -93,7 +96,7 @@ LangGraph 定位：Orchestration Adapter（状态图/条件边/并行节点/恢�
 
 ## 6. 评测与门禁（增量、不打破现有 CI）
 
-- 沿用：102 条分层 golden（`evals/legal_golden.jsonl`）+ 确定性指标 + 质量门禁三态 + 轨迹前缀回归（`evals/trajectory_regression.py`）+ 消融 A–G。
+- 沿用：102 条分层 golden（`evals/legal_golden.jsonl`）〔该集已于 2026-10-26 随评测集下线删除，"沿用"这一现在时不成立；102 条为历史读数〕+ 确定性指标 + 质量门禁三态 + 轨迹前缀回归（`evals/trajectory_regression.py`）+ 消融 A–G。
 - 新增（只增报告键，不进门禁，沿 Phase 31 纪律）：
   - Memory：画像稳定性（同一用户多轮偏好一致率）、冲突标记准确率、PII 零留存抽查；
   - RAG：Recall@5 / MRR 分阶段归因（dense / sparse / RRF / rerank 四列，见分文档）；
@@ -109,7 +112,7 @@ LangGraph 定位：Orchestration Adapter（状态图/条件边/并行节点/恢�
 | 检索链路大改导致 golden 回归抖动 | RRF/rerank/改写全 flag 门控；P1 先影子跑（shadow）只打点不生效，出报告后再切流 |
 | 记忆工具化带来提示注入/PII 面 | 读写双向脱敏 + 引用隔离（超长进 artifact）；默认关；审计链必经 Tool Gateway |
 | AgentLoop 灰度导致问答退化 | 问答路由保持 L2 图；任务型路由独立灰度；退出契约保证可 killed / 可恢复 |
-| 文档腐烂（路径/配置键漂移） | p41 守卫 + 本纲 §6 写作纪律；配置键新增只在 `docs/architecture/configuration.md` 落表（受守卫校验存在性） |
+| 文档腐烂（路径/配置键漂移） | p41 守卫 + 本纲 §6 写作纪律；配置键新增只在 `docs/architecture/配置管理.md` 落表（受守卫校验存在性） |
 
 ---
 
@@ -118,4 +121,4 @@ LangGraph 定位：Orchestration Adapter（状态图/条件边/并行节点/恢�
 - [x] 三分文档全部落盘且互相引用一致（总纲↔分文档章节号对齐）；（2026-10-04 复核）
 - [x] 每分文档含“现状实测（文件行号级）→ 对标 → 目标 → P0/P1/P2 任务 → 旗标表 → 验收测试”完整链条；（F1/F2 期间状态行与 §6 注记随批更新）
 - [x] `tests/test_p41_doc_consistency.py` 相关用例通过；
-- [x] `docs/migration/module-inventory.md` 与 README §14 文档表同步更新（2026-10-04 Stage T 收口：统一执行链 Stage A/B/M/F/T 全勾选，终态收口行入册）。
+- [x] `docs/migration/模块清单.md` 与 README §14 文档表同步更新（2026-10-04 Stage T 收口：统一执行链 Stage A/B/M/F/T 全勾选，终态收口行入册）。

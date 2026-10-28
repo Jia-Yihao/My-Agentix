@@ -9,7 +9,7 @@
 
 图中事实源：`agentix/retrieval/usecases/retrieval_hybrid.py`、
 `agentix/retrieval/infra/rag/sparse.py`、`agentix/retrieval/infra/rag/rerank.py`、
-`docs/design/rag-optimization.md` §5/§8。中文字体使用 C:/Windows/fonts/msyh.ttc。
+`docs/design/检索增强深度优化.md` §5/§8。中文字体使用 C:/Windows/fonts/msyh.ttc。
 """
 
 import matplotlib

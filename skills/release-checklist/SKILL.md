@@ -37,7 +37,7 @@ anti_when: 只改了 docs 文档时（跑守卫 + ruff 即可，全量 pytest 7-
    ```
 
 5. **基线数字**（若通过数变化）：同步 README.md、Agent_Core_2.0_规划.md、
-   current-tree.md、Phase15-20_深化规划.md 与 CHANGELOG 五处。
+   现有目录树.md、Phase15-20_深化规划.md 与 CHANGELOG 五处。
 
 注意：PowerShell 无 heredoc；改源码批量替换用临时 .py 脚本。
 新增文件防 BOM（test_code_hygiene 会拦）。

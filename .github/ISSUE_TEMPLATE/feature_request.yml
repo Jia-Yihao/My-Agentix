@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        新增能力请先看 `docs/architecture/extension.md` 与
+        新增能力请先看 `docs/architecture/扩展机制.md` 与
         `CONTRIBUTING.md` 的「新增能力指南」，分层约束会直接决定实现落在哪一层。
 
   - type: textarea

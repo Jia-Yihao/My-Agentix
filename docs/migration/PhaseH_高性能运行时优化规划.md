@@ -1,5 +1,8 @@
 # Phase H — 高性能运行时优化规划（执行版）
 
+> **文档状态**：已完成（留档）· 计划已交付；文中「待做 / 下一批 / 本轮不跑」是**当时**的待做，不是现在的待办。
+> 文档分层：唯一现行总览是根 [README](../../README.md)，实现细节见 [PROJECT_SPEC](../项目实现手册.md)。
+
 > **项目**：My-Agentix / Agentix
 > **目标定位升级**：Production-oriented Agent Platform → High-Performance Production Agent Runtime
 > **依据源**：《My Agentix 下一阶段高性能与深度优化规划.md》（134 节 / H0–H7，2026-10）+ 四路代码库 ground-truth 勘察
@@ -25,7 +28,7 @@
 | 2 | 全仓**零 TTFT、零百分位、零 SLO**基建（源文档称「已存在 SLO」不实） | W0 新建 agent_ttft_seconds，挂钩点 = RunEventEmitter 首个内容帧 |
 | 3 | 检索四阶段计时已存在（stage report + record_retrieval + span） | 延迟拆解复用既有脊柱，不另起炉灶 |
 | 4 | 无 singleflight / adaptive retrieval / cascade；检索缓存键**缺 tenant_id 与调参指纹**（已知缺口） | W2 核心新建项 + 一处正确性修复（无 flag） |
-| 5 | Model Gateway 已有 fast/standard/reasoning 三档与 resolve_model，角色→档位**未接线** | W1 只接线，不重建网关 |
+| 5 | Model Gateway 已有 fast/standard/reasoning 三档与 resolve_model，角色→档位**已接线、默认关**（2026-10-27 现状：`LLM_TIER_ROUTING_ENABLED` 默认关 + `LLM_ROLE_TIER_MAP` 命中 ⇒ `llm_factory.py::_apply_tier_routing` 经 `ModelGateway.resolve_model` 取档位模型，flag-off 与基线逐位等价） | W1 只接线，不重建网关 |
 | 6 | PromptEnvelope 静态前缀纪律已存在，prompt 无时间戳/随机 ID | W1 前缀缓存 = 守卫测试 + 指纹指标 |
 | 7 | LayeredVerifier 已是零 LLM 级联；KG LLM 校验层有 flag（默认关）但**无预算约束** | W1 补 verification budget |
 | 8 | SSE 零合并零背压；前端零批处理（每 token 同步改响应式状态 + 无条件吸底滚动） | W4 后端 SSE + W6 前端 |
@@ -111,7 +114,7 @@ W7 观测收口 + 全文档同步 + 版本 0.2.0 + 交付全量测试
 
 **测试**：p95（singleflight 并发合并与异常传播、cascade 分支、键含 tenant/指纹）、p96（成本护栏纯离线、nprobe 默认等价）。
 
-**落地注记（2026-10-06，按实）**：六级级联按既有原语折叠为分级升级——hyde/rewrite 前置于查询智能段（`|r1`/`|y1` 缓存后缀已占位）、rrf/rerank 内嵌 hybrid 级（`RETRIEVAL_HYBRID_ENABLED` 总闸内）、graph/external 级留可注入缝（本波无生产注入方，诚实缺席）；实际级序 statute/general = `dense_exact → bm25_rrf_rerank`，multi_hop = 融合前置 → dense 兜底，`RETRIEVAL_CASCADE_MIN_SCORE=0`（默认）= 空命中才升级。检索域 4 键沿 R-P1 纪律只进 `.env.example` 注释示例（不入 configuration.md/p41），统一域 2 键五处全同步。成本护栏为纯字符串预检（未引入 AST）。
+**落地注记（2026-10-06，按实）**：六级级联按既有原语折叠为分级升级——hyde/rewrite 前置于查询智能段（`|r1`/`|y1` 缓存后缀已占位）、rrf/rerank 内嵌 hybrid 级（`RETRIEVAL_HYBRID_ENABLED` 总闸内）、graph/external 级留可注入缝（本波无生产注入方，诚实缺席）；实际级序 statute/general = `dense_exact → bm25_rrf_rerank`，multi_hop = 融合前置 → dense 兜底，`RETRIEVAL_CASCADE_MIN_SCORE=0`（默认）= 空命中才升级。检索域 4 键沿 R-P1 纪律只进 `.env.example` 注释示例（不入 配置管理.md/p41），统一域 2 键五处全同步。成本护栏为纯字符串预检（未引入 AST）。
 
 ### W3 · H3 运行时治理（p97）
 
@@ -184,7 +187,7 @@ W7 观测收口 + 全文档同步 + 版本 0.2.0 + 交付全量测试
 
 ## 5. Flag 登记表（规划态；执行中增补，全部默认关 + 五处同步）
 
-五处同步 = ① agentix/config/settings.py 字段 ② agentix/config/selfcheck.py DEFAULT_IGNORED_MISSING（或本地 .env 补键）③ .env.example 活行 ④ docs/architecture/configuration.md §5 表行 ⑤ p41 测试清单核验；检索域 flag 按既有惯例放 agentix/retrieval/settings.py。
+五处同步 = ① agentix/config/settings.py 字段 ② agentix/config/selfcheck.py DEFAULT_IGNORED_MISSING（或本地 .env 补键）③ .env.example 活行 ④ docs/architecture/配置管理.md §5 表行 ⑤ p41 测试清单核验；检索域 flag 按既有惯例放 agentix/retrieval/settings.py。
 
 | Flag | 类型/默认 | 波次 |
 |---|---|---|
@@ -249,13 +252,13 @@ W7 观测收口 + 全文档同步 + 版本 0.2.0 + 交付全量测试
 | 时机 | 文档 | 内容 |
 |---|---|---|
 | 每波完成 | 本文档 §9 | 勾选 + 实测数据回写 + 新文件路径补反引号 |
-| W6 | docs/design/frontend-streaming-optimization.md（拟建） | 前后端帧流架构、flush/吸底/markdown 策略、**优化前后量化对照表** |
+| W6 | docs/design/前端流式渲染优化.md（拟建） | 前后端帧流架构、flush/吸底/markdown 策略、**优化前后量化对照表** |
 | W7 | CHANGELOG.md [Unreleased] Phase H 节 | 分波条目 + 每块「用户可感知变化」一句话 + 回归行 |
 | W7 | README.md | 能力清单补 Adaptive Execution / 感知性能条目；§11 计数链按实测更新 |
-| W7 | docs/architecture/configuration.md §5 | 全部新 flag 行（五处同步之一） |
-| W7 | docs/design/optimization-roadmap.md | E1–E8 状态回写 |
-| W7 | docs/migration/current-tree.md | tests 模块数更新 |
-| W7 | docs/PROJECT_SPEC.md | 新增能力/flag/目录相关节 |
+| W7 | docs/architecture/配置管理.md §5 | 全部新 flag 行（五处同步之一） |
+| W7 | docs/design/性能与优化路线图.md | E1–E8 状态回写 |
+| W7 | docs/migration/现有目录树.md | tests 模块数更新 |
+| W7 | docs/项目实现手册.md | 新增能力/flag/目录相关节 |
 | W7 | skills/release-checklist/SKILL.md 五处计数同步 | 计数变化时同步 |
 
 ---
@@ -299,16 +302,16 @@ W7 观测收口 + 全文档同步 + 版本 0.2.0 + 交付全量测试
   - 偏差与调整：① 段级预算收口定为 `ContextPort.build` 轨迹段（工具/检索观测）单缝——四分区统一结构不重复造（history 条数窗口 / memory 索引预算 / retrieval 域 CONTEXT_BUDGET_TOKENS 各司其职），§4 任务 4 已按实修订；② statute_direct 短路 → `graphrag-query`，与既有 `_heuristic_router` 法条关键词映射同向；寒暄正则**全句匹配**（加料即回 LLM）+ 推理词黑名单，宁保守不激进；③ VERIFICATION_TOKEN_BUDGET 按 `len//4` 粗估累计台账（非 provider 精确计数），按本次答案 state.steps 已尝试次数计 MAX_LLM_CALLS；④ 超时测试口径用 300ms 窗（10ms 会被模板格式化步吃掉，生产默认 1000ms 余量充分）；⑤ 档位解析任何异常 fail-open 回基线 profile（未知档位 KeyError 不外抛）。
 - [x] W2 检索优化 —— 状态：**完成**（2026-10-06）
   - 新增测试：p95=42 / p96=32，合计 74 例；全量 pytest **4074 passed**（4000 → 4074，15 skipped，7 分 01 秒）、ruff 全绿、mypy agentix/domain 全绿、p41/p68/p76/p84/p35/p47/p12/p83/p86/p85/r1/r34/r2×2/p78 关联套件全绿。
-  - 新增 flag（六枚）：统一域 2 枚五处同步——`NEO4J_COST_GUARD_ENABLED`（bool/false）、`MILVUS_NPROBE`（int/16，= 原硬编码值等价）；检索域 4 枚两处同步（retrieval/settings.py + `.env.example` 注释示例，沿 R-P1「retrieval 域专属键不入本表」纪律不入 configuration.md/p41）——`RETRIEVAL_SINGLEFLIGHT_ENABLED`（bool/false）、`RETRIEVAL_ADAPTIVE_ENABLED`（bool/false）、`RETRIEVAL_CASCADE_MIN_SCORE`（float/0=关）、`RERANK_DYNAMIC_SKIP_ENABLED`（bool/false）。
+  - 新增 flag（六枚）：统一域 2 枚五处同步——`NEO4J_COST_GUARD_ENABLED`（bool/false）、`MILVUS_NPROBE`（int/16，= 原硬编码值等价）；检索域 4 枚两处同步（retrieval/settings.py + `.env.example` 注释示例，沿 R-P1「retrieval 域专属键不入本表」纪律不入 配置管理.md/p41）——`RETRIEVAL_SINGLEFLIGHT_ENABLED`（bool/false）、`RETRIEVAL_ADAPTIVE_ENABLED`（bool/false）、`RETRIEVAL_CASCADE_MIN_SCORE`（float/0=关）、`RERANK_DYNAMIC_SKIP_ENABLED`（bool/false）。
   - 新增文件：`agentix/infrastructure/cache/__init__.py`、`agentix/infrastructure/cache/singleflight.py`、`agentix/retrieval/domain/services/cascade.py`、`tests/test_p95_retrieval_cascade.py`、`tests/test_p96_graph_cost_guard.py`。
-  - 接线改造：`agentix/retrieval/usecases/chat_service.py`（缓存键升级 tenant+融合指纹+`|k2`、`_resolve_cache_tenant` fail-open、miss 分支折叠 `_dense_miss`/`_hybrid_miss` 闭包 + cascade/singleflight 包装、`tenant_id` 可选参）、`retrieval_hybrid.py`（rerank stage 动态跳过留痕 `applied=false + skipped`）、`chat_agent_tools.py`/`retrieval_port_adapter.py`（跳过判定接线 + 端口显式 tenant 透传）、`kg_neo4j_conn.py`（`GraphCostEstimator` + `query_readonly` flag 门控，只读闸仍在最前）、`milvus_impl.py`（nprobe 配置化，越界回落下限 1）、`agentix/config/settings.py`/`selfcheck.py`/`.env.example`/`configuration.md`/`test_p41`（统一域 2 键五处同步）。
+  - 接线改造：`agentix/retrieval/usecases/chat_service.py`（缓存键升级 tenant+融合指纹+`|k2`、`_resolve_cache_tenant` fail-open、miss 分支折叠 `_dense_miss`/`_hybrid_miss` 闭包 + cascade/singleflight 包装、`tenant_id` 可选参）、`retrieval_hybrid.py`（rerank stage 动态跳过留痕 `applied=false + skipped`）、`chat_agent_tools.py`/`retrieval_port_adapter.py`（跳过判定接线 + 端口显式 tenant 透传）、`kg_neo4j_conn.py`（`GraphCostEstimator` + `query_readonly` flag 门控，只读闸仍在最前）、`milvus_impl.py`（nprobe 配置化，越界回落下限 1）、`agentix/config/settings.py`/`selfcheck.py`/`.env.example`/`配置管理.md`/`test_p41`（统一域 2 键五处同步）。
   - 偏差与调整：① 六级级联折叠为分级升级（hyde/rewrite 前置、rrf/rerank 内嵌 hybrid、graph/external 无注入方缺席），§4 已按实注记；② rerank 高分跳过仅相似度口径判定（距离/融合分不可比 ⇒ 保守只按候选数跳过）；③ 键结构 `prefix+tenant:kb:art:k:scope:digest|fp|k2`——`|h1`/`|r1` 追加后仍居末位（p76/p84 endswith 断言不破），旧键一次性冷却（TTL 600s）；④ 成本护栏纯字符串预检：括号内存在 `..n` 即有界（列表字面量乘法 `[2*3]` 保守误拒，flag-on 专属子串语义，与 WRITE_CLAUSES 同姿态）；⑤ SingleFlight 结果信封 `("ok"/"err", v)` + `asyncio.shield` 等待——leader 取消 ⇒ waiter 抛 RuntimeError（不误判自身取消态），`finally` 同一性校验防 ABA 残留。
 - [x] W3 运行时治理 —— 状态：**完成**（2026-10-06）
   - 新增测试：p97=42 例；全量 pytest **4116 passed**（4074 → 4116，15 skipped，7 分 05 秒）、ruff 全绿、mypy agentix/domain 全绿、W3 关联回归 591 例（p41/p22/p31/p33×2/p38/p39/p54 + p68/p73/p76/p84/p95/r1_rerank + r3_agent_runtime/llm_retry/p1_llm_concurrency/unit_task_queue/agent_run_api/phase25）全绿。
   - 新增 flag（12 枚，五处同步完成，7 枚执行中增补入 §5）：`ADMISSION_CONTROL_ENABLED`（bool/false）、`ADMISSION_MAX_CONCURRENT_RUNS`（int/0=回落 CONTROL_PLANE 上限）、`ADMISSION_MAX_QUEUE`（int/0=超限即拒）、`RETRY_BUDGET_ENABLED`（bool/false）、`RETRY_BUDGET_TOKENS`（int/6）、`ADAPTIVE_TOOL_TIMEOUT_ENABLED`（bool/false）、`LOAD_SHEDDING_ENABLED`（bool/false）、`BULKHEAD_RETRIEVAL_SIZE`/`BULKHEAD_NEO4J_SIZE`/`BULKHEAD_MCP_SIZE`/`BULKHEAD_WEB_SEARCH_SIZE`（int/0=不限）、`SHARED_HTTP_MAX_CONNECTIONS`（int/0=关）。
   - 新增指标：`admission_decisions_total{state}`（admitted/queued/rejected 计数，经 `record_admission_decision`）。
   - 新增文件：`agentix/performance/admission.py`（三态准入 `admission_wait`/`AdmissionController` 30s 有界排队）、`agentix/performance/load_shedder.py`（七级阶梯 `classify_load`/`should_shed`/`TASK_TYPE_CATEGORY`）、`agentix/reliability/retry_budget.py`（`RetryBudget` 跨层共享桶 + `retryable_error` 分类闸）、`agentix/reliability/bulkhead.py`（4 池 `bulkhead_slot`/`pool_for_tool`/`pooled_wait_for`）、`agentix/infrastructure/http/__init__.py` + `shared_client.py`（`acquire_http_client` owns 语义）、`tests/test_p97_runtime_control.py`。
-  - 接线改造：`application/services/request_scope.py`（+`deadline_at`/`retry_budget` 字段与 `set_deadline_seconds`/`remaining_ms`）、app `chat_service.py`（ask/流式 scope 设 run 截止期 + `_invoke_tracked`/流式 spawn 前 `admission_wait`）、`retrieval/usecases/chat_service.py`（流式 spawn 前准入 + `retrieve_docs_with_retry` 分类/预算闸 + miss 分支 `_pooled_runner` 检索隔离舱，SingleFlight 等待方不占池）、`interfaces/http/v1/runs.py`（spawn 前准入，拒绝→429）、`tools/gateway/executor.py`（`_effective_timeout_ms` min(spec,剩余预算) + `pooled_wait_for` 归池 + `last_exc` 分类/预算闸）、`application/services/task_retry.py`（sleep 前预算闸）、`application/services/task_queue.py`（`_process_message` 按级甩后台任务 FAILED+ack 不进重试）、`capabilities/mcp/client.py`（`call_tool` 隔离舱）、`main.py`（`AdmissionDenied`→429 全局映射 + `_shutdown` 关共享 client）、`observability/metrics.py`（新计数器 + `get_last_event_loop_lag`）、rerank `_call_rerank` 与 `redis_cache._get_embedding`（共享 client 接线，owns=True 时 `post` 零额外参数=基线形状）、`agentix/config/settings.py`/`selfcheck.py`/`.env.example`/`configuration.md`/`test_p41`（12 键五处同步）。
+  - 接线改造：`application/services/request_scope.py`（+`deadline_at`/`retry_budget` 字段与 `set_deadline_seconds`/`remaining_ms`）、app `chat_service.py`（ask/流式 scope 设 run 截止期 + `_invoke_tracked`/流式 spawn 前 `admission_wait`）、`retrieval/usecases/chat_service.py`（流式 spawn 前准入 + `retrieve_docs_with_retry` 分类/预算闸 + miss 分支 `_pooled_runner` 检索隔离舱，SingleFlight 等待方不占池）、`interfaces/http/v1/runs.py`（spawn 前准入，拒绝→429）、`tools/gateway/executor.py`（`_effective_timeout_ms` min(spec,剩余预算) + `pooled_wait_for` 归池 + `last_exc` 分类/预算闸）、`application/services/task_retry.py`（sleep 前预算闸）、`application/services/task_queue.py`（`_process_message` 按级甩后台任务 FAILED+ack 不进重试）、`capabilities/mcp/client.py`（`call_tool` 隔离舱）、`main.py`（`AdmissionDenied`→429 全局映射 + `_shutdown` 关共享 client）、`observability/metrics.py`（新计数器 + `get_last_event_loop_lag`）、rerank `_call_rerank` 与 `redis_cache._get_embedding`（共享 client 接线，owns=True 时 `post` 零额外参数=基线形状）、`agentix/config/settings.py`/`selfcheck.py`/`.env.example`/`配置管理.md`/`test_p41`（12 键五处同步）。
   - 偏差与调整：① LLM 不另设池——复用 W1 `LLM_MAX_CONCURRENCY` limiter（同为 LLM 出口，双池反而分薄限额）；② 准入账本复用 `plane.active_count()`（无独立释放句柄），挂点=三 chat 入口+runs 入口而非「所有 runtime 出口」（fail-closed 三站点已全覆盖）；③ 队列 30s/滞后阈值/轮询间隔为模块常量非 settings（热路径键，YAGNI）；④ 共享 client 统一 `trust_env=False`，flag-off per-request 新建且 `post` 不带额外参数（保 p39 fake 契约逐位等价）；⑤ 检索层预算无 RequestScope 时为每调用独立 fallback 桶（诚实降级，不跨调用串桶）；⑥ 降级输入用 breaker「非 CLOSED 数」而非具体延迟（breaker 状态即下游劣化的既有信号）；⑦ L6 不在消费侧甩脱——交准入礼貌拒绝 429，避免消费端与准入端双重计数。
 - [x] W4 持久化 + SSE 后端 —— 状态：**完成**（2026-10-06）
   - 新增测试：p98=31 例；全量 pytest **4147 passed**（4116 → 4147，15 skipped，7 分 16 秒）、ruff 全绿、mypy agentix/domain 全绿、W4 关联回归（p41/p65/p14/chat_api/progress 126 + events 三件 134 + trajectory + lifespan/app_error/p37 18）全绿。
@@ -321,7 +324,7 @@ W7 观测收口 + 全文档同步 + 版本 0.2.0 + 交付全量测试
   - 新增测试：p99=34 例；全量 pytest **4181 passed**（4147 → 4181，15 skipped，7 分 06 秒）、ruff 全绿、mypy agentix/domain 全绿、多智能体关联回归（p11/p19/p25/p88/p89/p79/p80/p41/ablation_wiring）**313 passed** 全绿。
   - 新增 flag（2 枚，五处同步完成）：`SUBAGENT_RESULT_CONTRACT_ENABLED`（bool/false）、`MULTIAGENT_EARLY_EXIT_ENABLED`（bool/false）。
   - 新增文件：`agentix/orchestration/strategies/multi_agent/contract.py`（`SubAgentResult` 契约 + `contract_face`/`try_offload_face`/`resolve_evidence_ref`/`evidence_sufficient`/`contract_enabled`/`early_exit_enabled`）、`tests/test_p99_multiagent_efficiency.py`。
-  - 接线改造：`multi_agent/manager.py`（`peer_face` 单缝统一原 proposer/reviewer 两处 `str()+bound_result_face`、`_outcome` flag-on 收集 `result_contracts`、proposer 后插早停分支、`ManagerOutcome.result_contracts` 新字段、`__all__` 增 `peer_face`）、`multi_agent/__init__.py`（导出 4 符号）、`langgraph/lg_supervisor.py`（`defense_meta` flag-on 非空挂 `result_contracts`）、settings（MULTIAGENT 段 :674 后两键）+ selfcheck + `.env.example`（MULTIAGENT 区尾）+ `configuration.md`（§2 特性行 +2、§5 表 +2 行）+ p41 手写清单（+2）五处同步。
+  - 接线改造：`multi_agent/manager.py`（`peer_face` 单缝统一原 proposer/reviewer 两处 `str()+bound_result_face`、`_outcome` flag-on 收集 `result_contracts`、proposer 后插早停分支、`ManagerOutcome.result_contracts` 新字段、`__all__` 增 `peer_face`）、`multi_agent/__init__.py`（导出 4 符号）、`langgraph/lg_supervisor.py`（`defense_meta` flag-on 非空挂 `result_contracts`）、settings（MULTIAGENT 段 :674 后两键）+ selfcheck + `.env.example`（MULTIAGENT 区尾）+ `配置管理.md`（§2 特性行 +2、§5 表 +2 行）+ p41 手写清单（+2）五处同步。
   - 偏差与调整：①「停其余 peer」按**顺序拓扑**实现——本仓无 fan-out（peer 内联 `await` 无 task 可 cancel、无在途消息），早停 = 跳过 reviewer 调用与后续轮次，`bus.cancel` 不适用；②「共享证据面」本波 = 证据条目 `offload_content` 外置 + 契约面过限**整体外置可取回**，「父轨迹四传递点」不在本波（黑板承载契约面已达成 peer 间不传整段的等效，state 直通归 isolation 域，诚实缺席）；③ 早停判据两条件缺一不可（带证据 ∧ 有信息增量，复用 `has_information_increment`，上下文取入板前黑板防自比）——比「复用判据」字面更严，防「有证据但纯复读」误停；④ `derive_exit_contract` 不改推导表（未知 reason + ok=True 兜底 `completed/completed`，p88 推导表零接触）；⑤ cost 字段取 peer 自报 meta 缺省 0，**不臆造测量值**；⑥ `contract.py` 的 application 依赖全部函数内延迟 import（orchestration 不顶层反向依赖），不 import manager（防环）。
 - [x] W6 前端感知性能与实时动态 UI —— 状态：**完成**（2026-10-06）
   - 新增测试：web vitest 126 → **198**（+72，六新文件 + 两扩展；超 +35~50 预期）；`vue-tsc` 零错、`vite build` 通过。新增 devDependency：`jsdom`（DOMPurify 消毒断言需真实 DOM，happy-dom 不兼容——详见 §4 W6 落地注记①）。
@@ -332,9 +335,10 @@ W7 观测收口 + 全文档同步 + 版本 0.2.0 + 交付全量测试
   - 新增测试：p100=17 例（GenAI span 命名/provider 推断/gen_ai.* 属性双键名与 fail-open、`genai_span` 网关、`invoke_with_breaker` 接线运行时断言、`llm_factory` 接线源级守卫、指标标签 29 项有界白名单 + 高基数身份标签禁入 + GenAI 键只入 span 不入指标）；全量 pytest **4198 passed**（4181 → 4198，15 skipped，7 分 31 秒）、覆盖率 **74.78% ≥ 60**、ruff 全绿、mypy agentix/domain 全绿、bandit medium+ **0**、pip_audit 残余 **14 唯一漏洞 / 22 行明细 / 8 包**（全 langchain 生态，较 21 项口径为同一集合的行级展示差异，零新增依赖）、web lint/test（**198**）/typecheck/build 四件全绿、`bump_version.py --check` 0.2.0 一致。
   - OTel GenAI 接线：`agentix/observability/tracing.py` 新增 `genai_span_name`/`infer_genai_system`/`apply_genai_request`/`apply_genai_usage` + 五常量；`spans.py` 新增 `genai_span()` async CM（经唯一 span 入口网关，不写 trajectory——LLM 轨迹已由 `_record_llm_trajectory`/检索域 usage 覆盖防一步双记）+ 再导出 `apply_genai_usage`；两 LLM 出口接线 = `chat_llm.invoke_with_breaker`（包装 breaker/limiter 双分支单出口补用量）与 `llm_factory._TrackedChatOpenAI.ainvoke`（limiter 外包 genai_span、返回前补用量，既有 try/except/finally 结构不重排）。
   - CI：`web/package.json` 补 `lint`（= `vue-tsc --noEmit`，修 ci-gate 必红）；perf-smoke 摘 `continue-on-error` 转**阻塞**（job 改名「性能冒烟」+ ci-gate needs 增补 + `perf_gate.py` docstring 按实改写）。
+  - **现状复核（2026-10-26 优化批次 P5 补，本批实测）**：今天 `.github/workflows/ci.yml` 里**没有**名为「性能冒烟」或 `perf-smoke` 的 job——八个并行 job（`version-consistency`／`lint`／`test`／`architecture-guards`／`eval-smoke`／`eval-offline`／`retrieval-gate`／`frontend`）+ `ci-gate`，needs 里也没有性能项。**原因有出处**：`.github/` 整目录曾在仓库快照里缺失并按契约重建（CHANGELOG 的重建条自己写的是 8 个 job），重建时没恢复这个独立 job。阻塞力实际来自 `test` job：`run: pytest -m "not integration" -q --tb=short` 会收走 `tests/test_perf_smoke.py`（该文件无 integration 标记）⇒ 超预算即红 ⇒ `ci-gate` 阻断。**效果相同、出处不同，而运维按的是出处**，所以 `docs/design/性能与优化路线图.md` §2 E5 / §4 表行已按实际执行路径改写，并新增 `tests/test_ci_gate_contract.py::test_perf_smoke_blocks_through_the_test_job_it_actually_runs_in`（四条合取：test job 的命令、smoke 文件无 integration 标记、ci-gate needs 含 test、ci.yml 里不存在独立 perf job——第 4 条刻意过严，独立 job 若恢复就必须同步改措辞）。四组变异实测各红 1 条，红的正是本条。
   - 版本：0.1.3 → **0.2.0**（bump_version 四处 + web/package-lock.json 根版本 + README 徽章 + PROJECT_SPEC 三处 + VERSIONING 示意图 + TECH_STACK 示例；本地 `.env` APP_VERSION 同步——不入库）。
-  - 全文档同步（§7 清单全勾）：CHANGELOG [Unreleased] Phase H 八波分条 + 每波「用户可感知变化」+ 汇总回归行；README §1 能力表 + Adaptive Execution 行、§2 新增「可承受的过载」「可感知的流式」、§11 真源 3908 → **4198**（+290 计数链）、CI/CD 行补阻塞性能冒烟；configuration.md §5 全 35 flag 核验（检索域 4 键沿 R-P1 纪律豁免）；optimization-roadmap §4 分期表增「状态」列（E3/E5 已落地、E4/E6/E8 部分、E1/E2/E7 未动）；current-tree（tests 191 模块、agentix 541 .py、.env.example 295 活行）；PROJECT_SPEC（§3.4 Phase H 35 flag 指针 + §21.6 链路/指标两行 GenAI 与标签守卫）；release-checklist 前端四命令改 npm scripts。
+  - 全文档同步（§7 清单全勾）：CHANGELOG [Unreleased] Phase H 八波分条 + 每波「用户可感知变化」+ 汇总回归行；README §1 能力表 + Adaptive Execution 行、§2 新增「可承受的过载」「可感知的流式」、§11 真源 3908 → **4198**（+290 计数链）、CI/CD 行补阻塞性能冒烟；配置管理.md §5 全 35 flag 核验（检索域 4 键沿 R-P1 纪律豁免）；optimization-roadmap §4 分期表增「状态」列（E3/E5 已落地、E4/E6/E8 部分、E1/E2/E7 未动）；current-tree（tests 191 模块、agentix 541 .py、.env.example 295 活行）；PROJECT_SPEC（§3.4 Phase H 35 flag 指针 + §21.6 链路/指标两行 GenAI 与标签守卫）；release-checklist 前端四命令改 npm scripts。
   - 偏差与调整：① GenAI 用量只补 span 不进 Prometheus 指标（semconv 键进指标属高基数维度之外的第三套命名空间，指标面沿既有 `llm_*` 家族，p100 白名单钉住两侧边界）；② `llm_factory.ainvoke` 的接线以源级断言 + `invoke_with_breaker` 运行时断言组合覆盖（完整 ainvoke 需 ChatOpenAI 网络栈，离线不建）；③ bandit High 1 为 W2 `_fusion_fingerprint` 的 `sha1` 未标 `usedforsecurity=False`（S2 批漏网，非 Phase H 新隐患面）——已补 `# nosec B324` + 非安全用途注释复归 0；④ perf_gate 转阻塞后 CI 首跑需观察（阈值 p50×3 已含 3 倍抖动余量，本地基线已入库）；⑤ pip_audit 计数口径本波按「唯一包+漏洞 ID」核验 = 14，与历史「21 项」同集合不同展示（行明细含重复 fix-version 行），零新增依赖结论不变；⑥ 本地 `.env` APP_VERSION 残留 0.1.3 会使 p35/p37 双红——bump 流程须同步本地 env（不入库，已修）。
-  - 文档链接：W6 已建 `docs/design/frontend-streaming-optimization.md`；本波无新文件入 §6 反引号缺口。
+  - 文档链接：W6 已建 `docs/design/前端流式渲染优化.md`；本波无新文件入 §6 反引号缺口。
 
 （每波完成后在此回写：实测数字、新增 flag、新增测试数、发现的偏差与调整。）

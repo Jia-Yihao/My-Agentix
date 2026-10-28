@@ -1,8 +1,11 @@
 # Phase 21–26 · Agent Core 下一版优化迭代规划（v1.0）
 
+> **文档状态**：历史 · 这是**当时**的规划或快照，**不代表当前实现**，不要按它判断现状。
+> 文档分层：唯一现行总览是根 [README](../../README.md)，实现细节见 [PROJECT_SPEC](../项目实现手册.md)；在办的优化见 [优化路线图台账](../design/性能与优化路线图.md)。
+
 - 版本：v1.0（依据《深入理解 AI Agent》全书笔记分章版 11 文件对照修订）
 - 日期：2026-09-27
-- 前置：Phase 0–20 收口 + 接口审查三批完成（勾选真源 `module-inventory.md` §6 / `Phase15-20_深化规划.md` §11）；现基线 **2463 passed / 14 skipped / 0 deselected**（`pytest -m "not integration"`，2026-09-28 审计批次 A + Phase 28 自主护栏 + Phase 31 评估二期 + Phase 30 进化闭环 + Phase 29 记忆结构化收口后；skip 含 10 条 Redis Stream 契约用例无 Redis 服务时诚实跳过）
+- 前置：Phase 0–20 收口 + 接口审查三批完成（勾选真源 `模块清单.md` §6 / `Phase15-20_深化规划.md` §11）；现基线 **2463 passed / 14 skipped / 0 deselected**（`pytest -m "not integration"`，2026-09-28 审计批次 A + Phase 28 自主护栏 + Phase 31 评估二期 + Phase 30 进化闭环 + Phase 29 记忆结构化收口后；skip 含 10 条 Redis Stream 契约用例无 Redis 服务时诚实跳过）〔历史读数（2026-09-28），现值只认根 `README.md` §11「测试真源」〕
 - 模式：Strangler 不变；flag 默认关、flag-off 字节等价；domain 零第三方；LangGraph 仅 `agentix/agent/graph/`；不新增数据库 / 新框架 / 新中间件
 - 范围决策（已拍板）：**六主题全做 = Phase 21–26**；分批执行，**批一 = Phase 21+22**，批二 = 23+24，批三 = 25+26；每批验收后拍板下一批
 
@@ -80,7 +83,7 @@
 
 | # | 文件 | 改动 |
 |---|------|------|
-| 21.1 | `agentix/config/settings.py` + `selfcheck.py` + `.env.example` | `SKILLS_ENABLED: bool = False`、`HOOKS_ENABLED: bool = False`、`SKILLS_DIR: str = "skills"`（三处同步 + configuration.md 表行 + p41 清单） |
+| 21.1 | `agentix/config/settings.py` + `selfcheck.py` + `.env.example` | `SKILLS_ENABLED: bool = False`、`HOOKS_ENABLED: bool = False`、`SKILLS_DIR: str = "skills"`（三处同步 + 配置管理.md 表行 + p41 清单） |
 | 21.2 | **新** agentix/agent/skills/loader.py（已建） | 扫描 `skills/**/SKILL.md` frontmatter → `SkillMeta`；校验必填字段；失败条目告警跳过 |
 | 21.3 | **新** agentix/agent/skills/registry.py（已建） | 元数据表 + `read_skill(name)` 正文读取（路径白名单防穿越，p43 风格） |
 | 21.4 | `agentix/agent/context/instructions.py:96` `build_instructions` | flag 开：注入元数据清单（名字 + 何时用 + anti_when 压缩为一行/条）；关：字节不变；参数 `skills_enabled` 供测试覆盖 |
@@ -88,7 +91,7 @@
 | 21.6 | **新** `agentix/agent/hooks/`（registry.py + events.py） | 5 类事件注册/分发；`emit()` 捕获全部异常记 `logger.warning` |
 | 21.7 | `agentix/capabilities/tools/executor.py:75` `ToolExecutor`（M6 已删，现见 `agentix/tools/gateway/executor.py`） | `on_tool_before/after` 旁路 emit（HOOKS_ENABLED 关 ⇒ 零调用） |
 | 21.8 | agentix/agent/core/loop.py（M6 已删，现见 `agentix/orchestration/orchestrator.py`） | `on_step_end` / `on_run_end` / `on_error` 旁路 emit（AgentLoop 支路） |
-| 21.9 | `agentix/config/selfcheck.py` + `tests/test_p41_doc_consistency.py` | 三 key 进 `DEFAULT_IGNORED_MISSING`、configuration.md 表行与 p41 反向清单 |
+| 21.9 | `agentix/config/selfcheck.py` + `tests/test_p41_doc_consistency.py` | 三 key 进 `DEFAULT_IGNORED_MISSING`、配置管理.md 表行与 p41 反向清单 |
 | 21.10 | tests（新 tests/test_agent_phase21_skills_hooks.py，已建） | 见 DoD（17 用例） |
 
 **DoD**（2026-09-27 全项达成，见 tests/test_agent_phase21_skills_hooks.py 17 用例）
@@ -343,7 +346,7 @@
 | Ch5「Coding Agent 为通用架构中心」 | 本项目是**以 Agent 内核 + RAG 等多路检索为核心的综合服务平台**，任务空间跨领域、非以开放编码为核心；代码仅工具之一 |
 | Ch6 模态扩展（语音/Computer Use/机器人） | 非本项目场景 |
 | Ch10 A2A 跨组织协议、Decentralized 拓扑 | 延续 Phase 11 决策（先 Peer+Manager） |
-| 图内 LangGraph `interrupt()` | async 节点实测否决（`multi_tool.py:151` 注释），单列评估 |
+| 图内 LangGraph `interrupt()` | 本批不做（2026-09-27 口径，**已被取代**）：当时依据「async 节点实测否决」（`multi_tool.py` 注释）只适用于 py3.10 机位下的「包装式接线」——F1e·A-P1-4 已落地（2026-10-03，`HITL_IN_LOOP_ENABLED` 默认关）：async 节点在 py3.12+ 可 interrupt（守卫 `tests/test_p81_hitl_in_loop.py` 真图挂起→`Command(resume=…)` e2e）；py3.10 async 必死锁（`tests/test_p32_tool_guards.py` 特征化），注入壳版本门控、3.10 诚实降级不注入 |
 | 前端 Skills/Hooks 管理 UI | 本版纯后端/evals；UI 另期 |
 | shell 型 Hooks、主动工具发现（按需化第 2/3 层） | Phase 21 落第 1 层，其余另期 |
 | 新数据库 / 新框架 / 新中间件 | 工程总则；Redis Stream 复用既有 Redis |
@@ -370,7 +373,7 @@
 
 1. 代码 + 默认关 feature flag（如适用；flag 三处同步 settings/selfcheck/`.env.example` + p41 反向清单）
 2. 新测试文件 ≥1（flag-off 等价 + flag-on 行为 + 负路径）
-3. 文档：本规划勾选 / `module-inventory.md` §6（若产生新模块清单项）/ CHANGELOG Unreleased 条目
+3. 文档：本规划勾选 / `模块清单.md` §6（若产生新模块清单项）/ CHANGELOG Unreleased 条目
 4. 全量验证：
 
 ```powershell
@@ -382,7 +385,7 @@
 Set-Location web; npx vue-tsc --noEmit; npx vitest run
 ```
 
-5. 基线数字若变：README §11 + `current-tree.md` + `Agent_Core_2.0_规划.md` §9 头 + `Phase15-20_深化规划.md:4` + 本文件头部，共 5 处同步（CHANGELOG 旧条目为历史记录不改）
+5. 基线数字若变：README §11 + `现有目录树.md` + `Agent_Core_2.0_规划.md` §9 头 + `Phase15-20_深化规划.md:4` + 本文件头部，共 5 处同步（CHANGELOG 旧条目为历史记录不改）
 
 ---
 
@@ -409,11 +412,11 @@ Set-Location web; npx vue-tsc --noEmit; npx vitest run
 
 1. 环境：Docker（Redis/Neo4j/Milvus）+ LM Studio 或 OpenAI 兼容端点 + keys（对照 `docs/runbooks/` 与 `.env.example`）
 2. 全栈冒烟：`pytest -m integration` 中相关标记用例通过
-3. `evals/run_eval.py --record` → 生成并提交 `evals/baseline_predictions.jsonl`
-4. offline score 跑通 → 本地五次 `quality_gate.py` 播种五个 metric（`route_accuracy` / `citation_hit_rate_applicable` / `citation_correctness_applicable` / `must_contain_applicable` / `reject_accuracy_applicable`）
-5. **手动 commit** evals/quality.json（CI 写回随 runner 丢失，不会替你持久化建档）
-6. 验证门状态 NOT-ENFORCED → 建档 → **ENFORCED**；`evolution_run.py` 由 `not_enforced` fail-closed 转真门
+3. `evals/run_eval.py --record` → 生成并提交 `evals/baseline_predictions.jsonl` ✅ **2026-10-25 已做**（102 条）
+4. offline score 跑通 → **用 `evals/write_quality_baseline.py --summary <stamp>.summary.json` 生成五个 metric**（`route_accuracy` / `citation_hit_rate_applicable` / `citation_correctness_applicable` / `must_contain_applicable` / `reject_accuracy_applicable`）——旧写法「本地五次 `quality_gate.py` 播种」**已废弃**：那条路径把「建档」与「比对」两种语义混在一起，且实测会用残缺 summary 把 `0.0` 钉成恒 PASS 基线
+5. **手动 commit** `evals/baselines/quality.json`（生成物 + `_meta` 溯源）——✅ **2026-10-25 已做**；CI 侧不存在建档这回事：`eval-offline` 的调用段不带 `--allow-bootstrap`，缺输入 ⇒ `NOT-ARMED` 硬失败
+6. 验证门状态：`NOT-ARMED`（未武装）→ 提交生成基线 → **真比对**；`evolution_run.py` 由 `not_enforced` fail-closed 转真门（口径见 `docs/项目实现手册.md` §20.5 的四态表）
 7. 生产轨迹回流：`TRAJECTORY_SINK=jsonl` 导出到 `evals/baselines/traces/` 子目录（**禁止**直接写 `evals/baselines/` 根——与 `quality.json` 碰撞会 raise）
 8. 前缀回归 baseline 建档；Boundary Set + Retention Set 双重回归过门后，才允许把任何进化提案从 staging 晋升
 
-> 详细武装顺序已文档化于 `evals/README.md` §9、`docs/architecture/runtime-guardrails.md` §12.5、`docs/guides/testing.md` §4（Phase 17.3 交付），本附录为入口索引。
+> 详细武装顺序已文档化于 `evals/README.md` §9、`docs/architecture/运行时护栏.md` §12.5、`docs/guides/测试分层策略.md` §4（Phase 17.3 交付），本附录为入口索引。

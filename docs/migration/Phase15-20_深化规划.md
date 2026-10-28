@@ -1,7 +1,10 @@
 # Phase 15–20 · Agent Core 深化规划（v1.0）
 
+> **文档状态**：历史 · 这是**当时**的规划或快照，**不代表当前实现**，不要按它判断现状。
+> 文档分层：唯一现行总览是根 [README](../../README.md)，实现细节见 [PROJECT_SPEC](../项目实现手册.md)；在办的优化见 [优化路线图台账](../design/性能与优化路线图.md)。
+
 - 日期：2026-09-24
-- 前置：Phase 0–14 已收口（勾选真源 `module-inventory.md` §6）；立项时基线 **1982 passed / 4 skipped** → 现 **2463 passed / 14 skipped**（2026-09-28，含接口审查收尾批次 + 接口审查批次（前后端同步）+ Phase 21 + Phase 22 + Phase 23 + Phase 24 + Phase 25 + Phase 26 + Phase 27 死代码清理 + 审计批次 A 安全收口 + Phase 28 自主护栏 + Phase 31 评估二期 + Phase 30 进化闭环 + Phase 29 记忆结构化）
+- 前置：Phase 0–14 已收口（勾选真源 `模块清单.md` §6）；立项时基线 **1982 passed / 4 skipped** → 现 **2463 passed / 14 skipped**（2026-09-28，含接口审查收尾批次 + 接口审查批次（前后端同步）+ Phase 21 + Phase 22 + Phase 23 + Phase 24 + Phase 25 + Phase 26 + Phase 27 死代码清理 + 审计批次 A 安全收口 + Phase 28 自主护栏 + Phase 31 评估二期 + Phase 30 进化闭环 + Phase 29 记忆结构化）
 - 依据：《Agent 全书笔记》10 章 + Claude Code 公开架构分析（arxiv 2604.14228）+ Codex agent loop 公开资料
 - 模式：Strangler 不变；LangGraph 仅 `agentix/agent/graph/`；domain 零第三方
 - 本批执行范围（已拍板）：**Phase 15 全 + Phase 17 离线可做部分**；16/18/19/20 挂起待批
@@ -17,7 +20,7 @@
 | 权限 / HITL | deny-first 多模式；审批 = 正常控制流 | **三套 HITL 互不连通**（Gate / Approval / Sidecar） |
 | 扩展 | Skills 渐进披露 + Hooks 生命周期 | 有 MCP/工具选择；无 Skills/Hooks 等价物 |
 | 子代理 | 隔离上下文，只回摘要给父 | Manager/Peer 测通，无生产拓扑 |
-| 评估 | 确定性验证器优先；baseline 可阻断 | 机制齐，**`baseline_predictions.jsonl` 不存在、`quality.json={}`** |
+| 评估 | 确定性验证器优先；baseline 可阻断 | 机制齐，【历史】**基线与门禁曾于 2026-10-25 落地**（`baseline_predictions.jsonl` 102 条 + 生成的 `quality.json` 五键；口径边界见 `docs/项目实现手册.md` §20.5）〔评测集与基线 2026-10-26 下线删除，打分代码 `evals/run_eval.py`/`evals/quality_gate.py` 保留在仓〕 |
 | 进化 | 双循环 + 三防线 | 双循环测通，**无生产信号源**（`OnlineLoopRecorder` 为孤岛） |
 | multi_agent 消融 | — | E/F/G 被 `run_ablation` 诚实拒绝（UNWIRED） |
 
@@ -127,9 +130,17 @@ result: LoopResult = await loop.run(task)  # 永不抛，终态 completed|failed
 
 ### 4.1 机制结论（调研已核实）
 
-- 门禁是 **数据门**，非开关门：`quality_gate.py` 按 baseline 是否含 metric key 决定 NOT-ENFORCED / 建档 / PASS / FAIL。
-- CI `eval-offline`：缺 `evals/baseline_predictions.jsonl` → 整步跳过（大声 warning）。
-- CI 自己的建档写回 **随 runner 丢失**；必须**本地播种并 commit** `quality.json`（5 个 key：`route_accuracy`, `citation_hit_rate_applicable`, `citation_correctness_applicable`, `must_contain_applicable`, `reject_accuracy_applicable`）。
+- 门禁是 **数据门**，非开关门：`quality_gate.py` 按 baseline 是否含 metric key 决定 PASS / FAIL / 未武装。
+  **2026-10-26 口径变更**：未武装拆成两态——默认 `NOT-ARMED`（缺基线或缺键 ⇒ `::error` + 退出码 2、
+  **不改动基线文件**），显式 `--allow-bootstrap` 才走 `NOT-ENFORCED`（写当前值建档 + 退出 0）。
+  于是「从 committed 基线删一个键」不再是省事的放宽方式，而是一次红。详见 `docs/项目实现手册.md` §20.5。
+- CI `eval-offline`〔已随评测集下线于 2026-10-26 移除，复现 `grep -nE "quality_gate|eval-offline" .github/workflows/ci.yml` → 0 命中；以下行为作为「复活后仍适用的口径」保留〕：缺 `evals/baseline_predictions.jsonl` → 整步跳过（大声 warning + step summary）。
+  该档 2026-10-25 本地录制落盘〔**从未进入任何 git 提交**（本仓最新提交 `ee2bad8` 是 2026-10-23，其后产物全在工作树里）；**2026-10-26 从工作树删除，现树不存在**。复现按**文件存在性**判：`ls evals/baseline_predictions.jsonl` ⇒ 不存在、`git cat-file -e HEAD:evals/baseline_predictions.jsonl` ⇒ fatal；因此 `git status --porcelain evals/` 对它**不显** ` D`——该命令现测 ` D` 恰三条，是曾提交的 `legal_golden.jsonl`／`baselines/quality.json`／`promptfoo_tests.jsonl`，不含该档〕，原由内容守卫 `test_committed_predictions_cover_the_golden_set_exactly`〔该守卫已随评测集下线批次退掉；判据限定在 `tests/`：`grep -rn "test_committed_predictions_cover_the_golden_set_exactly" tests/` ⇒ 只余 `tests/test_p41_doc_consistency.py:87` 一条注释（全树另有 `docs/项目实现手册.md`、`evals/README.md`、`docs/runbooks/评测基线录制.md`、`CHANGELOG.md` 等历史登记命中）⇒ 「删除变异 1 红」这条**现在不再成立**〕盯住
+  （存在 · 题数与金标同源 · id 唯一 · id 集合双向相等），删除变异从"0 红"变成"1 红"。
+- CI 自己的建档写回 **随 runner 丢失**；基线必须由 `evals/write_quality_baseline.py` 从真实
+  `run_eval` summary **生成**后本地提交（5 个 key：`route_accuracy`, `citation_hit_rate_applicable`,
+  `citation_correctness_applicable`, `must_contain_applicable`, `reject_accuracy_applicable`）——
+  `ci.yml` 的 `eval-offline`〔已随评测集下线于 2026-10-26 移除，复现 `grep -nE "quality_gate|eval-offline" .github/workflows/ci.yml` → 0 命中〕 **不带** `--allow-bootstrap`（由用例钉住），所以 CI 从不建档——此口径在评测复活后仍适用。
 - 真实 record **需全栈机**（LM Studio/OpenAI 兼容端点 + Docker Redis/Neo4j/Milvus + keys）；**无 fixture 路径**；**拒绝手工伪造**。
 - 轨迹：`TRAJECTORY_SINK=jsonl` 机制已完备但默认 `memory` 未开；导出到 `evals/baselines/` 会与 `quality.json` 碰撞（`load_packages` 见无 `steps` 即 raise）→ 导出须用 **`evals/baselines/traces/` 子目录**。
 - `OnlineLoopRecorder`（`agent/evolution/loop.py`）零写契约，生产零调用 → 接 `chat_service` 三处 `record_request` 漏斗。
@@ -140,16 +151,20 @@ result: LoopResult = await loop.run(task)  # 永不抛，终态 completed|failed
 |---|------|------|-----|
 | 17.1 | `chat_service.py` 三处漏斗（success ~627 / agent error ~681 / internal error ~712） | 调 `OnlineLoopRecorder.record(trace_id, success, first_error_stage, cost_usd, tags)` | 岛变有源；零写不变量保持（不传 patch/payload/apply） |
 | 17.2 | `evals/trajectory_regression.py` 或文档/辅助 | 导出目标改为 `evals/baselines/traces/` 子目录约定；避免 quality.json 碰撞 | 机制测试绿 |
-| 17.3 | `evals/README.md` §9、`docs/architecture/runtime-guardrails.md` §12.5、`docs/guides/testing.md` §4 | 写明武装顺序：全栈 `--record` → offline score → 本地五次 `quality_gate.py` 播种 → **手动 commit** `quality.json`；CI 不会替你持久化建档 | 文档与实况一致 |
+| 17.3 | `evals/README.md` §9、`docs/architecture/运行时护栏.md` §12.5、`docs/guides/测试分层策略.md` §4 | 写明武装顺序（**2026-10-25 改过一轮，2026-10-26 再改一轮**）：全栈 `--record` → offline score → `write_quality_baseline.py` **生成** `quality.json` → 提交；CI 既不会替你持久化建档，也**不再建档**（缺输入即 `NOT-ARMED` 硬失败） | 文档与实况一致 |
 | 17.4 | （可选，时间允许） | CI 增 trajectory 步骤（合成包，明示不守真值） | 不强制本批 |
 
 ### 4.3 本批明确不做（**blocked**：需全栈机器，另期）
 
 > 2026-09-26 实况：本机无 Docker / LM Studio / Redis / Neo4j / Milvus → 全栈 record **blocked**，
 > 诚实标注，**拒绝伪造任何 baseline**。Phase 20 进化 runner 对缺基线门判 `not_enforced` 且 **fail-closed（≠通过）**。
+>
+> **2026-10-25 补记**：录制的最低机位已具备（本机 LM Studio + SQLite/FAISS 兜底通道；Milvus 与 `kb_ingest`
+> 未起 ⇒ kb 子图按「通道失败 ≠ 查不到」走 degraded，口径见 `evals/README.md` §5.4，旧 §5.6）。上面两项因此落地，
+> 而"**拒绝伪造**"这条纪律未变——committed 基线只能由 `evals/write_quality_baseline.py` 从真 summary 生成。
 
-- [ ] `run_eval.py --record` → 提交 `baseline_predictions.jsonl`
-- [ ] 本地播种并提交非空 `quality.json`（五个 metric 真值）
+- [x] `run_eval.py --record` → 提交 `baseline_predictions.jsonl` —— **2026-10-25 落地**（本机 LM Studio + SQLite/FAISS，102 条逐行 flush 录制；流程见 `docs/runbooks/评测基线录制.md`）〔2026-10-26 随评测集下线失效，基线文件已删、录制代码保留〕
+- [x] 本地播种并提交非空 `quality.json`（五个 metric 真值）—— **2026-10-25 落地，但不是"播种"**：五个键由 `evals/write_quality_baseline.py` 从那次的 summary **生成**，零分母与 0.0 值一律不建档（纪律 7：门禁基线不许是手抄本）〔2026-10-26 随评测集下线失效，`quality.json` 已删、生成器代码保留〕
 - [ ] 真实生产轨迹回流 + 真前缀回归 baseline
 - [x] LLM-judge —— **已于 Phase 26 去 stub**（真实端点出分 + `judge_model` 标注 + 诚实失败，默认关不进门禁；见 `Phase21-26_规划.md` §3 Phase 26 落地注）
 - [ ] 手工伪造任何 baseline 文件
@@ -157,7 +172,7 @@ result: LoopResult = await loop.run(task)  # 永不抛，终态 completed|failed
 ### 4.4 Phase 17 离线部分 DoD
 
 - [x] `OnlineLoopRecorder` 三漏斗有调用；单测证明 success/error 路径均 record
-- [x] 导出路径约定无 quality.json 碰撞
+- [x] 导出路径约定无 quality.json 碰撞〔2026-10-26 随评测集下线失效：`quality.json` 已删，碰撞前提暂不存在〕
 - [x] 文档武装顺序与 CI 行为一致
 - [x] 守卫 + ruff + mypy + 全量 pytest 绿
 
@@ -184,7 +199,7 @@ ToolExecutor.execute
 - [x] Permission modes（default / accept_edits / bypass）收敛到 Gate 配置面（`hitl_bridge.PermissionMode`）
 - [x] 组合根接线：`main.py` 仅在 `HUMAN_REVIEW_ENABLED=true` 时 `install_executor_hook()`
 - [x] `tests/test_agent_phase16_hitl_bridge.py` 27 用例 + 守卫（p17/p22/p35/p41/code_hygiene）+ ruff 全绿
-- [ ] 图内 `interrupt()`：**另期**（单列评估，对照 runtime-guardrails §8）
+- [x] 图内 `interrupt()`：**已落地**（F1e·A-P1-4，2026-10-03 统一执行链 Stage F；原 2026-09-26「另期」口径已被取代）。现行口径：`agentix/orchestration/langgraph/lg_builder.py::_wrap_execute_task_in_loop` 在四条件（py3.12+ × `HITL_IN_LOOP_ENABLED` × `HUMAN_REVIEW_ENABLED` × 非 stream ask 声明进环意图）满足时把 `langgraph.types.interrupt` 递给 **async** `execute_task` 节点——即 async 节点在 py3.12+ 可中断（守卫 `tests/test_p81_hitl_in_loop.py`，py3.12 真图挂起→`Command(resume=…)` e2e）；**「async 实测否决」仅在 py3.10 成立**（3.10 async `interrupt()` 必死锁，`tests/test_p32_tool_guards.py` 特征化），注入壳版本门控、3.10 诚实降级=不注入；`multi_tool.py` 内「async 节点实测否决」注释是对 KG 子图工具节点「包装式接线」的当时结论（py3.10 机位，且该节点未接进环壳），不是现行整体口径。
 
 ## 6. Phase 18 — 上下文分层（**完成** 2026-09-26）
 
@@ -244,7 +259,7 @@ ToolExecutor.execute
 | 伪造 baseline 污染门禁 | 明确拒绝；文档只指向真机 record |
 | quality.json 导出碰撞 | 强制 `traces/` 子目录 |
 | OnlineLoopRecorder 违反零写 | 只 record 聚合信号，不传任何写能力参数 |
-| 三套 HITL 复杂度 | Phase 16 先库级桥；图 interrupt 单列 |
+| 三套 HITL 复杂度 | Phase 16 先库级桥；图 interrupt 单列（**已于 F1e·A-P1-4 落地**，2026-10-03，默认关；现行口径见 §5 Phase 16 DoD 注记） |
 | 改主拓扑 | multi_agent 仅 flag；默认扁平 |
 | 缓存被配置打穿 | Phase 18：工具序稳定、配置 append 消息 |
 
@@ -254,7 +269,7 @@ ToolExecutor.execute
 
 1. 代码 + 默认关的 feature flag（如适用）
 2. 至少 1 条 E2E/守卫回归
-3. 文档：本规划勾选 / `module-inventory.md` §6 / interfaces 或 layers 如触达
+3. 文档：本规划勾选 / `模块清单.md` §6 / interfaces 或 layers 如触达
 4. `CHANGELOG.md` Unreleased 条目
 5. 全量 pytest + ruff + mypy（触及前端则 vue-tsc）
 6. 数字若变：README §11 日期格式 `YYYY-MM-DD` + 同步 `current-tree` / `dependency-map` / 规划 §9 基线
@@ -284,6 +299,6 @@ ToolExecutor.execute
 | Phase 19 | **完成**（2026-09-26）— supervisor 图切换 + ablation 开关 + wiring 翻转 + 指标流 + 离线验收 |
 | Phase 20 | **完成**（2026-09-26）— `EVENT_PORT_BACKEND`（memory/jsonl）+ webhook + `wait_external_event` + `evolution_run.py` + 门对齐 + 31 用例；Redis Stream 另期 |
 
-本批验证（2026-09-28 接口审查批次后复跑）：全量 **2303 passed / 14 skipped / 0 deselected**（`-m "not integration"`；skip 含 10 条 Redis Stream 契约用例无 Redis 时诚实跳过；原 2 条 `integration` 用例已随 `test_chat_api.py` 重写清零）；守卫 p17/p22/p35/p41/code_hygiene 全绿；`ruff` 主检 + 严格 select 全过；`mypy agentix/domain` 0 错；`vue-tsc` 0 错 + vitest **113** 全绿（本批 +20 契约测试：chat SSE 解析 7 + knowledge SSE 读取 5 + parseHttpError 6 + ChatMessageList 进度条 2）。Phase 17 全栈 record **blocked**（无 Docker/LM Studio，拒伪造 baseline）。
+本批验证（2026-09-28 接口审查批次后复跑）：全量 **2303 passed / 14 skipped / 0 deselected**（`-m "not integration"`；skip 含 10 条 Redis Stream 契约用例无 Redis 时诚实跳过；原 2 条 `integration` 用例已随 `test_chat_api.py` 重写清零）；守卫 p17/p22/p35/p41/code_hygiene 全绿；`ruff` 主检 + 严格 select 全过；`mypy agentix/domain` 0 错；`vue-tsc` 0 错 + vitest **113** 全绿（本批 +20 契约测试：chat SSE 解析 7 + knowledge SSE 读取 5 + parseHttpError 6 + ChatMessageList 进度条 2）。Phase 17 全栈 record **blocked**（无 Docker/LM Studio，拒伪造 baseline）。〔历史读数，现值只认根 `README.md` §11〕
 
-（Phase 27 终值存档：2026-09-27 全量 2291 passed / 14 skipped / 2 deselected，vitest 93。）
+（Phase 27 终值存档：2026-09-27 全量 2291 passed / 14 skipped / 2 deselected，vitest 93。〔历史读数，现值只认根 `README.md` §11〕）

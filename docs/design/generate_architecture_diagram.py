@@ -149,7 +149,7 @@ def _draw_architecture():
         "Memory · HITL Sidecar · 事件总线",
         "多智能体六失败模式检测",
         "Runtime 状态/步骤/生命周期",
-        "四维预算 BudgetManager",
+        "六维预算 BudgetManager",
         "Control Plane 登记/取消/归属",
         "MCP Client+Server 统一治理",
     ]
@@ -193,7 +193,7 @@ def _draw_agent_core():
                C_CORE, C_CORE_E, fontsize=7.8)
     _draw_node(ax, 8.0, 9.3, 4.0, 0.5, "Control Plane\n登记(有界FIFO) · 取消 · 预算归属 · 终态幂等",
                C_CORE, C_CORE_E, fontsize=7.8)
-    _draw_node(ax, 13.0, 9.3, 3.4, 0.5, "BudgetManager 四维预算\n步数 / LLM / 工具 / 耗时",
+    _draw_node(ax, 13.0, 9.3, 3.4, 0.5, "BudgetManager 六维预算\n步数 / LLM 调用 / 工具调用 / token / 时延 / 成本",
                C_CORE, C_CORE_E, fontsize=7.8)
 
     _draw_arrow(ax, 4.6, 9.3, 6.0, 9.3)     # Run API → Control Plane

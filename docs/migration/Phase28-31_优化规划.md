@@ -1,8 +1,11 @@
 # Phase 28–31 · 下一版优化迭代规划（v1.0）
 
-- 版本：v1.0（依据《深入理解 AI Agent》全书笔记分章版 11 文件对照修订 + `docs/architecture/audit-2026-09-28.md` 分期方案）
+> **文档状态**：历史 · 这是**当时**的规划或快照，**不代表当前实现**，不要按它判断现状。
+> 文档分层：唯一现行总览是根 [README](../../README.md)，实现细节见 [PROJECT_SPEC](../项目实现手册.md)；在办的优化见 [优化路线图台账](../design/性能与优化路线图.md)。
+
+- 版本：v1.0（依据《深入理解 AI Agent》全书笔记分章版 11 文件对照修订 + `docs/architecture/架构审计-2026-09-28.md` 分期方案）
 - 日期：2026-09-28
-- 前置：Phase 0–27 收口 + 接口审查批次完成（勾选真源 `module-inventory.md` §6 / `Phase15-20_深化规划.md` §11 / `Phase21-26_规划.md` §7）；现基线 **2463 passed / 14 skipped / 0 deselected** + 前端 vitest **121**（2026-09-28 审计批次 A 安全收口 + Phase 28 自主护栏 + Phase 31 评估二期 + Phase 30 进化闭环 + Phase 29 记忆结构化 + 穿插批次 B（B1/B3/B4/B2）+ 批次 C（C1/C2/C3）完成后；套件规模唯一真源见 README §11）
+- 前置：Phase 0–27 收口 + 接口审查批次完成（勾选真源 `模块清单.md` §6 / `Phase15-20_深化规划.md` §11 / `Phase21-26_规划.md` §7）；现基线 **2463 passed / 14 skipped / 0 deselected** + 前端 vitest **121**（2026-09-28 审计批次 A 安全收口 + Phase 28 自主护栏 + Phase 31 评估二期 + Phase 30 进化闭环 + Phase 29 记忆结构化 + 穿插批次 B（B1/B3/B4/B2）+ 批次 C（C1/C2/C3）完成后；套件规模唯一真源见 README §11）
 - 模式：Strangler 不变；flag 默认关、flag-off 字节等价；domain 零第三方；LangGraph 仅 `agentix/agent/graph/`；不新增数据库 / 新框架 / 新中间件
 - 范围决策（已拍板 2026-09-28）：**四主题 = Phase 28–31**；**审计批次 A（P0 安全）前置，B/C 随批穿插**；批一 = 审计 A + Phase 28 ∥ Phase 31，批二 = Phase 30，批三 = Phase 29；缺口 10–12 另期单列
 
@@ -19,13 +22,13 @@
 | 3 | 演化载体 KNOWLEDGE/PROGRAM | Ch9 §9.6–9.9 | `EvolutionCarrier`（`evolution/loop.py:34`）仅 PROMPT / TOOL_POLICY / MEMORY_CONSOLIDATION / VERIFIER_META 四值 | 缺 2 载体 |
 | 4 | 提案落盘（保留失败） | Ch9 §9.8.2 | 提案仅内存 `self.proposals`（`loop.py:153`，写点 :230/251/253/273/292）+ `evolution_run.py:132-143` stdout 报告；staged/applied/rejected **无持久档案** | 部分覆盖 |
 | 5 | 记忆结构化：JSON Cards / User as Code | Ch3 §3.5 / §3.6 | grep `json_card`：零命中；`UserProfile`（`long_term_memory.py:97`）为非结构化摘要式存储（`json.dumps(to_dict())` 键值） | 零覆盖 |
-| 6 | golden 难度分层 + 来源字段 | Ch7 §7.17 | `legal_golden.jsonl` 8 字段（id/question/route_type/expected_sources/expected_citations/must_contain/expect_reject/notes），**无 difficulty / source**；`feedback_ingest.py:82` 回流不写来源 | 零覆盖 |
+| 6 | golden 难度分层 + 来源字段 | Ch7 §7.17 | `legal_golden.jsonl`〔已于 2026-10-26 随评测集下线删除；以下 8 字段为当时结构，在用题集是 `evals/ceval_golden.jsonl`〕 8 字段（id/question/route_type/expected_sources/expected_citations/must_contain/expect_reject/notes），**无 difficulty / source**；`feedback_ingest.py:110` 回流不写来源（2026-10-27 实测；原引 `:82` 为行号腐烂） | 零覆盖 |
 | 7 | 「说对做错」声称 vs 工具日志校验 | Ch7 §7.9 | evals grep `claim_consistency\|claims`：零命中 | 零覆盖 |
 | 8 | Prompt Sensitivity + Privacy-aware 评估 | Ch7 §7.5 / §7.17 | evals 无 `sensitivity`（仅 ablation 框架 variant）；无 PII/privacy 处理；grep `privacy\|pii` 于 evals：零命中 | 零覆盖 |
 | 9 | Best@k | Ch7 §7.14 | `pass_at_k` / `pass^k` 已有（`run_eval.py:634` 可靠性指标组，`repeat` 采样 :1344）；grep `best_at_k\|best@k`：零命中 | 缺 |
 | 10 | Debate / 专家小组对等变体 | Ch10 §10.13 | grep 零命中；Manager 仅单形态 | 另期 |
 | 11 | 主动工具发现层 2 | Ch4 §4.7 | Phase 21 落第 1 层（`describe_groups()`）；主动发现/第 2 层明标另期 | 另期 |
-| 12 | 用户模拟器 | Ch7 §7.17 | grep 零命中 | 另期（需 LLM 端点） |
+| 12 | 用户模拟器 | Ch7 §7.17 | grep 零命中 | 另期（端点前置已于 2026-10-25 解除，实现未做——见 §5） |
 
 **跨章确认已达标（本版不重复立项）**：三道防线（`evolution/loop.py` 证据隔离 / staging / `touches_protected_verifier:194` + `regression_gate:157`）、Prompt injection 三阶段检测、轨迹回流（`evals/feedback_ingest.py`）、KB 索引版本（`INDEX_VERSIONS_TO_KEEP`）、Harness 五职责、L1–L4 上下文分层、Skills/Hooks、Agentic RAG（Phase 24）、六失败模式（Phase 25）、judge + 配对统计（Phase 26）、淘汰归档红线（Phase 24）。
 
@@ -40,7 +43,7 @@
 1. **澄清是正常控制流，不是异常**（Ch9 §9.3.2）：澄清应答不计失败、不入 HITL、不改路由终态；flag-off 时澄清路径零调用（字节等价）。
 2. **预算信息只读、走轨迹 append**：harness 写（模型不可自写，沿状态栏可信边界）；**动态剩余量不进状态栏**——状态栏位于静态前缀，动态值 = 每步换前缀 = 打穿 KV Cache（违反 Phase 22 原则 3「缓存纪律是架构约束」）；状态栏只允许加**常量**键且需 flag。
 3. **记忆结构化只增不改、不毁原始**（Ch3 §3.8）：新卡片字段只增不改旧序列化；叙事情节保留 Simple Notes 双轨；淘汰仍走 Phase 24 归档红线。
-4. **评估新指标只增不进门禁**：`evals/baselines/quality.json` 五 metric 门键与 `tests/test_ci_gate_contract.py` 断言零变化；新报告键（`difficulty_*` / `claim_consistency` / `sensitivity_*` / `privacy_*` / `best_at_k`）全部只增、仅进摘要。
+4. **评估新指标只增不进门禁**：`evals/baselines/quality.json`〔已于 2026-10-26 随评测集下线删除，CI 侧已无 `eval-offline` 挂载；本条门键口径保留为评测复活后仍适用的口径〕五 metric 门键与 `tests/test_ci_gate_contract.py` 断言零变化；新报告键（`difficulty_*` / `claim_consistency` / `sensitivity_*` / `privacy_*` / `best_at_k`）全部只增、仅进摘要。
 
 ---
 
@@ -48,24 +51,24 @@
 
 | 项 | 主题 | 批次 | 状态 | 依赖 |
 |----|------|------|------|------|
-| **前置** | 审计批次 A（P0 安全）+ B/C 穿插 | 前置/穿插 | 审计 A **已完成**（2026-09-28）；B/C **已完成**（2026-09-28，见 §8 与 `audit-2026-09-28.md` §1） | `audit-2026-09-28.md` §3 |
+| **前置** | 审计批次 A（P0 安全）+ B/C 穿插 | 前置/穿插 | 审计 A **已完成**（2026-09-28）；B/C **已完成**（2026-09-28，见 §8 与 `架构审计-2026-09-28.md` §1） | `架构审计-2026-09-28.md` §3 |
 | **28** | 自主护栏：需求澄清决策 + 预算意识 | 批一 | **已完成**（2026-09-28，§8） | Phase 18 状态栏、Phase 24 挂点先例 |
 | **31** | 评估二期：分层 golden + 声称一致性 + 敏感性/隐私 + Best@k | 批一 | **已完成**（2026-09-28，§8） | Phase 26 judge/`--compare`、`feedback_ingest`（已有） |
 | **30** | 进化闭环：载体扩展 + 提案落盘 + 睡眠学习 | 批二 | **已完成**（2026-09-28，§8） | Phase 12/20 进化链、Phase 24 task handler 先例 |
 | **29** | 记忆结构化二期：JSON Cards + User as Code | 批三 | **已完成**（2026-09-28，§8） | Phase 24 归档红线（已有） |
-| 另期 | 缺口 10 / 11 / 12（对等变体 + 虚拟 FS / 主动工具发现层 2 / 用户模拟器） | — | 另期 | 缺口 12 需 LLM 端点 |
+| 另期 | 缺口 10 / 11 / 12（对等变体 + 虚拟 FS / 主动工具发现层 2 / 用户模拟器） | — | 另期 | 缺口 12 端点前置已解除，实现未做（§5） |
 
 ```
 前置   审计批次 A（P0 安全，~1 天）；B1/B3/B4 随批穿插，B2 单列小批，C 随批尾
 批一   Phase 28 自主护栏 ∥ Phase 31 评估二期      （互相独立）
 批二   Phase 30 进化闭环
 批三   Phase 29 记忆结构化
-另期   缺口 10 对等变体 / 11 主动工具发现 / 12 用户模拟器（需端点）
+另期   缺口 10 对等变体 / 11 主动工具发现 / 12 用户模拟器（端点已具备、实现未做）
 ```
 
 ---
 
-## 3. 前置批次与穿插批次（源自 `docs/architecture/audit-2026-09-28.md` §3）
+## 3. 前置批次与穿插批次（源自 `docs/architecture/架构审计-2026-09-28.md` §3）
 
 > 执行细则、改法与验收以审计文档为准；完成后项移入审计文档 §1 表格并在本文 §8 勾选。**纪律：不引入新 auth 框架/中间件；安全修复默认开（语义收紧不属行为分叉，无需 flag）。**
 
@@ -106,7 +109,7 @@
 
 | # | 文件 | 改动 |
 |---|------|------|
-| 28.1 | `agentix/config/settings.py` + `selfcheck.py` + `.env.example` + `docs/architecture/configuration.md` 表行 | `CLARIFY_ROUTING_ENABLED: bool = False` **+ `BUDGET_NOTICE_ENABLED: bool = False`**（各五处同步 + p41 反向清单） |
+| 28.1 | `agentix/config/settings.py` + `selfcheck.py` + `.env.example` + `docs/architecture/配置管理.md` 表行 | `CLARIFY_ROUTING_ENABLED: bool = False` **+ `BUDGET_NOTICE_ENABLED: bool = False`**（各五处同步 + p41 反向清单） |
 | 28.2 | **新** agentix/application/agents/clarify.py | `should_clarify(...) -> ClarifyDecision` 纯函数（词表 + confidence 阈值）+ `clarify_reply()` 构造；词表常量模块级 |
 | 28.3 | `agentix/application/agents/general_handler.py`（`respond_to_general_query` / `create_kb_query` 函数体入口） | `_maybe_clarify` 前置；flag 关零调用；`clarify_armed` 单轮约束 |
 | 28.4 | `agentix/agent/context/engine.py:17`（`STATUS_BAR_TRUSTED_KEYS`）+ `simple.py` 同步 | +`max_iter`（构造侧 flag-gated 写入；白名单外键既有拒收逻辑复用） |
@@ -152,7 +155,7 @@
 
 | # | 文件 | 改动 |
 |---|------|------|
-| 29.1 | settings + selfcheck + `.env.example` + configuration.md | `MEMORY_PROFILE_CARD_ENABLED: bool = False`（原案 `MEMORY_CARDS_ENABLED` 与 R3-8 撞名，见决策表执行注记） |
+| 29.1 | settings + selfcheck + `.env.example` + 配置管理.md | `MEMORY_PROFILE_CARD_ENABLED: bool = False`（原案 `MEMORY_CARDS_ENABLED` 与 R3-8 撞名，见决策表执行注记） |
 | 29.2 | `agentix/application/services/long_term_memory.py`（`UserProfile:97` / `to_dict` :326 区） | `profile_card` 结构 + 双向兼容 + roundtrip |
 | 29.3 | **新** 派生纯函数（`long_term_memory.py` 同模块或 `memory_consolidation.py` 侧） | `derive_profile` + 约束检查（只标记不覆写） |
 | 29.4 | `agentix/application/services/task_handlers.py::handle_memory_consolidation`（:125 先例） | flag 开时追加重派生（幂等） |
@@ -196,7 +199,7 @@
 |---|------|------|
 | 30.1 | `agentix/agent/evolution/loop.py:34`（enum）+ `:157`（`regression_gate`）+ `:194`（保护路径核对） | +`KNOWLEDGE` / `PROGRAM` 两值 + 各自门元组；PROGRAM/VERIFIER 触保护路径 fail-closed |
 | 30.2 | `agentix/agent/evolution/loop.py`（`EvolutionProposal` + `self.proposals` 写点 :230/251/253/273/292） | 可选 `proposal_sink` 注入 + 三状态 append-only 落盘（含 `content_hash`、`rejected_reason`、时间戳） |
-| 30.3 | settings + selfcheck + `.env.example` + configuration.md | `EVOLUTION_PROPOSAL_LOG`、`EVOLUTION_SLEEP_ENABLED`（五处同步 + p41） |
+| 30.3 | settings + selfcheck + `.env.example` + 配置管理.md | `EVOLUTION_PROPOSAL_LOG`、`EVOLUTION_SLEEP_ENABLED`（五处同步 + p41） |
 | 30.4 | `agentix/application/services/task_handlers.py`（先例 :19/:87/:125） | `evolution_sleep` handler：幂等 claim（沿 `try_claim_consolidation` 模式）+ 门槛 + 端点预检 |
 | 30.5 | `evals/evolution_run.py`（stdout 报告 :132-143 旁） | 接 `proposal_sink`；报告键指向档案路径（stdout 语义不变） |
 | 30.6 | tests/test_agent_phase30_evolution_carriers.py | 见 DoD |
@@ -233,16 +236,16 @@
 | Prompt Sensitivity | `run_eval` 新 CLI `--sensitivity`：对**指令包装**做确定性微扰（语序/语气词替换表，不动问题本体与 `must_contain` 断言）→ N 变体间指标极差报告键 `sensitivity_*`；缺省关 = 现状字节等价 | Ch7 §7.5 |
 | Privacy-aware | PII 正则族（手机/身份证/银行卡，**纯 stdlib 离线**）命中 → 样本标 `privacy_flagged`、单列报告，**applicable 类指标分母排除**；不进门禁 | Ch7 §7.17；离线不外发 |
 | Best@k | 在既有 `repeat`（`run_eval.py:1344`）结果上补 `best_at_k`（rubric 类指标取 k 次 max；`pass_at_k`/`pass^k` 不动）；`repeat=1` 时标注 n/a | 只增；复用既有采样结构 |
-| 门禁 | `evals/baselines/quality.json` 门键 + `test_ci_gate_contract` 断言**零变化** | 原则 4 |
+| 门禁 | `evals/baselines/quality.json`〔已于 2026-10-26 随评测集下线删除〕门键 + `test_ci_gate_contract` 断言**零变化**（复活后仍适用） | 原则 4 |
 
 **改动清单（锚点已核实）**
 
 | # | 文件 | 改动 |
 |---|------|------|
-| 31.1 | `evals/legal_golden.jsonl`（8 字段现状） | 新行写 `difficulty`/`source`；旧行不动（缺省由 runner 兜底） |
+| 31.1 | `evals/legal_golden.jsonl`（8 字段，该集已于 2026-10-26 删除） | 新行写 `difficulty`/`source`；旧行不动（缺省由 runner 兜底） |
 | 31.2 | `evals/run_eval.py`（分组汇总 / `compute_pass_k` :634 旁 / CLI :1480 可靠性参数组） | `by_difficulty` 汇总 + `--sensitivity` + `best_at_k` + `privacy_flagged` 口径（全部报告键只增） |
 | 31.3 | **新** evals/claim_check.py | 条号正则族 + 声称↔来源比对 + 报告输出；无 trajectory 诚实 skip |
-| 31.4 | `evals/feedback_ingest.py:82` | `source="feedback"` 写入 |
+| 31.4 | `evals/feedback_ingest.py:110`（2026-10-27 实测；原引 `:82` 是空行，行号早已腐烂） | `source="feedback"` 写入 |
 | 31.5 | tests/test_agent_phase31_eval_layering.py | 见 DoD |
 
 **DoD**
@@ -271,11 +274,11 @@
 |----|------|
 | 缺口 10：Debate / 专家小组对等变体 + 虚拟 FS | 另期单列（需先定对等拓扑与信息增量判据复用面） |
 | 缺口 11：主动工具发现层 2（Ch4 §4.7） | Phase 21 明标另期；依赖层 1 元数据目录稳定 |
-| 缺口 12：用户模拟器（Ch7 §7.17） | 需 LLM 端点；端点到位前 blocked（拒伪造） |
+| 缺口 12：用户模拟器（Ch7 §7.17） | **前置已解除、实现未做（未做）**：LLM 端点已到位——judge 通路已于 Phase 26 去 stub（`evals/run_eval.py::judge_similarity` 真实端点出分，见 CHANGELOG「Phase 26 执行：评估三期——judge 去 stub + 配对显著性（2026-09-27）」），本机 LM Studio 自 2026-10-25 起实际用于 102 题基线录制（见 CHANGELOG「优化批次 P2-A」）；但用户模拟器本身全仓零实现（`grep -rni "simulator" agentix evals scripts tests` 零命中）。仍是另期 |
 | Ch8 后训练 / Ch5 coding-centric / Ch6 模态 / Ch10 A2A·Decentralized | 继承 `Phase21-26_规划.md` §4，依据不变 |
 | 完整 auth 体系 / 新中间件 | 审计批次 A 纪律：最小收口，不引框架 |
-| 合并双 SSE 解析框架 | `evolution-assessment.md` 拍板不动（B2 只做词汇双写） |
-| 手工伪造 baseline / quality.json / golden 分层数据 | 拒伪造纪律（分层字段只随真实新增行写入） |
+| 合并双 SSE 解析框架 | `架构演进评估.md` 拍板不动（B2 只做词汇双写） |
+| 手工伪造 baseline / quality.json（二者已于 2026-10-26 随评测集下线删除，代码保留） / golden 分层数据 | 拒伪造纪律（分层字段只随真实新增行写入） |
 
 ---
 
@@ -297,9 +300,9 @@
 
 ## 7. 交付物模板（每 Phase）
 
-1. 代码 + 默认关 feature flag（如适用；五处同步：settings / selfcheck / `.env.example` / configuration.md 表行 / p41 反向清单）
+1. 代码 + 默认关 feature flag（如适用；五处同步：settings / selfcheck / `.env.example` / 配置管理.md 表行 / p41 反向清单）
 2. 新测试文件 ≥1（flag-off 等价 + flag-on 行为 + 负路径）
-3. 文档：本规划勾选 / `module-inventory.md` §6 / `audit-2026-09-28.md` §1 移项（批次 A/B/C）/ CHANGELOG Unreleased 条目
+3. 文档：本规划勾选 / `模块清单.md` §6 / `架构审计-2026-09-28.md` §1 移项（批次 A/B/C）/ CHANGELOG Unreleased 条目
 4. 全量验证：
 
 ```powershell
@@ -311,7 +314,7 @@
 Set-Location web; npx vue-tsc --noEmit; npx vitest run
 ```
 
-5. 基线数字若变：README §11 + `current-tree.md` + `Agent_Core_2.0_规划.md` §9 头 + `Phase15-20_深化规划.md:4` + `Phase21-26_规划.md:5` + 本文件头部，共 7 处同步（CHANGELOG 旧条目为历史记录不改）
+5. 基线数字若变：README §11 + `现有目录树.md` + `Agent_Core_2.0_规划.md` §9 头 + `Phase15-20_深化规划.md:4` + `Phase21-26_规划.md:5` + 本文件头部，共 7 处同步（CHANGELOG 旧条目为历史记录不改）
 
 ---
 
@@ -320,14 +323,14 @@ Set-Location web; npx vue-tsc --noEmit; npx vitest run
 | 项 | 状态 |
 |----|------|
 | 本规划文档落盘 | 2026-09-28 v1.0（四主题 + 审计 A 前置 / B/C 穿插已拍板） |
-| 前置 · 审计批次 A（A1 归属校验 / A2 上传读鉴权 / A3 限流口径） | ✅ 完成（2026-09-28）：`v1/deps.py` `resolve_v1_caller`/`session_visible_to` + owner sidecar + per-params limiter；验收 `test_p48_ownership.py` 21 条 + `test_rate_limit_middleware` 扩 4 条；全量 2329 passed；已移入 `audit-2026-09-28.md` §1 |
+| 前置 · 审计批次 A（A1 归属校验 / A2 上传读鉴权 / A3 限流口径） | ✅ 完成（2026-09-28）：`v1/deps.py` `resolve_v1_caller`/`session_visible_to` + owner sidecar + per-params limiter；验收 `test_p48_ownership.py` 21 条 + `test_rate_limit_middleware` 扩 4 条；全量 2329 passed；已移入 `架构审计-2026-09-28.md` §1 |
 | 批一 · Phase 28 自主护栏 | ✅ 完成（2026-09-28）：`CLARIFY_ROUTING_ENABLED` + `BUDGET_NOTICE_ENABLED` 双 flag 五处同步；新 `clarify.py`（`should_clarify`/`clarify_reply`）+ `general_handler` 澄清门（`clarify_armed` 单轮约束，`AgentState` 新通道）+ `engine.py` 白名单 `max_iter`（adapter 构造侧 flag-gated）+ 新 `budget_notice.py`（loop observer + 流式 `langgraph_step` 检查点）；验收 `test_agent_phase28_autonomy_guards.py` 28 条；全量 **2357 passed** |
 | 批一 · Phase 31 评估二期 | ✅ 完成（2026-09-28）：新 `evals/claim_check.py`（条号正则 + 声称↔来源比对，纯 stdlib 无时钟）；`run_eval.py` 分层汇总 `difficulty_*` + `privacy_*`（PII 纯离线检测，applicable 分母排除、原文零留存）+ `claim_consistency` + `best_at_k` 5 分项 + `--sensitivity` 四变体 `sensitivity_range_*`（run_live 参数 / run_offline 自动检测，离线带 flag 拒绝 exit 2）+ `feedback_ingest` `source="feedback"`；golden 不动（缺省兜底，拒伪造）；验收 `test_agent_phase31_eval_layering.py` 40 条；全量 **2397 passed** |
 | 批二 · Phase 30 进化闭环 | ✅ 完成（2026-09-28）：`EvolutionCarrier` +`KNOWLEDGE`/`PROGRAM` 两值与门元组（`citation+scope_isolation` / `param_fidelity+verifier_logic_unchanged`，全用既有门键）+ 各自 payload 白名单（KNOWLEDGE 键/类型、PROGRAM 声明式 rules `{id,when,then}` 越界即拒、触保护路径 fail-closed）；`proposal_sink` 注入（`jsonl_proposal_sink` 三状态 append-only + `content_hash`+state 去重、`evals/baselines/` 路径构造即 ValueError、无 sink 内部状态与基线一致）；`EVOLUTION_PROPOSAL_LOG`/`EVOLUTION_SLEEP_ENABLED` 两 key 五处同步；`evolution_sleep` handler（flag→门槛→dry_run→端点预检→进程内幂等 claim→LLM 合成→白名单校验只 stage，`promote`/`run_regression` 禁调）+ `EVOLUTION_SLEEP_PROPOSAL_PROMPT` 外置 services/prompts；`evolution_run --proposal-log`（默认关 stdout 逐键一致，非法路径 exit 2）；验收 `test_agent_phase30_evolution_carriers.py` 41 条（Phase 12 载体断言同步六值）；全量 **2438 passed** |
 | 批三 · Phase 29 记忆结构化 | ✅ 完成（2026-09-28）：`MEMORY_PROFILE_CARD_ENABLED` 默认关（原案 `MEMORY_CARDS_ENABLED` 与 R3-8 撞名 ⇒ 独立开关）；`UserProfile` +`profile_card`（`to_dict` flag 闸只增键、旧 7 键不动；`from_dict` 恒读、无卡回退）；纯函数 `fold_profile_card`（增量/重放唯一核心：usage 极值/领域计数/事件内主题去重/`preferences` 观测——冲突**只标记不覆写**原值）+ `derive_profile`（`(created_at,session_id)` 排序重放、旧字段沿用首见序容量 50 语义、空日志不伪造卡）；`refresh_profile_card` 只更新卡不动旧字段（无事件/flag-off 零写入）；`memory_consolidation` handler flag 开且非 dry_run 才重派生入报告（flag-off 报告形状与基线一致）；prompt 卡片区段仅 flag 开拼装（Gotcha 3 已文档化）；`MEMORY_PROFILE_CARD_ENABLED` 五处同步；验收 `test_agent_phase29_memory_cards.py` 20 条；全量 **2458 passed** |
 | 批三 Phase 后 · 穿插批次 B/C | ✅ 完成（2026-09-28）：B1 → B3/B4 → B2 → C1 → C2/C3 全部落地，全量 2463 passed + vitest 121 + 守卫 162 + ruff（含 tests 门禁）/mypy/vue-tsc 全绿 |
-| 穿插 · 批次 B（B1/B3/B4，B2 单列） | ✅ 完成（2026-09-28）：B1 `STREAM_IDLE_TIMEOUT` 五处同步 + `asyncio.wait_for(__anext__)` 手动迭代（error+done 兜底/槽位归还，test_p14 新 4 条）；B3 `web/src/api/token.ts` 共享层（knowledge 原路径 re-export，chat 去反向依赖）；B4 `conversationSync.ts` BroadcastChannel `create/delete/rename` 三事件 + useConversationChat 合并接收 + useKbModalChat rename/delete 发送（vitest 4 条）；B2 单列：chat/retrieval 27 处 yield 双写 `event` + `_to_sse`/router 透传 + 前端两解析器「优先 event 回退 type」（双稳定两周期后弃 `type`，不合并解析框架）；已移入 `audit-2026-09-28.md` §1 |
-| 穿插 · 批次 C（C1/C2/C3） | ✅ 完成（2026-09-28）：C1 `ChatMessageList` >200 折叠中段（首 50 + 尾 150 + 可展开折叠条，vitest 2 条）；C2 tests 一次性清零 55 处（49 F401 --fix + 6 F841 手工保调用）+ B017 noqa 修正 + **删 tests per-file-ignores 豁免** + 门禁纳入 tests（README/audit §4/本规划 §7 三处文档 + `make lint`/ci.yml ruff 范围）；C3 删 `PROGRESS_STAGE_LABELS` 死导出（空态组件评估后不合并——语义/样式差异 + 跨模块合并与 B3 分层方向相逆，理由见 audit §1）；已移入 `audit-2026-09-28.md` §1 |
+| 穿插 · 批次 B（B1/B3/B4，B2 单列） | ✅ 完成（2026-09-28）：B1 `STREAM_IDLE_TIMEOUT` 五处同步 + `asyncio.wait_for(__anext__)` 手动迭代（error+done 兜底/槽位归还，test_p14 新 4 条）；B3 `web/src/api/token.ts` 共享层（knowledge 原路径 re-export，chat 去反向依赖）；B4 `conversationSync.ts` BroadcastChannel `create/delete/rename` 三事件 + useConversationChat 合并接收 + useKbModalChat rename/delete 发送（vitest 4 条）；B2 单列：chat/retrieval 27 处 yield 双写 `event` + `_to_sse`/router 透传 + 前端两解析器「优先 event 回退 type」（双稳定两周期后弃 `type`，不合并解析框架）；已移入 `架构审计-2026-09-28.md` §1 |
+| 穿插 · 批次 C（C1/C2/C3） | ✅ 完成（2026-09-28）：C1 `ChatMessageList` >200 折叠中段（首 50 + 尾 150 + 可展开折叠条，vitest 2 条）；C2 tests 一次性清零 55 处（49 F401 --fix + 6 F841 手工保调用）+ B017 noqa 修正 + **删 tests per-file-ignores 豁免** + 门禁纳入 tests（README/audit §4/本规划 §7 三处文档 + `make lint`/ci.yml ruff 范围）；C3 删 `PROGRESS_STAGE_LABELS` 死导出（空态组件评估后不合并——语义/样式差异 + 跨模块合并与 B3 分层方向相逆，理由见 audit §1）；已移入 `架构审计-2026-09-28.md` §1 |
 | 另期 · 缺口 10/11/12 | 另期单列（12 需端点） |
 | Phase 17 全栈 record | **blocked**（沿 `Phase21-26_规划.md` 附录 A；拒伪造 baseline） |
 
@@ -339,5 +342,5 @@ Set-Location web; npx vue-tsc --noEmit; npx vitest run
 
 1. **批一启动前置**：审计批次 A 三项完成并过 `test_p48_ownership.py` + `test_rate_limit_middleware` 扩展后，Phase 28 / 31 才进入执行（安全面先收口）。
 2. **穿插节奏**：B1（流式看门狗）在批一任意测试红/绿间隙插入（独立、可单测）；B3/B4 前端项合并一个前端批次；B2 单列小批（双写稳定两发布周期）；C 随批尾独占（防与功能改动混提交）。
-3. **每批验收**：§7 验证命令全绿 + §8 状态表勾选 + `module-inventory.md` §6 同步 + CHANGELOG 条目；批次 A/B/C 完成项移入 `audit-2026-09-28.md` §1。
+3. **每批验收**：§7 验证命令全绿 + §8 状态表勾选 + `模块清单.md` §6 同步 + CHANGELOG 条目；批次 A/B/C 完成项移入 `架构审计-2026-09-28.md` §1。
 4. **批间拍板**：批一验收后拍板批二（Phase 30），批二验收后拍板批三（Phase 29）。
