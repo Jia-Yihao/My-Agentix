@@ -198,10 +198,11 @@ def _isolate_default_registry() -> Any:
 
 
 class TestAstImportGuards:
-    def test_application_import_statements_exactly_two(self) -> None:
-        """全树口径 application import 语句**恰 2 条**（M3-3 收 8 条，M3-4 迁走
+    def test_application_import_statements_exactly_one(self) -> None:
+        """全树口径 application import 语句**恰 1 条**（沿革：M3-3 收 8 条，M3-4 迁走
         `create_research_plan` 真身后收口到 3 条，M3-5b 拆掉 `router._ensure_router`
-        后为 2 条；集合相等不写 `<=`）。"""
+        后 2026-10-29 时点为 2 条，M3-4b 卡2（2026-10-30）拆掉 `llm_factory` ⇒ 现 1 条；
+        集合相等不写 `<=`）。"""
         found = _application_imports_full_tree(_builder_tree())
         assert len(found) == EXPECTED_APPLICATION_IMPORT_COUNT, (
             f"application import 语句数漂移：实得 {len(found)}，冻结基准 "

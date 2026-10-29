@@ -14,7 +14,9 @@
 * ``multi_agent`` 默认 ``False``（``ablation.FLAG_DEFAULTS``）—— flag-off
   走扁平图，现网零变化；图选择在 ``lg_builder.get_active_graph``（惰性
   ``graph_getter`` 每请求读取，与 ``ablation.is_enabled`` 语义一致）。
-* 离线（无 ``OPENAI_API_KEY``）走**确定性结构审阅**，不发起 LLM 调用；
+* 离线（无 ``OPENAI_API_KEY``）走**确定性结构审阅**，不发起 LLM 调用；该离线路径同样要求
+  能力注入位已装配——``supervisor_dispatch`` 入口的 ``capabilities.provider("get_llm_client")``
+  先于任何 LLM 与离线分支（M3-4b 卡2），未装配即响亮失败；
   Reviewer 否决而 Manager 未收敛时 **fail-open 回退子 agent 草稿**
   （与扁平图同质量，绝不更差），否决事实记入 meta 供观测。
 * Reviewer 是「答案质量」审阅，不是安全闸门——安全闸门在 Phase 16 HITL。

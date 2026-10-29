@@ -1,6 +1,7 @@
 """p182：supervisor 三处治理闸（M3-4b 卡1，只加闸不拆边）。
 
-末条用例（生产可达探针）归 **卡2** 核销 G-1 一般项，判据见其 docstring。
+末条用例归 **卡2**：核销 G-2（`_state` 改复用），并为 G-1 留「端到端响亮失败」证据。
+G-1 要求的「三闸生产可达」本卡**未**取证——入口早取已把首个抛点前移到闸外，判据见该用例 docstring。
 
 验收口径：
 
@@ -103,8 +104,8 @@ async def test_outer_manager_capability_error_not_swallowed(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_unassembled_get_llm_client_production_path_raises_capability_error(monkeypatch):
-    """G-1（M3-4b 卡2 核销）：生产可达形态，不用合成异常。
+async def test_unassembled_get_llm_client_fails_loud_end_to_end(monkeypatch):
+    """G-1 部分核销（M3-4b 卡2）：端到端响亮失败，不用合成异常。
 
     已装配测试进程（`tests/conftest.py` 挂线 wiring）里清掉 `get_llm_client` 这一枚键，
     让 `supervisor_dispatch` 走**真实取源路径**——必须抛 `capabilities.CapabilityError`

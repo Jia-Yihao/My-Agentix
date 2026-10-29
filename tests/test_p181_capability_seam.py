@@ -10,8 +10,9 @@
    这三条一律不许放宽——所以注入位另立一把键集，本文件把「两把键集互不相交」钉成断言。
 2. **装配面**：装配后能力键集**全集相等**于能力清单（不是子集、不是成员判断；
    M3-5a 时点两键，M3-4b 卡2（2026-10-30）起三键）。
-3. **真身同源**：`resolve("offload_content") is artifact_store.offload_content`——注入位
-   只登记间接引用，不许存抄本、不许包一层。
+3. **真身同源**：三枚键各一条 `is` 断言（`resolve("offload_content") is artifact_store.offload_content`
+   等）——注入位只登记间接引用，不许存抄本、不许包一层，更不许把工厂本身当 thunk
+   （那样 `resolve` 会在每次调用时现造客户端）。
 4. **fail-closed 面**：未注册键 ⇒ `CapabilityNotRegistered`，且异常文本含
    `node_registry.WIRING_HINT`；`require` 一次列全缺失名；重复注册默认拒绝（`override=True`
    才放行）；`provider` 返回 thunk 本身、`resolve` 每次现取不缓存。
@@ -23,7 +24,9 @@
    `agentix.application` import == 0；全仓 `agentix/orchestration/**` 同类语句 == 5，
    且分布恰为 `lg_builder.py` 3 + `lg_supervisor.py` 2（M3-5a 落地时的读数；
    2026-10-29 的 M3-5b 收掉 `lg_builder` 的 `router._ensure_router` 一条后是
-   **== 4，分布 `lg_builder.py` 2 + `lg_supervisor.py` 2**，判据取自本文件的
+   **2026-10-29 时点 == 4，分布 `lg_builder.py` 2 + `lg_supervisor.py` 2；
+   2026-10-30 的 M3-4b 卡2 拆掉 3 条 `llm_factory` ⇒ 现 == 1，分布只剩
+   `lg_builder.py` 1（那条是 `lg_prompts`，归 M3-6）**，判据取自本文件的
    `EXPECTED_RESIDUAL_TOTAL` / `EXPECTED_RESIDUAL_EDGES` 两个常量）。
 7. **消费者行为等价**：patch application 侧模块属性后 `contract._offload_text` 必须读到
    降级实现——**thunk 每次现取这条语义由本文件的
@@ -38,8 +41,10 @@
    注入位再取默认 store（`contract.py::resolve_evidence_ref` 的 `store is not None` 短路逐字
    保持，HEAD `c3acb8e` 实测该语句在 `:283`）；**未装配态 + 显式 `store`**
    仍必须能解析（返工项 R1 的守卫：显式传 store 本就不需要任何装配）。
-8. **未装配态 fail-closed 探针**：subprocess 起干净解释器，只 import `contract` 并调
-   `_offload_text` ⇒ 必须抛 `CapabilityNotRegistered`（与 M3-3 的 P1/P2 探针同形态）。
+8. **未装配态 fail-closed 探针**：subprocess 起干净解释器——只 import `contract` 并调
+   `_offload_text` ⇒ 抛 `CapabilityNotRegistered`（与 M3-3 的 P1/P2 探针同形态）；
+   以及 import `lg_supervisor` 并调 `supervisor_dispatch` ⇒ 入口早取即抛
+   `CapabilityNotRegistered`（M3-4b 卡2 新增）。
 
 ## 验收口径
 
@@ -78,6 +83,7 @@ from typing import Any, Dict, List, Tuple
 
 import pytest
 
+import agentix.application.agents.llm_factory as llm_factory
 import agentix.application.services.artifact_store as artifact_store
 from agentix.orchestration import capabilities, node_registry
 from agentix.orchestration.capabilities import (
@@ -185,6 +191,7 @@ class TestAssemblySurface:
         """真身同源：注入位返回的就是应用侧当前模块属性，不是抄本、不是包装。"""
         assert capabilities.resolve("offload_content") is artifact_store.offload_content
         assert capabilities.resolve("get_artifact_store") is artifact_store.get_artifact_store
+        assert capabilities.resolve("get_llm_client") is llm_factory.get_llm_client
 
 
 # ---------------------------------------------------------------------------
@@ -501,8 +508,9 @@ print("OUTCOME: no-raise (BAD)")
 class TestUnwiredProcessFailsLoud:
     def test_contract_without_assembly_raises_capability_not_registered(self) -> None:
         """干净解释器（不 import 任何装配根）只 import `contract` 并调 `_offload_text`
-        ⇒ 必须抛 `CapabilityNotRegistered` 并带 `WIRING_HINT`——本批唯一的现况行为变化：
-        未装配态从「隐式可用」变「响亮失败」。"""
+        ⇒ 必须抛 `CapabilityNotRegistered` 并带 `WIRING_HINT`——M3-5a 时点本批唯一的现况行为变化：
+        未装配态从「隐式可用」变「响亮失败」（2026-10-30 的 M3-4b 卡2 另落了一条 supervisor
+        侧探针，故「唯一」只对 M3-5a 当时成立）。"""
         proc = _run_probe(_UNWIRED_PROBE)
         assert (
             proc.returncode != 0
