@@ -23,6 +23,17 @@ from sqlalchemy.orm import Session
 
 from agentix.config.settings import DISPLAY_TZ
 
+# M3-3（§7.5 第②/③步的接线位）+ M3-5b（挂线位提前）：图节点经注册表**调用期**解析，
+# 而 `lg_builder` 的取源块自 M3-5b 起在**import 期**就要经注册表现取真身
+# `route_query` 的 `Literal` 注解 ⇒ 本挂线位必须排在下面那条 `lg_builder`
+# import **之前**，否则 `lg_builder` 在自己的模块体里抛 `NodeNotRegistered`。
+# **任何**经本服务跑到图的进程（含 evals/、bench/ 的直调入口——它们不 import 装配根
+# agentix/main.py / agents/main.py）都必须在节点被调用前完成注册；本模块是这些
+# 进程的共同咽喉点。已实测无环：除 interfaces/http/v1/chat.py 外无人顶层 import
+# 本模块，wiring 侧的 handler 模块都不反向 import 本服务。顺序契约由
+# tests/test_p180_builder_shells.py::TestWiringPrecedesBuilderImport 的 P4 探针钉住。
+import agentix.application.wiring  # noqa: F401 - 装配期注册节点 handler（§7.5 第②步；见上方注释）
+
 from agentix.orchestration.langgraph import lg_builder
 from agentix.orchestration.langgraph.graph_config import durability_kwargs, thread_config
 # LG-3-6：drain 控制面与 ``GraphDrained`` 都从适配层（policies.py）转出——
@@ -56,12 +67,6 @@ from agentix.domain.ports import (
     SessionCreatePayload,
     SessionRepositoryPort,
 )
-# M3-3（§7.5 第②/③步的接线位）：图节点自本批起经注册表**调用期**解析，而**任何**
-# 经本服务跑到图的进程（含 evals/、bench/ 的直调入口——它们不 import 装配根
-# agentix/main.py / agents/main.py）都必须在节点被调用前完成注册；本模块是这些
-# 进程的共同咽喉点。已实测无环：除 interfaces/http/v1/chat.py 外无人顶层 import
-# 本模块，wiring 侧的 handler 模块都不反向 import 本服务。
-import agentix.application.wiring  # noqa: F401,E402 - 装配期注册节点 handler（§7.5 第②步；见上方注释）
 
 # P0-2(c)：agent 图执行的进程内并发上限（防 LLM 上游雪崩）。
 # Python 3.10 的 asyncio 原语在构造时不绑定事件循环，模块级创建安全。

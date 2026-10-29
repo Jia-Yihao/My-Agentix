@@ -30,6 +30,10 @@
    注册表为空（评测/基准链路零影响）；P2：同解释器对图 `ainvoke` 以
    `NodeNotRegistered` 响亮失败（不许有 import 期快照兜底）；P3：import
    chat_service 后注册表恰为 wiring 的 10 键。
+5b. **import 顺序契约守卫（M3-5b）**：P4 探针用 `sys.meta_path` 在
+   `lg_builder` 模块体**即将执行**的那一刻取样，断言注册表已含 `route_query`
+   ——取源块改经注册表后，本模块的 import 期就要求装配已加载，`chat_service`
+   的挂线位必须早于它对 `lg_builder` 的 import。
 6. **编译图等值守卫**：节点名集合与**完整边集**等于 p178 的
    `EXPECTED_GRAPH_NODE_NAMES` / `EXPECTED_GRAPH_EDGES`（**引用**该模块，
    不在本文件抄第二份）；10 处 `builder.add_node` 的 kwargs 形态
@@ -501,6 +505,31 @@ from agentix.orchestration.node_registry import DEFAULT_REGISTRY
 print("NAMES:", sorted(DEFAULT_REGISTRY.names()))
 """
 
+_P4_ORDER_PROBE = """
+import os
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+import sys
+from importlib.abc import MetaPathFinder
+from agentix.orchestration import node_registry
+
+_TARGET = "agentix.orchestration.langgraph.lg_builder"
+
+
+class _Spy(MetaPathFinder):
+    # 取样点：lg_builder 的模块体**将要执行**的那一刻（find_spec 命中且仅首次）。
+    fired = False
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == _TARGET and not _Spy.fired:
+            _Spy.fired = True
+            print("ROUTE_QUERY_WIRED_BEFORE_LG_BUILDER:", "route_query" in node_registry.names())
+        return None
+
+
+sys.meta_path.insert(0, _Spy())
+import agentix.application.services.chat_service  # noqa: F401
+"""
+
 
 def _run_probe(code: str) -> subprocess.CompletedProcess:
     proc = subprocess.run(
@@ -542,6 +571,33 @@ class TestGraphBuildIndependentOfRegistry:
         names_line = next(ln for ln in proc.stdout.splitlines() if ln.startswith("NAMES:"))
         got = eval(names_line.split("NAMES:", 1)[1].strip())
         assert tuple(got) == EXPECTED_WIRED_NAMES, f"P3 注册键集 != wiring 10 键：{got}"
+
+
+# ---------------------------------------------------------------------------
+# 5b — import 顺序契约守卫（M3-5b 其一：取源动作只能在 import 期完成）
+# ---------------------------------------------------------------------------
+
+
+class TestWiringPrecedesBuilderImport:
+    def test_p4_registry_ready_before_lg_builder_body(self) -> None:
+        """P4：干净解释器 import chat_service 时，`route_query` 必须**先于**
+        lg_builder 模块体的执行进入注册表。
+
+        为什么需要这条守卫：lg_builder 的取源块（本批其二把它改经节点注册表现取
+        真身）要在建图（模块级 `graph = build_graph(...)`）之前把真源 `route_query`
+        的 `Literal` 注解挂到壳上 ⇒ **本模块的 import 期就要求装配已加载**，未装配时
+        直接抛 `NodeNotRegistered`（fail-closed，不做 import 兜底）。
+        chat_service 是本模块在非装配进程（`evals/`、`bench/` 直调入口）里的
+        共同咽喉点，它自己的 `import agentix.application.wiring` 若仍排在
+        `from agentix.orchestration.langgraph import lg_builder` 之后，
+        lg_builder 就会在 import 期抛 `NodeNotRegistered`——挂线位必须提前。
+        """
+        proc = _run_probe(_P4_ORDER_PROBE)
+        assert proc.returncode == 0, f"P4 解释器崩了：{proc.stderr[-800:]}"
+        assert "ROUTE_QUERY_WIRED_BEFORE_LG_BUILDER: True" in proc.stdout, (
+            "P4 顺序契约不成立：lg_builder 模块体即将执行时注册表里没有 route_query"
+            f"（chat_service 的挂线位晚于它的 lg_builder import）。读数：{proc.stdout!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
