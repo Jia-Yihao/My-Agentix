@@ -1,23 +1,21 @@
 """
 LangGraph agent builder - backward-compatible re-export layer.
 
-This module preserves all existing import paths while the actual implementations
-have been moved to dedicated modules:
-  - router.py: analyze_and_route_query, route_query, _heuristic_router, etc.
-  - guardrails.py: get_additional_info, AdditionalGuardrailsOutput
-  - image_handler.py: create_image_query, _generate_image
-  - file_handler.py: create_file_query
-  - general_handler.py: respond_to_general_query, create_kb_query
-  - code_handler.py: create_code_query
-  - constants.py: SCOPE_DESCRIPTION, GUARDRAILS_REJECT_MESSAGE, etc.
-  - llm_factory.py: get_llm_client
+handler 与路由判定不再顶层 import 具体模块（§7.5 第③步，M3-3）：本模块内的
+同名壳函数在**被调用时**才经 `agentix/orchestration/node_registry.py` 延迟解析
+真身并原样转发（键名映射见本文件「延迟解析壳」区——节点名与 handler 函数名本就
+不同，如节点 `code_agent` 的 handler 是 `create_code_query`）。签名与真身逐字
+一致由 `tests/test_p180_builder_shells.py` 的运行时守卫钉住。纯 re-export 别名
+（_heuristic_router / _extract_configurable / _coerce_to_bool /
+AdditionalGuardrailsOutput）已删——全仓 0 消费者，判据源在各自真身模块。
 
 Only create_research_plan and check_hallucinations remain here due to
 complex dependencies on kg_sub_graph internals.
 """
 
+import sys
 from functools import lru_cache
-from typing import cast, Any, Dict, List, Optional
+from typing import cast, get_type_hints, Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
@@ -46,32 +44,93 @@ from agentix.application.agents.kg_sub_graph.agentic_rag_agents.workflows.multi_
 from agentix.application.agents.llm_factory import get_llm_client
 from agentix.application.agents.router import _ensure_router
 from agentix.application.agents.constants import SCOPE_DESCRIPTION
-from agentix.application.agents.task_handler import execute_task
-from agentix.application.agents.code_handler import create_code_query
 from agentix.tools.registry_init import get_active_tools
+from agentix.orchestration import node_registry
 
-# Re-export all public symbols from new modules for backward compatibility
-from agentix.application.agents.router import (  # noqa: F401
-    analyze_and_route_query,
-    route_query,
-    _heuristic_router,
-    _extract_configurable,
-    _coerce_to_bool,
-)
-from agentix.application.agents.guardrails import (  # noqa: F401
-    get_additional_info,
-    AdditionalGuardrailsOutput,
-)
-from agentix.application.agents.image_handler import (  # noqa: F401
-    create_image_query,
-)
-from agentix.application.agents.file_handler import (  # noqa: F401
-    create_file_query,
-)
-from agentix.application.agents.general_handler import (  # noqa: F401
-    respond_to_general_query,
-    create_kb_query,
-)
+
+# ---------------------------------------------------------------------------
+# 延迟解析壳（M3-3，§7.5 第③步）
+# ---------------------------------------------------------------------------
+# 为什么是壳、而不是在 build_graph() 里 resolve：本模块在 **import 期**就执行
+# `graph = build_graph(checkpointer)`（见文件末尾），而 `evals/`、`bench/`、独立
+# 脚本经 chat_service 或直接 import 本模块拉起这张图，**都不加载装配根**
+# （实测：干净解释器 import lg_builder 后 DEFAULT_REGISTRY.names() 为空）。
+# 建图期解析会让这些入口在 import 那一刻抛 NodeNotRegistered——评测与基准当场挂掉。
+# 壳把解析点后移到**节点被调用时**：建图不依赖注册表，装配缺失则在首次执行点响亮
+# 失败（fail-closed，绝不静默降级）。
+#
+# 键名映射（照 agentix/application/wiring.py 的登记，不是本模块发明的第二真源）：
+# 8 个 handler 壳里只有 `create_code_query` 的**壳名 ≠ 注册键**——它解析的是
+# `"code_agent"` 键（wiring 登记 `code_agent` → `code_handler.create_code_query`，
+# 节点名与 handler 函数名本就不同，沿用改造前的映射）。其余壳的键与壳名逐字相同。
+#
+# 签名纪律：壳的参数名/kind（含 keyword-only 的 `config`）必须与真身逐字一致——
+# langgraph 的 config 注入按签名判定（去掉 `config` 形参则注入不到），节点名按
+# `__name__` 推断。返回注解**刻意不抄**：抄一份就是第二份契约源（AGENTS.md
+# 纪律 6 ④），签名一致性由 tests/test_p180_builder_shells.py 用
+# inspect.signature 运行时对比兜底。
+
+
+async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：调用时解析 `analyze_and_route_query` 并原样转发。"""
+    return await node_registry.resolve("analyze_and_route_query")(state, config=config)
+
+
+def route_query(state: AgentState):
+    """延迟解析壳（同步）：调用时解析 `route_query` 并原样转发。"""
+    return node_registry.resolve("route_query")(state)
+
+
+# 条件边的**静态枚举面**补注：langgraph 的 `BranchSpec.from_path` 按 path 函数返回
+# 注解里的 `Literal` 推断分支终点集合；壳刻意不在源码里**书写**这份 Literal（抄一份
+# 字面量 = 第二份契约源，AGENTS.md 纪律 6 ④），而是在定义期把真源 `router.route_query`
+# **求值后的注解对象**挂回壳上——值不在本文件落地，图的条件下拉枚举面与改造前逐位
+# 一致（等价基准：`tests/test_p178_node_registry.py` 的 EXPECTED_GRAPH_EDGES，18 条边；
+# 挂接失效时条件边塌成 `analyze_and_route_query → __end__`，该守卫当场变红）。
+# 必须挂**对象**而不是字符串：`get_type_hints(壳)` 以本模块 globals 求值，而本模块
+# 没有 `Literal` 名字——字符串形态会 NameError 被 langgraph 静默吞掉（无声塌缩）。
+# 真源经 `_ensure_router`（本模块既有的 router 侧依赖，:44 那条 import 属 M3-5 边界）
+# 的模块取，不新增一条 application import——本批的拆边计数判据是 15 → 8。
+_router_module = sys.modules[_ensure_router.__module__]
+_route_query_ret = get_type_hints(_router_module.route_query).get("return")
+if _route_query_ret is not None:
+    route_query.__annotations__["return"] = _route_query_ret
+del _route_query_ret, _router_module
+
+
+async def respond_to_general_query(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：调用时解析 `respond_to_general_query` 并原样转发。"""
+    return await node_registry.resolve("respond_to_general_query")(state, config=config)
+
+
+async def create_kb_query(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：调用时解析 `create_kb_query` 并原样转发。"""
+    return await node_registry.resolve("create_kb_query")(state, config=config)
+
+
+async def get_additional_info(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：调用时解析 `get_additional_info` 并原样转发。"""
+    return await node_registry.resolve("get_additional_info")(state, config=config)
+
+
+async def create_image_query(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：调用时解析 `create_image_query` 并原样转发。"""
+    return await node_registry.resolve("create_image_query")(state, config=config)
+
+
+async def create_file_query(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：调用时解析 `create_file_query` 并原样转发。"""
+    return await node_registry.resolve("create_file_query")(state, config=config)
+
+
+async def execute_task(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：调用时解析 `execute_task` 并原样转发。"""
+    return await node_registry.resolve("execute_task")(state, config=config)
+
+
+async def create_code_query(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：壳名 `create_code_query`，解析键是 **`code_agent`**（见上方映射注释）。"""
+    return await node_registry.resolve("code_agent")(state, config=config)
 
 
 def _extract_legal_sources(cyphers: Any) -> List[Dict[str, Any]]:

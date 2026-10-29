@@ -26,7 +26,11 @@ docstring 第 2 条：`resolve` 每次都走 thunk、不缓存）。这决定了
 
 - `agentix/main.py`（FastAPI 装配根）；
 - `agentix/application/agents/main.py`（独立 CLI 入口，不经 FastAPI 启动序列）；
-- `tests/conftest.py`（测试套件的等价装配根）。
+- `tests/conftest.py`（测试套件的等价装配根）；
+- `agentix/application/services/chat_service.py`（图执行服务的挂线位，M3-3 起）——
+  覆盖**不经 FastAPI/CLI 装配根的直调进程**（`evals/`、`bench/` 经 chat_service 或
+  直接 import lg_builder 拉起图；建图在 import 期完成、不触注册表，节点解析发生在
+  **调用期**，注册必须在此之前落定，本服务是这些进程的共同咽喉点）。
 
 ## 重复装配不做幂等保护
 

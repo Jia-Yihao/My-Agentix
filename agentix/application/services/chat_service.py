@@ -56,6 +56,12 @@ from agentix.domain.ports import (
     SessionCreatePayload,
     SessionRepositoryPort,
 )
+# M3-3（§7.5 第②/③步的接线位）：图节点自本批起经注册表**调用期**解析，而**任何**
+# 经本服务跑到图的进程（含 evals/、bench/ 的直调入口——它们不 import 装配根
+# agentix/main.py / agents/main.py）都必须在节点被调用前完成注册；本模块是这些
+# 进程的共同咽喉点。已实测无环：除 interfaces/http/v1/chat.py 外无人顶层 import
+# 本模块，wiring 侧的 handler 模块都不反向 import 本服务。
+import agentix.application.wiring  # noqa: F401,E402 - 装配期注册节点 handler（§7.5 第②步；见上方注释）
 
 # P0-2(c)：agent 图执行的进程内并发上限（防 LLM 上游雪崩）。
 # Python 3.10 的 asyncio 原语在构造时不绑定事件循环，模块级创建安全。
