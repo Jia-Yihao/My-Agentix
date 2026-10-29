@@ -55,7 +55,6 @@ from agentix.orchestration.strategies.multi_agent.isolation import (
     wrap_peer,
 )
 from agentix.orchestration import node_registry
-from agentix.orchestration.langgraph import lg_builder
 from agentix.orchestration.langgraph.lg_states import AgentState, InputState
 from agentix.config import settings
 
@@ -543,6 +542,13 @@ def build_supervisor_graph(checkpointer=None):
     节点：``message_window``（历史窗口化，同扁平）→ ``analyze_and_route_query``
     → ``supervisor_dispatch``（handler 不再是图节点，见 ROUTE_HANDLERS）。
     """
+    # M3-5b 起 `lg_builder` 的 import 期要读注册表（`route_query` 注解取源经
+    # node_registry，见 lg_builder.py 模块体）⇒ 本模块刻意不在顶层 import 它，
+    # 否则每个 import supervisor 的进程都先欠装配根一份（p71 TestLoadOrderSafety
+    # 被砸红的教训，判据钉在 p179 静态守卫）；调用期 import 若未装配，仍由
+    # `lg_builder` 自己抛 `NodeNotRegistered`（fail-closed，不在本模块兜底）。
+    from agentix.orchestration.langgraph import lg_builder
+
     builder = StateGraph(AgentState, input=InputState)
     builder.add_node(
         "message_window",
