@@ -47,9 +47,9 @@
    `"code_agent"` 键（wiring 登记 `code_agent` → `code_handler.create_code_query`），
    不是 `"create_code_query"`。
 8. **S2 收口（M3-2 遗留一般项）**：`_RegistryBackedHandlers` 对非静态键
-   「可写不可读」的不对称已在该类 docstring 明文声明；本文件钉住
-   「写入非静态键后 `in` / `iter` / `len` 均不可见、`get` 返回 default」这一
-   **已声明**行为（只声明，不改行为）。
+   「可写不可读」的不对称已在该类 docstring 明文声明；本文件钉住「写入非静态键后
+   `in` / `iter` / `len` 均不可见、`get` 返回 default」这一**已声明**行为。
+9. **取源 else 留痕守卫（M3-6 ⑪ G-3）**：钉住注解 if 的 else 与 warning 留痕在位。
 
 ## 验收口径
 
@@ -141,12 +141,12 @@ SHELL_SOURCE_MODULES: dict = {
     "agentix.application.agents.code_handler": {"create_code_query"},
 }
 
-#: lg_builder 全树 application import 的冻结白名单（1 条，多一条少一条都红）。
-#: 名称取 import 目标模块的**完整模块名**；条数由计数断言单独钉。
-#: 两条的归口：`lg_prompts` 由 p71 字面钉住（业务 prompt 留 application）、
-#: `llm_factory` 的消费者是 `check_hallucinations`（DEAD-CODE(P2-5) 有意不接线，
-#: 它与 supervisor 侧的同名边一起归 M3-4b）。第三条 `router._ensure_router` 已随
-#: M3-5b 拆掉——注解取源改经节点注册表
+#: lg_builder 全树 application import 的冻结白名单（当前 1 条，多一条少一条都红）。
+#: 名称取 import 目标模块名的**末段 basename**（判据本体见 :218 的 `rsplit(".", 1)[-1]`）；条数由计数断言单独钉。
+#: 现存 1 条 = `lg_prompts`：由 p71 字面钉住（业务 prompt 留 application）。
+#: 沿革（以下两条均已收口，不存在待归口项）：`llm_factory` 的消费者是
+#: `check_hallucinations`（DEAD-CODE(P2-5) 有意不接线），已随 supervisor 侧同名边
+#: 一起被 M3-4b 卡2 收下；`router._ensure_router` 已随 M3-5b 拆掉——注解取源改经节点注册表
 #: （2026-10-29 时点：全仓 `orchestration → application` 残留边 5 → 4）。
 #: （2026-10-30 时点：M3-4b 卡2 收下 `llm_factory` 这一条——`check_hallucinations`
 #: 体内取源改经能力注入位 `capabilities.resolve("get_llm_client")`，白名单余 1 条。）
@@ -774,3 +774,61 @@ class TestRegistryBackedDeclaredAsymmetry:
         assert ROUTE_HANDLERS.get("__nonstatic_key__", "default") == "default"
         with pytest.raises(KeyError):
             ROUTE_HANDLERS["__nonstatic_key__"]
+
+
+# ---------------------------------------------------------------------------
+# 9 — 注解取源 if 的 else 留痕守卫（M3-6 ⑪ G-3）
+# ---------------------------------------------------------------------------
+
+
+def _route_query_else_defects(node: ast.If) -> List[str]:
+    """判据：`ast.If` 的 `orelse` 非空且内含一条 `logger.warning(...)` 调用。
+
+    返回缺陷列表（空 = 合格）。接受任意 `ast.If` 入参——同一条用例用它同时
+    走真身与内联负样例，守卫不因「只测真树」失去敏感性（不读文件字面量凑判）。
+    """
+    defects: List[str] = []
+    if not node.orelse:
+        defects.append("if 分支没有 else：塌缩留痕缺失")
+        return defects
+    has_warning = False
+    for stmt in node.orelse:
+        for sub in ast.walk(stmt):
+            if (
+                isinstance(sub, ast.Call)
+                and isinstance(sub.func, ast.Attribute)
+                and sub.func.attr == "warning"
+                and isinstance(sub.func.value, ast.Name)
+                and sub.func.value.id == "logger"
+            ):
+                has_warning = True
+    if not has_warning:
+        defects.append("else 里没有 logger.warning 留痕调用")
+    return defects
+
+
+class TestRouteQueryAnnotationElseTrace:
+    def test_annotation_if_has_logger_warning_else_trace(self) -> None:
+        """`_route_query_ret is not None` 的取源 if 必须带 else 留痕（M3-6 ⑪ G-3）。
+
+        真身断言之外，同一条用例内用 `ast.parse` 内联构造「有 if 无 else」负样例
+        走同一 helper 断言判假——证明判据本身有牙齿，不是恒真。
+        """
+        target_if = next(
+            (
+                n
+                for n in ast.walk(_builder_tree())
+                if isinstance(n, ast.If)
+                and ast.unparse(n.test) == "_route_query_ret is not None"
+            ),
+            None,
+        )
+        assert target_if is not None, "lg_builder 取源 if（_route_query_ret is not None）不见了"
+        assert _route_query_else_defects(target_if) == [], (
+            "取源 if 的 else 留痕不合格（塌缩必须运行期留痕，见 lg_builder 注释段口径）"
+        )
+        negative = ast.parse(
+            "x = 1\nif x is not None:\n    y = x\n"
+        ).body[1]
+        assert isinstance(negative, ast.If)
+        assert _route_query_else_defects(negative), "负样例（无 else）应被判不合格——判据失去敏感性"
