@@ -142,8 +142,12 @@ node_registry.register(
 #
 # provider 仍必须是**每次现取的模块属性 thunk**（上面「模块形态」一节的同一条口径）：
 # 写 `capabilities.register("offload_content", artifact_store.offload_content)` 会把
-# 函数对象绑死在装配那一刻，测试 patch 应用侧模块属性就打不中——实测兼容面是
-# `tests/test_p78_index_cascade_isolate.py:227` / `:554` 的 `monkeypatch.setattr(store_mod, "offload_content", ...)`，
-# patch 的正是本文件所指向的那个模块属性。
+# 函数对象绑死在装配那一刻，测试 patch 应用侧模块属性就打不中——这条语义由
+# `tests/test_p181_capability_seam.py::TestConsumerBehaviorEquivalence::test_offload_text_observes_module_attr_patch`
+# 钉住。`tests/test_p78_index_cascade_isolate.py:227` / `:554` 的
+# `monkeypatch.setattr(store_mod, "offload_content", ...)` 走的是
+# `chat_service.py:376` / `context_engine.py:204` 函数体内的**直接 import** 路径，
+# 既不经 `contract.py` 也不经注入位，与本文件这两键无依赖关系，只是同一种模块属性 patch
+# 惯用法（旁证，不是前提）。
 capabilities.register("offload_content", lambda: artifact_store.offload_content)
 capabilities.register("get_artifact_store", lambda: artifact_store.get_artifact_store)

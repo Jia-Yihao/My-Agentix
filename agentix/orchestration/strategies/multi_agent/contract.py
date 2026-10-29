@@ -277,10 +277,9 @@ def resolve_evidence_ref(
     if not artifact_id:
         return None
     try:
-        get_artifact_store = capabilities.resolve("get_artifact_store")
-        target = store if store is not None else get_artifact_store()
+        target = store if store is not None else capabilities.resolve("get_artifact_store")()
         return target.get(artifact_id)
-    except Exception:  # noqa: BLE001 - 存储异常或能力未装配按不可解析处理
+    except Exception:  # noqa: BLE001 - 存储异常或未装配的默认 store 按不可解析处理
         return None
 
 
