@@ -30,8 +30,8 @@
    结果」（`is_awaitable_result`）——按 `iscoroutinefunction` 字面判会把类形式的
    `async __call__` 误判成同步。注意：本 helper 与 `agentix/orchestration/executor.py:68`
    的内联判据目前是**同式两源**（两份字面实现、零相互引用），不是同源；executor 侧改指
-   本 helper 属后续批次，该二源债待 organizer 登记入台账（本批边界不动文档，
-   `AGENTS.md` 纪律 6 ④ 尚未在本批闭合）。
+   本 helper 属后续批次，该二源债已登记入台账（`docs/design/审批与中断恢复优化规划.md` §8 的
+   M3-1 行待追认列与 §8.2 表 R 的 R1 行）；闭合前 `AGENTS.md` 纪律 6 ④ 仍未闭合。
 
 ## 命名与形态的先例
 
@@ -145,7 +145,8 @@ def is_awaitable_result(result: Any) -> bool:
     `async def __call__`」为 False，会把异步节点登记成同步（`AGENTS.md` 纪律 6 ④）。
     与 `executor.py:68` 的既有写法**同式两源**（两份 `hasattr(result, "__await__")`
     字面实现，互不引用），**不是**同源；executor 侧的内联判据须在后续批次改指本 helper，
-    届时本 helper 才成为唯一实现。该二源债待 organizer 登记入台账（本批边界不动文档）。
+    届时本 helper 才成为唯一实现。该二源债已登记入台账（同上指针：规划 §8 的 M3-1 行待追认列
+    与 §8.2 表 R 的 R1 行）。
     """
     return hasattr(result, "__await__")
 
