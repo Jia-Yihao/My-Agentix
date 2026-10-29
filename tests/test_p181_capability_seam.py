@@ -8,7 +8,8 @@
    `tests/test_p180_builder_shells.py` 的 P3 探针 `test_p3_chat_service_wires_ten_keys`、
    `test_p179` 的 `test_names_exactly_the_wired_ten`），
    这三条一律不许放宽——所以注入位另立一把键集，本文件把「两把键集互不相交」钉成断言。
-2. **装配面**：装配后能力键集**全集相等**于两键清单（不是子集、不是成员判断）。
+2. **装配面**：装配后能力键集**全集相等**于能力清单（不是子集、不是成员判断；
+   M3-5a 时点两键，M3-4b 卡2（2026-10-30）起三键）。
 3. **真身同源**：`resolve("offload_content") is artifact_store.offload_content`——注入位
    只登记间接引用，不许存抄本、不许包一层。
 4. **fail-closed 面**：未注册键 ⇒ `CapabilityNotRegistered`，且异常文本含
@@ -48,6 +49,7 @@
   （fail-closed / 零参 thunk 每次现取 / 同一个判定单源）。
 - 本批**只收 `artifact_store` 的两键**：后续批 M3-4b 会把 `llm_factory` 的 3 条边也接到
   同一注入位，届时第 2 组的两键清单要同批改为三键——指针同上（§8 台账 M3-4b 行）。
+  （2026-10-30 时点：M3-4b 卡2 已兑现，清单现为三键。）
   现在不预登记任何键：预登记会让「装配面全集相等」这条守卫提前变成另一批的判据。
 
 ## 隔离口径
@@ -96,10 +98,10 @@ CONTRACT_PATH = (
 )
 ORCHESTRATION_DIR = REPO_ROOT / "agentix" / "orchestration"
 
-#: 装配后的能力面全集（**两键，全集相等**）。后续批 M3-4b 会把 `llm_factory` 的三条边
-#: 也收到同一注入位，届时本清单显式改为三键并同批改注释——指针：
+#: 装配后的能力面全集（**三键，全集相等**）。M3-4b 卡2（2026-10-30）已把
+#: `llm_factory` 的三条边收到同一注入位，本清单已由两键改为三键——指针：
 #: `docs/design/审批与中断恢复优化规划.md` §8 台账的 M3-4b 行。
-EXPECTED_CAPABILITY_NAMES = ["get_artifact_store", "offload_content"]
+EXPECTED_CAPABILITY_NAMES = ["get_artifact_store", "get_llm_client", "offload_content"]
 
 #: 本批之后全仓 `orchestration → application` 的残留边分布。
 #: 2026-10-26 时点（M3-5a 落地后）：**8 − 3 = 5**，分布 `lg_builder.py` 3 +
@@ -108,14 +110,15 @@ EXPECTED_CAPABILITY_NAMES = ["get_artifact_store", "offload_content"]
 #: 按「相对 `agentix/orchestration/` 的文件路径 → 条数」冻结，键用相对路径而不是
 #: basename：同名文件散在子目录时 basename 会把两条边并成一格、把分布判错。
 EXPECTED_RESIDUAL_EDGES = {
-    "langgraph/lg_builder.py": 2,
-    "langgraph/lg_supervisor.py": 2,
+    "langgraph/lg_builder.py": 1,
 }
 #: 全仓残留总数，由 §8.3 的批次划分决定（`lg_prompts` 一条与 `llm_factory` 三条
 #: 分别归 M3-6/M3-4b/M3-6，本批一律不动；`lg_prompts` 的字面终态判归见规划 §8 的 M3-5 行）。
 #: 2026-10-29 时点：M3-5b 收下 `router._ensure_router` 这一条 ⇒ 总数 5 → 4
 #: （`lg_prompts` 那条它字面钉在 p71，本批未动；`llm_factory` 三条仍归 M3-4b/M3-6）。
-EXPECTED_RESIDUAL_TOTAL = 4
+#: 2026-10-30 时点：M3-4b 卡2 把 `llm_factory` 三条收到能力注入位 ⇒ 总数 4 → 1
+#: （终态仅 `lg_builder.py` 的 `lg_prompts` 一条，归 M3-6 收口）。
+EXPECTED_RESIDUAL_TOTAL = 1
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +178,7 @@ class TestKeySetsAreDisjoint:
 
 
 class TestAssemblySurface:
-    def test_capability_names_are_exactly_the_registered_two(self) -> None:
+    def test_capability_names_are_exactly_the_registered_three(self) -> None:
         assert sorted(capabilities.names()) == EXPECTED_CAPABILITY_NAMES
 
     def test_resolved_providers_are_the_application_objects_themselves(self) -> None:
@@ -308,10 +311,11 @@ class TestStaticDependencyGuards:
         """本批的落点判据：`contract.py` 全树 0 条（改造前实测 3 条）。"""
         assert _application_imports(CONTRACT_PATH) == []
 
-    def test_orchestration_residual_edges_are_exactly_four(self) -> None:
-        """全仓 `agentix/orchestration/**` 的 application import **总数** 4 条
+    def test_orchestration_residual_edges_are_exactly_one(self) -> None:
+        """全仓 `agentix/orchestration/**` 的 application import **总数** 1 条
         （M3-5a 落地后是 5 条；2026-10-29 的 M3-5b 收掉 `lg_builder` 的
-        `router._ensure_router` 一条 ⇒ 现为 4 条）。"""
+        `router._ensure_router` 一条 ⇒ 2026-10-29 时点 4 条；2026-10-30 的
+        M3-4b 卡2 收下 `llm_factory` 三条 ⇒ 卡2 后 1 条）。"""
         total = sum(len(_application_imports(p)) for p in sorted(ORCHESTRATION_DIR.rglob("*.py")))
         assert total == EXPECTED_RESIDUAL_TOTAL, f"残留边总数漂移：实得 {total}"
 
@@ -481,6 +485,19 @@ def _run_probe(code: str) -> subprocess.CompletedProcess:
     return proc
 
 
+_UNWIRED_SUPERVISOR_PROBE = """
+import os, asyncio
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+import agentix.orchestration.langgraph.lg_supervisor as s
+from agentix.orchestration.langgraph.lg_states import AgentState, Router
+from langchain_core.messages import HumanMessage
+st = AgentState(messages=[HumanMessage(content="违约金怎么算？")])
+st.router = Router(type="general-query", logic="test")
+asyncio.run(s.supervisor_dispatch(st, config={}))
+print("OUTCOME: no-raise (BAD)")
+"""
+
+
 class TestUnwiredProcessFailsLoud:
     def test_contract_without_assembly_raises_capability_not_registered(self) -> None:
         """干净解释器（不 import 任何装配根）只 import `contract` 并调 `_offload_text`
@@ -492,4 +509,17 @@ class TestUnwiredProcessFailsLoud:
         ), f"未装配态竟静默成功（说明还有 import 期快照兜底）：{proc.stdout}"
         assert "CapabilityNotRegistered" in proc.stderr, f"stderr 无该异常名：{proc.stderr[-800:]}"
         assert WIRING_HINT in proc.stderr, f"stderr 无装配缺失短语：{proc.stderr[-800:]}"
+        assert "no-raise (BAD)" not in proc.stdout
+
+    def test_supervisor_dispatch_without_assembly_raises_capability_not_registered(self) -> None:
+        """未装配进程调 `supervisor_dispatch` ⇒ 入口早取 `get_llm_client` 必须响亮失败
+        （`CapabilityNotRegistered` + `WIRING_HINT` + 键名），而不是走到 `resolve("route_query")`
+        才抛 `NodeNotRegistered`、更不是静默成功——M3-4b 卡2 B3 入口检查的唯一行为学证据。"""
+        proc = _run_probe(_UNWIRED_SUPERVISOR_PROBE)
+        assert (
+            proc.returncode != 0
+        ), f"未装配态竟静默成功（说明入口没有早取装配检查）：{proc.stdout}"
+        assert "CapabilityNotRegistered" in proc.stderr, f"stderr 无该异常名：{proc.stderr[-800:]}"
+        assert WIRING_HINT in proc.stderr, f"stderr 无装配缺失短语：{proc.stderr[-800:]}"
+        assert "'get_llm_client'" in proc.stderr, f"stderr 无缺失键名：{proc.stderr[-800:]}"
         assert "no-raise (BAD)" not in proc.stdout

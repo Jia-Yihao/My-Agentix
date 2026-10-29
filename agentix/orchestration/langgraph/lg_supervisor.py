@@ -278,9 +278,9 @@ def _structural_verdict(proposal: str) -> str:
 
 
 async def _llm_review(*, goal: str, proposal: str) -> str:
-    from agentix.application.agents.llm_factory import get_llm_client
-
-    llm = get_llm_client(temperature=0.0, tags=["multi_agent_review"], role="router")
+    llm = capabilities.resolve("get_llm_client")(
+        temperature=0.0, tags=["multi_agent_review"], role="router"
+    )
     messages = [
         {"role": "system", "content": _REVIEW_SYSTEM},
         {"role": "user", "content": f"目标：{goal}\n\n候选答案：{proposal}"},
@@ -290,9 +290,9 @@ async def _llm_review(*, goal: str, proposal: str) -> str:
 
 
 async def _llm_revise(*, goal: str, proposal: str, feedback: str) -> str:
-    from agentix.application.agents.llm_factory import get_llm_client
-
-    llm = get_llm_client(temperature=0.7, tags=["multi_agent_revise"], role="general")
+    llm = capabilities.resolve("get_llm_client")(
+        temperature=0.7, tags=["multi_agent_revise"], role="general"
+    )
     messages = [
         {"role": "system", "content": _REVISE_SYSTEM},
         {
@@ -331,6 +331,8 @@ async def supervisor_dispatch(
     （策略 / 会话 / 只读快照规模 / live registry 观测，见 §A-P2-1）。
     """
     goal = state.messages[-1].content if state.messages else ""
+    # 入口早取装配（M3-4b 卡2）：只取 thunk、不调用——resolve 会当场构造 ChatOpenAI。
+    capabilities.provider("get_llm_client")
     # 路由判定不再顶层 import（§7.5 第③步）：每次调用现取注册表真身、不缓存
     # （与 node_registry.resolve 的底座口径一致；注册表项 awaits=False/takes_config=False
     # 的声明以本行同步 `route_fn(state)` 形态为唯一事实来源，改这里必须同批改声明）。

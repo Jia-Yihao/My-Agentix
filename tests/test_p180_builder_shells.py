@@ -3,10 +3,11 @@
 ## 覆盖面
 
 1. **AST 双面守卫**：`lg_builder.py` 内指向 `agentix.application*` 的 import
-   语句（`ast.walk` 全树口径，函数体内延迟 import 也计）**恰 2 条**且目标模块
+   语句（`ast.walk` 全树口径，函数体内延迟 import 也计）**恰 1 条**且目标模块
    逐个落在冻结白名单里（M3-3 的「15 → 8」，M3-4 把 `create_research_plan` 真身
-   迁出后收口到 3 条，M3-5b 再拆掉 `router._ensure_router` ⇒ 现为 2 条：
-   `lg_prompts` / `llm_factory`）；
+   迁出后收口到 3 条，M3-5b 再拆掉 `router._ensure_router` ⇒ 2026-10-29 时点
+   2 条：`lg_prompts` / `llm_factory`；M3-4b 卡2（2026-10-30）拆掉 `llm_factory`
+   ⇒ 现为 1 条：`lg_prompts`）；
    **顶层**（module body 直接子节点）对 8 个被壳替代的 handler 模块的 import
    **恰 0 条**（M3-5b 之前唯一的例外是 `router._ensure_router` 辅助函数位，
    那条边已随本批拆掉——按「名字集合」显式放行的口子仍在，放行名单为空）。
@@ -140,20 +141,21 @@ SHELL_SOURCE_MODULES: dict = {
     "agentix.application.agents.code_handler": {"create_code_query"},
 }
 
-#: lg_builder 全树 application import 的冻结白名单（2 条，多一条少一条都红）。
+#: lg_builder 全树 application import 的冻结白名单（1 条，多一条少一条都红）。
 #: 名称取 import 目标模块的**完整模块名**；条数由计数断言单独钉。
 #: 两条的归口：`lg_prompts` 由 p71 字面钉住（业务 prompt 留 application）、
 #: `llm_factory` 的消费者是 `check_hallucinations`（DEAD-CODE(P2-5) 有意不接线，
 #: 它与 supervisor 侧的同名边一起归 M3-4b）。第三条 `router._ensure_router` 已随
 #: M3-5b 拆掉——注解取源改经节点注册表
 #: （2026-10-29 时点：全仓 `orchestration → application` 残留边 5 → 4）。
+#: （2026-10-30 时点：M3-4b 卡2 收下 `llm_factory` 这一条——`check_hallucinations`
+#: 体内取源改经能力注入位 `capabilities.resolve("get_llm_client")`，白名单余 1 条。）
 APPLICATION_IMPORT_BASENAME_ALLOWLIST: frozenset = frozenset(
     {
         "lg_prompts",
-        "llm_factory",
     }
 )
-EXPECTED_APPLICATION_IMPORT_COUNT = 2
+EXPECTED_APPLICATION_IMPORT_COUNT = 1
 
 
 def _builder_tree() -> ast.Module:

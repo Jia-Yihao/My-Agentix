@@ -58,6 +58,7 @@ import agentix.application.agents.research_handler as research_handler
 import agentix.application.agents.router as router
 import agentix.application.agents.task_handler as task_handler
 import agentix.application.services.artifact_store as artifact_store
+from agentix.application.agents import llm_factory
 from agentix.orchestration import capabilities, node_registry
 
 # ``ROUTE_HANDLERS`` 的 8 个键：唯一调用点形态是
@@ -151,3 +152,4 @@ node_registry.register(
 # 惯用法（旁证，不是前提）。
 capabilities.register("offload_content", lambda: artifact_store.offload_content)
 capabilities.register("get_artifact_store", lambda: artifact_store.get_artifact_store)
+capabilities.register("get_llm_client", lambda: llm_factory.get_llm_client)
