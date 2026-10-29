@@ -23,3 +23,10 @@ if str(PROJECT_ROOT) not in sys.path:
 # 内的 setdefault 在与 p35 组跑时因导入顺序失效）。
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
+# M3-2（§7.5 第②步）：测试套件的装配根，等价于 agentix/main.py 的挂线——
+# lg_supervisor 的 ROUTE_HANDLERS/route_query 自本批起经节点注册表解析，装配缺失
+# 即 fail-closed 抛 NodeNotRegistered，故注册线必须在任何测试模块 import 编排层之前
+# 生效。必须排在上面的 DATABASE_URL setdefault 之后（R3.8 教训：本行经 settings
+# 单例拉起 pydantic Settings，早于环境变量铺垫会把 .env 的部署形态冻进单例）。
+import agentix.application.wiring  # noqa: E402, F401 - 装配期注册节点 handler（§7.5 第②步）
+

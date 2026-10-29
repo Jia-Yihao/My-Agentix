@@ -21,6 +21,11 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from agentix.application.services.lightrag_service import get_lightrag_service
+
+# M3-2（§7.5 第②步）：装配期注册节点 handler。本文件是 FastAPI 装配根，建图路径
+# （_startup → lg_builder / supervisor 惰性 getter）在运行期才发生，模块级这里是
+# 唯一「先注册、后建图」的挂线位；编排层不得反向 import 本装配文件。
+import agentix.application.wiring  # noqa: F401 - 装配期注册节点 handler（§7.5 第②步）
 from agentix.config import settings
 from agentix.infrastructure.core import configure_logging
 from agentix.infrastructure.core.database import Base, get_engine
