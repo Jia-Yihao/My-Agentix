@@ -404,6 +404,11 @@ class TestDocumentedConfigKeys:
             "GRAPH_DURABILITY",
             # T19：审批等待 deadline（默认 0 = 关 = 不建扫描任务、不读库）
             "HITL_APPROVAL_DEADLINE_S",
+            # M2-1（拆 observability→retrieval 反向边）：三键真源上提到 config.settings，
+            # 沿纪律 4 五处同步（settings / selfcheck / .env.example / 本表 / 配置管理.md）
+            "LOG_JSON_ENABLED",
+            "LOG_LEVEL",
+            "TRAJECTORY_DIR",
         ):
             assert key in documented, f"{key} 未在配置文档中说明"
 

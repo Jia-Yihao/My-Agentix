@@ -91,6 +91,16 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "APP_ENV",
         "DEBUG",
         "LOG_LEVEL",
+        # M2-1（拆 observability→retrieval 反向边）：`LOG_JSON_ENABLED` / `LOG_LEVEL` /
+        # `TRAJECTORY_DIR` 三键的真源上提到 config.settings，前两个同时写进
+        # `.env.example`（纪律 4 ③）。不设 = 用代码默认值（JSON 日志开、根 logger
+        # INFO），属合法省略 ⇒ 不登记进来就会被 `compare_env_files` 判成"示例有、
+        # 本地缺"的缺项，启动自检刷 warning（`LOG_LEVEL` 本就在表内，见上一行）。
+        # `TRAJECTORY_DIR` **刻意不登记**：它在 `.env.example` 里是**注释行**——默认值是按
+        # 仓库根推导的绝对路径，写一行活值（尤其空值）会把落盘根变成"当前工作目录"，
+        # 与代码默认不等价。而 `parse_env_keys` 跳过 `#` 行 ⇒ 它压根不进 example_keys
+        # ⇒ 登记进来就是僵尸条目（`.qoder/rules/task-order.md` §5「登记不许腐化」）。
+        "LOG_JSON_ENABLED",
         # 企业化 P0-3：限流开关与参数不设 = 用默认值（关闭/120rpm/240burst）
         "RATE_LIMIT_ENABLED",
         "RATE_LIMIT_GLOBAL_RPM",

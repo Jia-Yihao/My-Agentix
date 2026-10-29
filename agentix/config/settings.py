@@ -4,10 +4,11 @@ Centralised application settings for My Agentix.
 
 import logging
 import secrets
+from pathlib import Path
 from typing import List, Literal, Optional
 from zoneinfo import ZoneInfo
 
-from pydantic import AliasChoices, Field, PrivateAttr, model_validator
+from pydantic import AliasChoices, Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,16 @@ def _default_app_version() -> str:
         return str(__version__)
     except Exception:  # noqa: BLE001 - 版本读取失败不应阻止启动
         return "0.0.0"
+
+
+def _default_trajectory_dir() -> str:
+    """轨迹落盘根的默认值：仓库根下的 `eval/results/traces`。
+
+    用 ``default_factory`` 而非模块级常量：仓库根要按**本文件位置**上溯三级推导，
+    在模块顶层算会把这层文件系统依赖固化成导入期副作用（settings 模块被大面积
+    import，导入期任何异常都会波及启动链）。
+    """
+    return str(Path(__file__).resolve().parent.parent.parent / "eval" / "results" / "traces")
 
 
 class Settings(BaseSettings):
@@ -224,6 +235,50 @@ class Settings(BaseSettings):
         default="",
         description="File path for the JSONL trajectory sink (required when TRAJECTORY_SINK=jsonl)",
     )
+
+    # 可观测性输出与落盘（M2-1 拆边：真源从 `agentix/retrieval/settings.py` 上提到此）。
+    # 这三个键是**通用配置**，不属于检索域；此前 observability 直读检索域 = 分层架构里的
+    # 反向边（口径与修法见 docs/architecture/分层架构与依赖规则.md §7.4）。
+    # **取值语义逐位复刻旧实现**（纯结构重构，行为零变化）：
+    # - `LOG_JSON_ENABLED` 旧实现是 retrieval 侧的 `_bool_env`，字符串只认 `1/true/yes`
+    #   （先 `.lower()`），`on`/`y`/`t` 判 **False**；pydantic 原生 bool 解析认这三者为真
+    #   ⇒ 不接管就会让同一份 `.env` 换出另一种日志格式，故用 before-validator 复刻取值集合。
+    # - `LOG_LEVEL` 旧实现无条件 `.upper()`（`debug` ⇒ `DEBUG`），故必须保留归一化。
+    # - `TRAJECTORY_DIR` 旧默认值是「仓库根 / eval / results / traces」的**字符串**
+    #   （目录名 `eval` 单数），observability 侧再 `Path(...)`；这里同为 str，逐字等价。
+    LOG_JSON_ENABLED: bool = Field(
+        default=True,
+        description="Emit application logs as JSON lines; false falls back to the plain-text formatter",
+    )
+    LOG_LEVEL: str = Field(
+        default="INFO",
+        description="Root logger level, upper-cased on read (legacy behaviour preserved)",
+    )
+    TRAJECTORY_DIR: str = Field(
+        default_factory=_default_trajectory_dir,
+        description="Root directory for trajectory dumps; a UTC-day subdirectory is created underneath",
+    )
+
+    @field_validator("LOG_JSON_ENABLED", mode="before")
+    @classmethod
+    def _bool_env_semantics(cls, value):
+        """复刻旧 `_bool_env`：字符串 `.lower()` 后只认 `1/true/yes`，其余（含 `on`/`y`/`t`）判 False。
+
+        刻意不依赖 pydantic 原生 bool 解析——它认 `on`/`y`/`t` 为真，与旧语义不同，
+        迁移后会把同一份 env 判成另一种日志格式（行为变化）。
+        非字符串输入（测试直接传 bool 构造 Settings）原样透传，交正常校验。
+        """
+        if isinstance(value, str):
+            return value.lower() in ("1", "true", "yes")
+        return value
+
+    @field_validator("LOG_LEVEL", mode="before")
+    @classmethod
+    def _upper_log_level(cls, value):
+        """复刻旧实现的无条件 `.upper()`（`debug` ⇒ `DEBUG`）；非字符串透传。"""
+        if isinstance(value, str):
+            return value.upper()
+        return value
 
     # 批次 7：长期记忆 recall 的时效衰减半衰期（天）。
     # 相关性分 = 关键词命中数 × 0.5^(age_days / half_life)；<=0 表示关闭衰减
