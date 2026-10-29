@@ -3,13 +3,13 @@
 ## 覆盖面
 
 1. **AST 双面守卫**：`lg_builder.py` 内指向 `agentix.application*` 的 import
-   语句（`ast.walk` 全树口径，函数体内延迟 import 也计）**恰 3 条**且目标模块
+   语句（`ast.walk` 全树口径，函数体内延迟 import 也计）**恰 2 条**且目标模块
    逐个落在冻结白名单里（M3-3 的「15 → 8」，M3-4 把 `create_research_plan` 真身
-   迁出后收口到 3 条：`lg_prompts` / `llm_factory` / `router._ensure_router`）；
+   迁出后收口到 3 条，M3-5b 再拆掉 `router._ensure_router` ⇒ 现为 2 条：
+   `lg_prompts` / `llm_factory`）；
    **顶层**（module body 直接子节点）对 8 个被壳替代的 handler 模块的 import
-   **恰 0 条**（唯一例外是
-   `router._ensure_router` 辅助函数位，属 M3-5 的既定边界，按「名字集合」
-   显式放行——壳名若被 import 回来，白名单与名字判据都会红）。
+   **恰 0 条**（M3-5b 之前唯一的例外是 `router._ensure_router` 辅助函数位，
+   那条边已随本批拆掉——按「名字集合」显式放行的口子仍在，放行名单为空）。
 2. **签名同源守卫（AGENTS.md 纪律 6 ④ 的兜底）**：10 个壳逐个
    `inspect.signature(壳)` 与 `inspect.signature(node_registry.resolve(键))`
    **逐字相等**（参数名、kind、keyword-only、默认值、求值后的注解）；异步形态
@@ -25,11 +25,14 @@
 4. **fail-closed 守卫**：独立 `NodeRegistry()` 空实例顶掉 `DEFAULT_REGISTRY`
    （不污染全局），壳必须抛 `NodeNotRegistered` 且消息含 `WIRING_HINT`——
    绝不静默降级、绝不返回 None。
-5. **建图不依赖注册表守卫（本批存在的理由）**：subprocess 起干净解释器跑
-   P1/P2/P3 三条探针——P1：只 import lg_builder，建图成功且 10 节点齐全、
-   注册表为空（评测/基准链路零影响）；P2：同解释器对图 `ainvoke` 以
-   `NodeNotRegistered` 响亮失败（不许有 import 期快照兜底）；P3：import
-   chat_service 后注册表恰为 wiring 的 10 键。
+5. **干净解释器的 import / 调用期契约守卫**：subprocess 起干净解释器跑
+   P1/P2/P3/P5 四条探针（M3-5b 后 P1/P2 的「未装配」前提已反号，见该节注释）——
+   P1：只 import lg_builder ⇒ 非零退出，stderr 含 `NodeNotRegistered` 与
+   `WIRING_HINT`（取源块经注册表现取，未装配连 import 都过不去，fail-closed）；
+   P2：先挂线建图、再清空注册表 ⇒ 调用期仍 `NodeNotRegistered`（守卫判据不变，
+   只是把「未装配」从 import 期挪到调用期）；P3：import chat_service 后注册表
+   恰为 wiring 的 10 键；P5：真实建图后 `analyze_and_route_query` 的出边集合
+   等于 p178 `EXPECTED_GRAPH_EDGES` 筛出的分支集，不塌缩成 `{__end__}`。
 5b. **import 顺序契约守卫（M3-5b）**：P4 探针用 `sys.meta_path` 在
    `lg_builder` 模块体**即将执行**的那一刻取样，断言注册表已含 `route_query`
    ——取源块改经注册表后，本模块的 import 期就要求装配已加载，`chat_service`
@@ -116,8 +119,9 @@ SHELL_TO_KEY: dict = {
 
 #: 被壳替代、顶层必须零 import 的 8 个 application 模块（M3-3 点名的 7 条边 +
 #: M3-4 迁入的 research_handler）。
-#: `router` 只禁**壳名**——`router._ensure_router`（纯辅助函数位）是 M3-5 的
-#: 既定边界，按名字显式放行；把壳名 import 回来正是本批要拆的边。
+#: `router` 禁的是**壳名**；M3-5b 之前该模块还留着一个按名字放行的辅助函数位
+#: `router._ensure_router`（`route_query` 的注解取源要用它），那条边已随本批拆掉
+#: ⇒ 本表对 `router` 只禁壳名，其余名字也不再被 import（白名单里已无 `router`）。
 SHELL_SOURCE_MODULES: dict = {
     "agentix.application.agents.router": {
         "analyze_and_route_query",
@@ -136,19 +140,20 @@ SHELL_SOURCE_MODULES: dict = {
     "agentix.application.agents.code_handler": {"create_code_query"},
 }
 
-#: lg_builder 全树 application import 的冻结白名单（3 条，多一条少一条都红）。
+#: lg_builder 全树 application import 的冻结白名单（2 条，多一条少一条都红）。
 #: 名称取 import 目标模块的**完整模块名**；条数由计数断言单独钉。
-#: 三条的归口：`lg_prompts` 由 p71 字面钉住（业务 prompt 留 application）、
-#: `llm_factory` 的消费者是 `check_hallucinations`（DEAD-CODE(P2-5) 有意不接线）、
-#: `router` 只有 `_ensure_router` 一处（`route_query` 注解挂接块仍需要它，归 M3-5）。
+#: 两条的归口：`lg_prompts` 由 p71 字面钉住（业务 prompt 留 application）、
+#: `llm_factory` 的消费者是 `check_hallucinations`（DEAD-CODE(P2-5) 有意不接线，
+#: 它与 supervisor 侧的同名边一起归 M3-4b）。第三条 `router._ensure_router` 已随
+#: M3-5b 拆掉——注解取源改经节点注册表
+#: （2026-10-29 时点：全仓 `orchestration → application` 残留边 5 → 4）。
 APPLICATION_IMPORT_BASENAME_ALLOWLIST: frozenset = frozenset(
     {
         "lg_prompts",
         "llm_factory",
-        "router",
     }
 )
-EXPECTED_APPLICATION_IMPORT_COUNT = 3
+EXPECTED_APPLICATION_IMPORT_COUNT = 2
 
 
 def _builder_tree() -> ast.Module:
@@ -191,9 +196,10 @@ def _isolate_default_registry() -> Any:
 
 
 class TestAstImportGuards:
-    def test_application_import_statements_exactly_three(self) -> None:
-        """全树口径 application import 语句**恰 3 条**（M3-3 收 8 条，M3-4 迁走
-        `create_research_plan` 真身后收口到 3 条；集合相等不写 `<=`）。"""
+    def test_application_import_statements_exactly_two(self) -> None:
+        """全树口径 application import 语句**恰 2 条**（M3-3 收 8 条，M3-4 迁走
+        `create_research_plan` 真身后收口到 3 条，M3-5b 拆掉 `router._ensure_router`
+        后为 2 条；集合相等不写 `<=`）。"""
         found = _application_imports_full_tree(_builder_tree())
         assert len(found) == EXPECTED_APPLICATION_IMPORT_COUNT, (
             f"application import 语句数漂移：实得 {len(found)}，冻结基准 "
@@ -213,7 +219,7 @@ class TestAstImportGuards:
         )
 
     def test_top_level_shell_module_imports_zero(self) -> None:
-        """顶层对 7 个 handler 模块的壳名 import **恰 0 条**。
+        """顶层对 `SHELL_SOURCE_MODULES` 列出的 8 个模块的壳名 import **恰 0 条**。
 
         壳名一旦被 import 回来，建图期就会把具体实现绑回模块属性——本批的边
         等于没拆；纯别名（_heuristic_router 等）零消费者，也已随壳一并删除。
@@ -467,25 +473,29 @@ class TestFailClosed:
 
 
 # ---------------------------------------------------------------------------
-# 5 — 建图不依赖注册表守卫（subprocess 干净解释器，P1/P2/P3）
+# 5 — 干净解释器的 import / 调用期契约守卫（subprocess，P1/P2/P3/P5）
 # ---------------------------------------------------------------------------
 
+# P1（M3-5b 反号后的前提）：取源块改经注册表现取真身 ⇒ **未装配连 import 都过不去**。
+# 改造前这条探针断言的是「只 import lg_builder 也能建图成功且注册表空」，本批之后该
+# 前提不再成立；剩下的正确事实是：未装配时在 import 期就响亮失败（fail-closed）。
 _P1_PROBE = """
 import os
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 import agentix.orchestration.langgraph.lg_builder as b
-from agentix.orchestration.node_registry import DEFAULT_REGISTRY
-nodes = set(b.graph.get_graph().nodes) - {"__start__", "__end__"}
-print("NODES:", sorted(nodes))
-print("REGISTRY_EMPTY:", DEFAULT_REGISTRY.names() == ())
+print("IMPORTED (BAD):", b.__name__)
 """
 
+# P2：守卫主体不变（调用期 fail-closed + WIRING_HINT），只是把「未装配」从 import 期
+# 挪到调用期——先挂线建好图，再清空 DEFAULT_REGISTRY 的登记项（p179::_unwire 同法）。
 _P2_PROBE = """
 import os, asyncio
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+import agentix.application.wiring  # noqa: F401 - 先装配，lg_builder 的 import 期取源才走得通
 import agentix.orchestration.langgraph.lg_builder as b
 from agentix.orchestration.node_registry import DEFAULT_REGISTRY, WIRING_HINT, NodeNotRegistered
-assert DEFAULT_REGISTRY.names() == (), "前置：装配未加载"
+DEFAULT_REGISTRY._entries.clear()  # 未装配态（p179::_unwire 同法）
+assert DEFAULT_REGISTRY.names() == (), "前置：注册表已清空"
 async def main():
     return await b.graph.ainvoke({"messages": []}, config={"configurable": {"thread_id": "p2"}})
 try:
@@ -503,6 +513,19 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 import agentix.application.services.chat_service  # noqa: F401
 from agentix.orchestration.node_registry import DEFAULT_REGISTRY
 print("NAMES:", sorted(DEFAULT_REGISTRY.names()))
+"""
+
+# P5（M3-5b 其二的塌缩防线）：把编译图里 `analyze_and_route_query` 的**出边集合**打出来。
+# 期望集合不在本文件抄字面量——由测试侧从 p178 的 EXPECTED_GRAPH_EDGES 按源节点筛出。
+# 挂接失效时 langgraph 会静默把条件边塌成 `{__end__}`（读代码看不出来，只有实际出边能证）。
+_P5_PROBE = """
+import os
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+import agentix.application.wiring  # noqa: F401 - lg_builder 的 import 期取源需要注册表
+from agentix.orchestration.langgraph import lg_builder
+edges = lg_builder.graph.get_graph().edges
+targets = sorted({e.target for e in edges if e.source == "analyze_and_route_query"})
+print("BRANCH_TARGETS:", targets)
 """
 
 _P4_ORDER_PROBE = """
@@ -544,20 +567,32 @@ def _run_probe(code: str) -> subprocess.CompletedProcess:
     return proc
 
 
-class TestGraphBuildIndependentOfRegistry:
-    def test_p1_build_graph_without_registry(self) -> None:
-        """P1：干净解释器只 import lg_builder ⇒ 建图成功、10 节点齐、注册表空。"""
+class TestCleanInterpreterImportContract:
+    def test_p1_unwired_import_fails_loudly(self) -> None:
+        """P1（前提已反号）：干净解释器 import lg_builder ⇒ 非零退出，
+        stderr 含 `NodeNotRegistered` 与 `WIRING_HINT`。
+
+        改造前这条断言的是「未装配也能建图成功」（建图期不读注册表）；M3-5b 把
+        `route_query` 的注解取源改经注册表现取，而取源必须发生在 import 期建图之前
+        ⇒ 未装配连 import 都过不去，这是设计口径（fail-closed），不是回归。
+        """
         proc = _run_probe(_P1_PROBE)
-        assert proc.returncode == 0, f"P1 import 期即失败：{proc.stderr[-800:]}"
-        nodes_line = next((ln for ln in proc.stdout.splitlines() if ln.startswith("NODES:")), "")
-        got = set(eval(nodes_line.split("NODES:", 1)[1].strip()))
-        assert got == EXPECTED_GRAPH_NODE_NAMES, f"P1 节点集漂移：{sorted(got)}"
-        assert "REGISTRY_EMPTY: True" in proc.stdout, (
-            f"P1 注册表非空（import 链里混进了装配）：{proc.stdout}"
+        assert proc.returncode != 0, (
+            f"P1 未装配竟 import 成功（说明取源块还留着 import 期兜底或退回具体模块）："
+            f"{proc.stdout[-400:]}"
         )
+        assert "NodeNotRegistered" in proc.stderr, (
+            f"P1 stderr 无该异常名：{proc.stderr[-800:]}"
+        )
+        assert WIRING_HINT in proc.stderr, f"P1 stderr 无装配缺失短语：{proc.stderr[-800:]}"
+        assert "IMPORTED (BAD)" not in proc.stdout
 
     def test_p2_ainvoke_fails_loud_without_registry(self) -> None:
-        """P2：装配缺失 ⇒ 首次执行即 NodeNotRegistered（无 import 期快照兜底）。"""
+        """P2：装配缺失（调用期）⇒ 首次执行即 NodeNotRegistered（无 import 期快照兜底）。
+
+        守卫判的东西与改造前一致，只是「未装配」这一前提从 import 期挪到调用期：
+        先 import wiring 让建图过得去，再清空注册表，然后调图。
+        """
         proc = _run_probe(_P2_PROBE)
         assert proc.returncode == 0, f"P2 解释器崩了：{proc.stderr[-800:]}"
         assert "OUTCOME: NodeNotRegistered; HINT_IN_MSG: True" in proc.stdout, (
@@ -571,6 +606,28 @@ class TestGraphBuildIndependentOfRegistry:
         names_line = next(ln for ln in proc.stdout.splitlines() if ln.startswith("NAMES:"))
         got = eval(names_line.split("NAMES:", 1)[1].strip())
         assert tuple(got) == EXPECTED_WIRED_NAMES, f"P3 注册键集 != wiring 10 键：{got}"
+
+    def test_p5_conditional_edges_do_not_collapse(self) -> None:
+        """P5：真实建图后 `analyze_and_route_query` 的出边集合**不塌缩**成 `{__end__}`。
+
+        判据取自 p178 的 `EXPECTED_GRAPH_EDGES`（按源节点筛出），不在本文件抄第二份
+        字面量——这条是 M3-5b 真正的「无声塌缩」防线：注解挂错形态时 langgraph 不报错，
+        只是把所有分支悄悄收成一个终点。
+        """
+        source = "analyze_and_route_query"
+        expected = {
+            target for (src, target, _cond) in EXPECTED_GRAPH_EDGES if src == source
+        }
+        assert expected and source not in expected, (
+            f"前置：期望分支集不自洽（{sorted(expected)}）"
+        )
+        proc = _run_probe(_P5_PROBE)
+        assert proc.returncode == 0, f"P5 解释器崩了：{proc.stderr[-800:]}"
+        line = next((ln for ln in proc.stdout.splitlines() if ln.startswith("BRANCH_TARGETS:")), "")
+        got = set(eval(line.split("BRANCH_TARGETS:", 1)[1].strip()))
+        assert got == expected, (
+            f"P5 条件边塌缩/漂移：实得 {sorted(got)}，期望 {sorted(expected)}"
+        )
 
 
 # ---------------------------------------------------------------------------

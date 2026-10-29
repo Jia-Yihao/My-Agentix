@@ -1515,6 +1515,12 @@ def _apply_window(messages: List[Any]) -> Dict[str, Any]:
 
     from agentix.agent.context.token_count import count_tokens
     from agentix.config import settings
+    # M3-5b 代价面：本臂不经装配根（agentix/main.py / agents/main.py），而
+    # lg_builder 的 `route_query` 注解取源现在发生在 **import 期**并要读注册表 ⇒
+    # import 它之前必须自行挂线，否则本函数在 import 那一刻抛 NodeNotRegistered。
+    # 实测（2026-10-29，改动前）：`_apply_window` 抛
+    # `NodeNotRegistered: node(s) not registered: 'route_query' — application wiring not loaded`。
+    import agentix.application.wiring  # noqa: F401 - 图节点注册表装配（M3-5b：lg_builder 建图期即需注册表）
     from agentix.orchestration.langgraph.lg_builder import create_message_window_node
     from agentix.orchestration.langgraph.lg_states import AgentState
 

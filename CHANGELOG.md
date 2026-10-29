@@ -121,6 +121,59 @@
   由「可用」变 `None`，仍在该函数「绝不抛，`None` = 不可解析」的既有契约内。
   装配态（FastAPI / CLI / `tests/conftest.py` / `chat_service` 四条挂线位）行为逐字不变。
 
+### 架构 · M3-5b 拆除 `lg_builder → router` 反向边（`route_query` 注解取源改经节点注册表 + import 顺序契约钉死，2026-10-29 落地）
+
+- `agentix/orchestration/langgraph/lg_builder.py` 删 `agentix.application.agents.router
+  import _ensure_router` 这条反向边（连同随之变成死 import 的顶层 `import sys`；函数体内
+  的 `import sys as _sys` 是另一处延迟 import，不受影响），注解取源块改为
+  `node_registry.resolve("route_query")` 经注册表现取真身。**刻意不包 try/except、不做
+  `registered()` 兜底、不回退具体 import**：未装配即 `NodeNotRegistered`（带 `WIRING_HINT`）
+  原样抛在 import 期——静默兜底等于把「响亮塌缩」换成「连一次响亮失败都不留」。
+- 反向边 orchestration → application（AST 全树口径，函数体内延迟 import 也计）实测
+  **5 → 4**：分布为 `lg_builder.py` 3 → 2（余 `lg_prompts` / `llm_factory`）、
+  `lg_supervisor.py` 仍 2 条，判据常量在 `tests/test_p181_capability_seam.py`。
+- 等价性论证：`wiring` 的 provider 是 `lambda: router.route_query`，返回的就是函数对象
+  本身，`get_type_hints` 按函数自己的 `__globals__` 求值 ⇒ 拿到的 8 分支 `Literal` 与改前
+  逐字相同；p178 的 18 条边等值守卫仍绿，另由新增 P5 探针直接断言出边集合不塌缩。
+- **import 顺序契约（本批行为变化的本体）**：langgraph 在 `add_conditional_edges` 那一刻
+  读 `Literal`，取源动作只能在 import 期完成 ⇒ `lg_builder` 自此 **import 期就要求装配已
+  加载**。`agentix/application/services/chat_service.py` 的挂线位整体前移到它 import
+  `lg_builder` 之前（evals/bench/独立脚本这些不 import 装配根的进程的共同咽喉点）；顺序
+  由 P4 探针（`sys.meta_path` 在 `lg_builder` 模块体即将执行的那一刻取样注册表）钉住——
+  改前先跑红（读数 `ROUTE_QUERY_WIRED_BEFORE_LG_BUILDER: False`）、改后跑绿（`True`）。
+- 新增用例 **2 条**（都在 `tests/test_p180_builder_shells.py`）：P4
+  `TestWiringPrecedesBuilderImport::test_p4_registry_ready_before_lg_builder_body`
+  （顺序契约）、P5 `TestCleanInterpreterImportContract::test_p5_conditional_edges_do_not_collapse`
+  （无声塌缩防线；期望分支集从 p178 `EXPECTED_GRAPH_EDGES` 按源节点筛出，不在本文件抄
+  第二份字面量）。同时 P1/P2 的「未装配」前提**反号**：P1 原断言「干净解释器只 import
+  `lg_builder` 也建图成功且注册表为空」——该前提自本批起不再成立，剩下的正确事实是
+  「未装配时 import 即失败，stderr 含 `NodeNotRegistered` 与 `WIRING_HINT`」（设计口径
+  fail-closed，不是回归）；P2 守卫判据不变（调用期 fail-closed），探针改为先挂线建图、
+  再清空 `DEFAULT_REGISTRY`（`_entries`，p179 `_unwire` 同法），把「未装配」从 import 期
+  挪到调用期。**未删除任何既有断言来让红变绿。**
+- 代价面（不经装配根的进程必须自行挂线，与 M3-3「未装配→首个执行点抛」同一漂移、只是
+  再前移到 import 期）：
+  ① `bench/adaptive_ab.py::_apply_window` 改前实测抛 `NodeNotRegistered: node(s) not
+  registered: 'route_query' — application wiring not loaded`（该臂不 import chat_service），
+  本批在它 import `lg_builder` 之前补一行自行挂线；
+  ② **在干净解释器里 import `lg_supervisor`（其顶层 import `lg_builder`）的进程同样受
+  影响**——已发现一处连带回归：
+  `tests/test_p71_m2_orchestration_migration.py::TestLoadOrderSafety::test_supervisor_new_path_works_old_path_gone`
+  以 subprocess 起干净解释器 import `lg_supervisor`，现改红（1 failed）。它在简报允许改动
+  文件之外，executor 未越界修改，**待 organizer 裁决**（修法是一行：该探针脚本在 import
+  `lg_supervisor` 前补 `import agentix.application.wiring`）。
+  ③ `lg_builder.py` 模块注释里「建图不依赖注册表 / 干净解释器 `names()` 为空」的旧断言
+  自本批起与事实不符，已按新事实改写，不留与代码不符的注释。
+- 计数与白名单同步：p180 `APPLICATION_IMPORT_BASENAME_ALLOWLIST` 删 `router`（3 → 2）、
+  `EXPECTED_APPLICATION_IMPORT_COUNT` 3 → 2、守卫改名
+  `test_application_import_statements_exactly_two`、两处过期 docstring 措辞（顶层零 import
+  的模块数 7 → 8、例外放行口子描述）随事实更正；p181 `EXPECTED_RESIDUAL_EDGES`
+  `langgraph/lg_builder.py` 3 → 2、`EXPECTED_RESIDUAL_TOTAL` 5 → 4、守卫改名
+  `test_orchestration_residual_edges_are_exactly_four`、沿革措辞保留原句并带
+  2026-10-26 / 2026-10-29 时点括注；p181 docstring 里两处会漂移的行号锚（p180:544、
+  chat_service.py:376）改为函数名/位置描述锚。`EXPECTED_CAPABILITY_NAMES` 仍两键未动；
+  未新增任何 Settings 开关、未新增任何宽 `except`。
+
 ### 架构 · M1 把归属表变成可执行断言（闭包矩阵守卫，纯测试与文档批，零产品代码改动）（2026-10-29 落地）
 
 路线图 §7 M1（口径：`docs/architecture/分层架构与依赖规则.md` §7.3 与 `.qoder/rules/task-order.md` §5）：

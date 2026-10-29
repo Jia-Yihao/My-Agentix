@@ -5,7 +5,8 @@
 1. **键集不相交守卫（本批存在的理由）**：能力面 `names()` 与节点面
    `DEFAULT_REGISTRY.names()` 的交集必须为空集。把能力注册成第 11 个节点键会同时破三条
    「注册表全集相等」守卫（`tests/test_p178_node_registry.py:527`、
-   `tests/test_p180_builder_shells.py:544`、`tests/test_p179_supervisor_wiring.py:121-122`），
+   `tests/test_p180_builder_shells.py` 的 P3 探针 `test_p3_chat_service_wires_ten_keys`、
+   `tests/test_p179_supervisor_wiring.py:121-122`），
    这三条一律不许放宽——所以注入位另立一把键集，本文件把「两把键集互不相交」钉成断言。
 2. **装配面**：装配后能力键集**全集相等**于两键清单（不是子集、不是成员判断）。
 3. **真身同源**：`resolve("offload_content") is artifact_store.offload_content`——注入位
@@ -19,12 +20,16 @@
 6. **AST 依赖守卫**：`capabilities.py` 全树不 import `langgraph`（p66 的 equality 棘轮）
    与 `agentix.application`（本机制要拆的就是这条边）；`contract.py` 全树
    `agentix.application` import == 0；全仓 `agentix/orchestration/**` 同类语句 == 5，
-   且分布恰为 `lg_builder.py` 3 + `lg_supervisor.py` 2。
+   且分布恰为 `lg_builder.py` 3 + `lg_supervisor.py` 2（M3-5a 落地时的读数；
+   2026-10-29 的 M3-5b 收掉 `lg_builder` 的 `router._ensure_router` 一条后是
+   **== 4，分布 `lg_builder.py` 2 + `lg_supervisor.py` 2**，判据取自本文件的
+   `EXPECTED_RESIDUAL_TOTAL` / `EXPECTED_RESIDUAL_EDGES` 两个常量）。
 7. **消费者行为等价**：patch application 侧模块属性后 `contract._offload_text` 必须读到
    降级实现——**thunk 每次现取这条语义由本文件的
    `TestConsumerBehaviorEquivalence::test_offload_text_observes_module_attr_patch` 钉住**；
    `tests/test_p78_index_cascade_isolate.py:227` / `:554` 是应用侧**直接 import 路径**
-   （`agentix/application/services/chat_service.py:376` /
+   （`agentix/application/services/chat_service.py` 的 `_index_memory_context` 函数体内
+   `from agentix.application.services.artifact_store import offload_content` /
    `agentix/retrieval/domain/services/context_engine.py:204`）的降级用例，既不经
    `contract.py` 也不经 `capabilities.py`，与本注入位**无依赖关系**，至多作为「模块属性
    patch 惯用法同形」的旁证提及，**不得**写成注入位的前提；未 patch 时经注入位走真身外置成
@@ -96,16 +101,21 @@ ORCHESTRATION_DIR = REPO_ROOT / "agentix" / "orchestration"
 #: `docs/design/审批与中断恢复优化规划.md` §8 台账的 M3-4b 行。
 EXPECTED_CAPABILITY_NAMES = ["get_artifact_store", "offload_content"]
 
-#: 本批之后全仓 `orchestration → application` 的残留边分布（**8 − 3 = 5**）。
+#: 本批之后全仓 `orchestration → application` 的残留边分布。
+#: 2026-10-26 时点（M3-5a 落地后）：**8 − 3 = 5**，分布 `lg_builder.py` 3 +
+#: `lg_supervisor.py` 2；2026-10-29 时点（M3-5b 拆掉 `lg_builder` 的
+#: `router._ensure_router` 一条后）：4 = `lg_builder.py` 2 + `lg_supervisor.py` 2。
 #: 按「相对 `agentix/orchestration/` 的文件路径 → 条数」冻结，键用相对路径而不是
 #: basename：同名文件散在子目录时 basename 会把两条边并成一格、把分布判错。
 EXPECTED_RESIDUAL_EDGES = {
-    "langgraph/lg_builder.py": 3,
+    "langgraph/lg_builder.py": 2,
     "langgraph/lg_supervisor.py": 2,
 }
 #: 全仓残留总数，由 §8.3 的批次划分决定（`lg_prompts` 一条与 `llm_factory` 三条
 #: 分别归 M3-5b/M3-4b/M3-6，本批一律不动）。
-EXPECTED_RESIDUAL_TOTAL = 5
+#: 2026-10-29 时点：M3-5b 收下 `router._ensure_router` 这一条 ⇒ 总数 5 → 4
+#: （`lg_prompts` 那条它字面钉在 p71，本批未动；`llm_factory` 三条仍归 M3-4b/M3-6）。
+EXPECTED_RESIDUAL_TOTAL = 4
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +308,10 @@ class TestStaticDependencyGuards:
         """本批的落点判据：`contract.py` 全树 0 条（改造前实测 3 条）。"""
         assert _application_imports(CONTRACT_PATH) == []
 
-    def test_orchestration_residual_edges_are_exactly_five(self) -> None:
-        """全仓 `agentix/orchestration/**` 的 application import **总数** 5 条。"""
+    def test_orchestration_residual_edges_are_exactly_four(self) -> None:
+        """全仓 `agentix/orchestration/**` 的 application import **总数** 4 条
+        （M3-5a 落地后是 5 条；2026-10-29 的 M3-5b 收掉 `lg_builder` 的
+        `router._ensure_router` 一条 ⇒ 现为 4 条）。"""
         total = sum(len(_application_imports(p)) for p in sorted(ORCHESTRATION_DIR.rglob("*.py")))
         assert total == EXPECTED_RESIDUAL_TOTAL, f"残留边总数漂移：实得 {total}"
 
@@ -348,7 +360,8 @@ class TestConsumerBehaviorEquivalence:
         """降级实现经应用侧**模块属性** patch 生效 ⇒ 证明 provider 每次现取，
         不是装配期快照。**本用例就是 thunk 语义的钉子**；
         `tests/test_p78_index_cascade_isolate.py:227` / `:554` 走的是应用侧函数体内
-        **直接 import** 的路径（`chat_service.py:376` / `context_engine.py:204`），与本注入位
+        **直接 import** 的路径（`chat_service.py` 的 `_index_memory_context` 函数体内
+        import / `context_engine.py:204`），与本注入位
         无依赖关系，只是同一种模块属性 patch 惯用法，不是本用例的前提。"""
 
         def _degrade(content, **kwargs):  # noqa: ANN001, ANN202 - 与 p78 同形的降级替身
