@@ -13,9 +13,13 @@ AdditionalGuardrailsOutput）已删——全仓 0 消费者，判据源在各自
 （KG 面的具体实现不再由编排层 import），本模块只留它的第 10 个延迟解析壳；
 `check_hallucinations` 仍留本文件——它是 DEAD-CODE(P2-5)｜保留·有意不接线的文档化未接线能力
 （绊线与处置理由见 `tests/test_p24_deadcode_marking.py`）。
+
+M3-5b 拆掉 `router._ensure_router` 这条反向边后，`route_query` 的条件边**注解取源**
+在 import 期经注册表现取真身 ⇒ 本模块的 import 期要求装配已加载：不 import 装配根
+（`agentix/main.py` / `agentix/application/agents/main.py`）而直接 import 本模块的
+入口，必须自行先 `import agentix.application.wiring`。
 """
 
-import sys
 from typing import cast, get_type_hints, Any, Dict, List
 
 from langchain_core.messages import BaseMessage
@@ -36,7 +40,6 @@ from agentix.application.agents.lg_prompts import (
     CHECK_HALLUCINATIONS,
 )
 from agentix.application.agents.llm_factory import get_llm_client
-from agentix.application.agents.router import _ensure_router
 from agentix.orchestration import node_registry
 
 
@@ -44,12 +47,15 @@ from agentix.orchestration import node_registry
 # 延迟解析壳（M3-3，§7.5 第③步）
 # ---------------------------------------------------------------------------
 # 为什么是壳、而不是在 build_graph() 里 resolve：本模块在 **import 期**就执行
-# `graph = build_graph(checkpointer)`（见文件末尾），而 `evals/`、`bench/`、独立
-# 脚本经 chat_service 或直接 import 本模块拉起这张图，**都不加载装配根**
-# （实测：干净解释器 import lg_builder 后 DEFAULT_REGISTRY.names() 为空）。
-# 建图期解析会让这些入口在 import 那一刻抛 NodeNotRegistered——评测与基准当场挂掉。
-# 壳把解析点后移到**节点被调用时**：建图不依赖注册表，装配缺失则在首次执行点响亮
-# 失败（fail-closed，绝不静默降级）。
+# `graph = build_graph(checkpointer)`（见文件末尾），建图期解析节点真身会把 10 个
+# 实现一次性绑进节点，测试对 application 模块属性的 patch 就打不中（注册表的
+# thunk 语义因此失效）。壳把解析点后移到**节点被调用时**：装配缺失则在首次执行点
+# 响亮失败（fail-closed，绝不静默降级）。
+# 注意（M3-5b 起）：**节点真身**仍在调用期解析，但下面 `route_query` 的**注解取源**
+# 发生在 import 期（langgraph 在 `add_conditional_edges` 那一刻读 `Literal`），
+# 它经注册表现取 ⇒ 本模块的 import 期就要求装配已加载；`evals/`、`bench/`、独立
+# 脚本这类不 import 装配根的入口必须自行先 `import agentix.application.wiring`
+# （经 chat_service 的入口由该模块的挂线位负责，顺序契约见 p180 的 P4 探针）。
 #
 # 键名映射（照 agentix/application/wiring.py 的登记，不是本模块发明的第二真源）：
 # 9 个 handler 壳里只有 `create_code_query` 的**壳名 ≠ 注册键**——它解析的是
@@ -81,16 +87,22 @@ def route_query(state: AgentState):
 # 字面量 = 第二份契约源，AGENTS.md 纪律 6 ④），而是在定义期把真源 `router.route_query`
 # **求值后的注解对象**挂回壳上——值不在本文件落地，图的条件下拉枚举面与改造前逐位
 # 一致（等价基准：`tests/test_p178_node_registry.py` 的 EXPECTED_GRAPH_EDGES，18 条边；
-# 挂接失效时条件边塌成 `analyze_and_route_query → __end__`，该守卫当场变红）。
+# 挂接失效时条件边塌成 `analyze_and_route_query → __end__`，该守卫当场变红，
+# 另有 `tests/test_p180_builder_shells.py` 的 P5 探针直接断言出边集合不塌缩）。
 # 必须挂**对象**而不是字符串：`get_type_hints(壳)` 以本模块 globals 求值，而本模块
 # 没有 `Literal` 名字——字符串形态会 NameError 被 langgraph 静默吞掉（无声塌缩）。
-# 真源经 `_ensure_router`（本模块既有的 router 侧依赖，:44 那条 import 属 M3-5 边界）
-# 的模块取，不新增一条 application import——本批的拆边计数判据是 15 → 8。
-_router_module = sys.modules[_ensure_router.__module__]
-_route_query_ret = get_type_hints(_router_module.route_query).get("return")
+# 真源自 M3-5b 起**经节点注册表现取**（拆掉 `router._ensure_router` 那条反向边）：
+# wiring 登记的 provider 是 `lambda: router.route_query`，返回的就是那个函数对象
+# 本身，而 `get_type_hints` 按函数自己的 `__globals__` 求值 ⇒ 拿到的 `Literal`
+# 与改前逐字等价。代价是**本模块的 import 期就要求装配已加载**：未装配时
+# `node_registry.resolve` 抛 `NodeNotRegistered`（带 `WIRING_HINT`）并原样抛在
+# import 期——刻意不加 try/except、不做 `registered()` 兜底、不退回 import：
+# 静默兜底等于把「无声塌缩」换成连一次响亮失败都不留下。直接 import 本模块的
+# 入口（`bench/`、独立脚本）必须自行先挂线 `agentix.application.wiring`。
+_route_query_ret = get_type_hints(node_registry.resolve("route_query")).get("return")
 if _route_query_ret is not None:
     route_query.__annotations__["return"] = _route_query_ret
-del _route_query_ret, _router_module
+del _route_query_ret
 
 
 async def respond_to_general_query(state: AgentState, *, config: RunnableConfig):
