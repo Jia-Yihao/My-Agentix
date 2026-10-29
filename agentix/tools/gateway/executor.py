@@ -83,7 +83,7 @@ def tool_retry_backoff() -> RetryBackoff:
 def _run_remaining_ms() -> float | None:
     """当前 run 的剩余预算毫秒（RequestScope.deadline）；无 scope/deadline → None。"""
     try:
-        from agentix.application.services.request_scope import get_current_scope
+        from agentix.domain.request_scope import get_current_scope
 
         scope = get_current_scope()
         if scope is None:

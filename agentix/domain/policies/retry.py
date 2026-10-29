@@ -93,11 +93,12 @@ class RetryBackoff:
 
 
 # ---------------------------------------------------------------------------
-# LG-3-1：退避停等的预算感知（deadline 的存储在 application，读取在 domain）
+# LG-3-1：退避停等的预算感知（deadline 的存储规范位在 domain 的请求作用域，注册由 application 在导入期做，读取在 domain）
 # ---------------------------------------------------------------------------
-# 为什么是「注入读取函数」而不是在这里 import ``RequestScope``：domain 是依赖链
-# 的最底层（``tests/test_p17_domain_layer.py`` 守着方向），deadline 的**存储**
-# 留在 application 的请求作用域里；本层只持有一个读取函数，退避算术只有一份
+# 为什么仍是「注入读取函数」而不是在这里直接读作用域：M2-2 拆边后 ``RequestScope``
+# （含 deadline 的**存储**）的规范位已下沉 ``agentix/domain/request_scope.py``，
+# 但**写入与注册**（``set_remaining_provider(...)``）仍由 application 在导入期完成——
+# 「当前作用域从哪来」由写入方决定；本层只持有一个读取函数，退避算术只有一份
 # （纪律 6 ④：同一个判定不许两个源）。
 _remaining_provider: Optional[Callable[[], Optional[float]]] = None
 

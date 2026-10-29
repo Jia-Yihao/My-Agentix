@@ -17,81 +17,30 @@
 本文件的 ``tests/test_p22_obs_scope.py::TestGatherVisibility`` 用
 ``asyncio.gather`` 实测证明「子任务累加对父作用域可见」。
 
-依赖方向：application 层模块，只依赖 stdlib（``contextvars``/``contextlib``）。
-无活动 scope 时所有记录函数都是**静默 no-op**，绝不抛异常。
+**M2-2 拆边（2026-10）**：纯类型 ``RequestScope`` / ``_scope_var`` /
+``get_current_scope`` 的规范位已下沉 ``agentix.domain.request_scope``
+（与 ``domain/tracing.py`` 同构，口径见分层架构文档 §7.4）；本模块改为
+**再导出 shim（对象同一）**，既有消费方 import 路径不变。本层保留的是
+**写入/副作用实现**：``request_scope()`` CM、``record_*``，以及
+``set_remaining_provider(...)`` 的注册（application 把 deadline reader
+注册进 domain 的既有设计，不下沉——挪了就是行为变化）。
+
+依赖方向：本模块依赖 stdlib（``contextlib``/``typing``）与
+domain 层（``domain.policies.retry``、``domain.request_scope``）；
+domain 不得反向依赖 application。无活动 scope 时所有记录函数都是
+**静默 no-op**，绝不抛异常。
 """
 
-import contextvars
-import time
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, List, Optional
+from typing import AsyncIterator, Optional
 
 from agentix.domain.policies.retry import set_remaining_provider
 
-
-@dataclass
-class RequestScope:
-    """一次请求内的可变累加器（跨 gather 子任务共享同一实例）。"""
-
-    llm_calls: int = 0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-    tools: List[str] = field(default_factory=list)
-    # Phase H · W3：run 预算传播（跨 gather 子任务共享同一对象引用）。
-    # deadline_at = time.monotonic() 绝对时刻；None = 未设（调用方回原行为）。
-    deadline_at: Optional[float] = None
-    # 共享重试预算桶（agentix.reliability.retry_budget.RetryBudget 实例；
-    # 仅存引用，字段类型放宽以保持本模块只依赖 stdlib）。
-    retry_budget: Optional[Any] = None
-
-    def set_deadline_seconds(self, seconds: float) -> None:
-        """设置本次请求的墙钟 deadline（monotonic；0/负 = 不设）。"""
-        if seconds and seconds > 0:
-            self.deadline_at = time.monotonic() + float(seconds)
-
-    def remaining_ms(self) -> Optional[float]:
-        """距 deadline 的剩余毫秒数；无 deadline 返回 None（调用方回原行为）。"""
-        if self.deadline_at is None:
-            return None
-        return max(0.0, (self.deadline_at - time.monotonic()) * 1000.0)
-
-
-    def add_llm_usage(
-        self,
-        *,
-        prompt_tokens: int = 0,
-        completion_tokens: int = 0,
-        total_tokens: int = 0,
-    ) -> None:
-        """累加一次 LLM 调用的用量（``total_tokens`` 缺省时按 prompt+completion 兜底）。"""
-        self.llm_calls += 1
-        self.prompt_tokens += prompt_tokens
-        self.completion_tokens += completion_tokens
-        self.total_tokens += (
-            total_tokens if total_tokens else (prompt_tokens + completion_tokens)
-        )
-
-    def add_tool(self, name: str) -> None:
-        """记录一个被调用的工具名（去重，保持首次出现的顺序）。"""
-        if name and name not in self.tools:
-            self.tools.append(name)
-
-    def estimated_cost(
-        self, *, input_price_per_1k: float, output_price_per_1k: float
-    ) -> float:
-        """按每 1K token 单价估算成本（单价默认 0.0 → 返回 0.0）。"""
-        return (
-            self.prompt_tokens / 1000.0
-        ) * input_price_per_1k + (
-            self.completion_tokens / 1000.0
-        ) * output_price_per_1k
-
-
-# 默认 None = 当前没有活动请求作用域（启动期/后台任务）。
-_scope_var: contextvars.ContextVar[Optional[RequestScope]] = contextvars.ContextVar(
-    "request_scope", default=None
+# 再导出（对象同一）：消费方经本路径取 RequestScope/get_current_scope 照旧可用。
+from agentix.domain.request_scope import (  # noqa: F401 - re-export shim（规范位在 domain）
+    RequestScope,
+    _scope_var,
+    get_current_scope,
 )
 
 
@@ -107,11 +56,6 @@ def _remaining_seconds_from_scope() -> Optional[float]:
 # LG-3-1：domain 不得反向依赖 application（分层），故由**本层**注册读取函数；
 # 三层退避的停等只读这一个来源，不各自去猜 deadline。
 set_remaining_provider(_remaining_seconds_from_scope)
-
-
-def get_current_scope() -> Optional[RequestScope]:
-    """返回当前活动的作用域（无则 None），供调用方填充 RequestMetrics。"""
-    return _scope_var.get()
 
 
 @asynccontextmanager
