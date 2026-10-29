@@ -161,8 +161,13 @@ class TestRuntimeSelfContained:
                 for b in ast.walk(n):
                     if isinstance(b, ast.ImportFrom) and b.module:
                         tc_modules.append(b.module)
-        assert "agentix.application.services.token_budget" in tc_modules, (
-            "TokenBudget 应仅存在于 if TYPE_CHECKING 块（注解专用）"
+        assert "agentix.domain.runtime.token_budget" in tc_modules, (
+            "TokenBudget 应仅存在于 if TYPE_CHECKING 块（注解专用，"
+            "M2-3 拆边后规范位在 domain）"
+        )
+        assert "agentix.application.services.token_budget" not in tc_modules, (
+            "M2-3 拆边：runtime → application 的类型引用边已消失，"
+            "TokenBudget 不得再从 application 路径进入 TYPE_CHECKING"
         )
         assert "agentix.application.services.token_budget" not in _top_level_imports(tree), (
             "TokenBudget 不得出现在 import 期（会破 Runtime 簇自包含）"
