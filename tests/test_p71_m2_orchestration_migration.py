@@ -115,7 +115,7 @@ class TestTargetLayout:
     @pytest.mark.parametrize("rel", IMPORT_FREE_INITS)
     def test_new_package_init_is_import_free(self, rel: str) -> None:
         """orchestration 系空门面零 import：防 lg_builder↔lg_supervisor 互引环
-        与经 agent 包的回拉在 eager 汇总导出下炸半初始化。"""
+        与经 agent 包的回拉在 eager 汇总导出下炸半初始化（2026-10-29 M3-5b 起前者已由两侧延迟 import 解除）。"""
         tree = ast.parse((REPO / rel).read_text(encoding="utf-8"))
         imports = [
             n

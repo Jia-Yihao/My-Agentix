@@ -490,8 +490,8 @@ def build_supervisor_graph(checkpointer=None):
 
     实现在 ``agentix.orchestration.langgraph.lg_supervisor``（原 application
     路径已随 M6 删除）；此处惰性导入，
-    避免 lg_builder ↔ lg_supervisor 的模块级循环（lg_supervisor 顶层
-    import 本模块的 handler / 窗口节点工厂）。
+    避免 lg_builder ↔ lg_supervisor 的模块级循环（历史上 lg_supervisor 顶层
+    import 本模块；2026-10-29 M3-5b 起该 import 已下移到其调用体内，环两侧各解除）。
     """
     from agentix.orchestration.langgraph.lg_supervisor import (
         build_supervisor_graph as _build_supervisor_graph,
