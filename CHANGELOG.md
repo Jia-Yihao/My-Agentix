@@ -21,6 +21,15 @@
 - 反向边 orchestration → application import 语句 **27 → 20**；lg_supervisor 顶层 0，余 2 条 `get_llm_client` 归 M3-4。
 - 新增 `tests/test_p179_supervisor_wiring.py`（23 条：AST 双面守卫、fail-closed、monkeypatch 兼容、编译图节点/边等值）。
 
+### 架构 · M3-3 编排层去具体化第③步（lg_builder 节点面改走延迟解析壳，2026-10-29 落地）
+
+- 新增 `tests/test_p180_builder_shells.py`（49 条：AST 双面守卫（application import 白名单 8 条冻结 + 壳名位零顶层 import）、9 对签名同源、转发保真（含 HITL 包裹与 `safety_guardrails` 内部调用点）、未装配态 fail-closed、干净解释器 subprocess 建图三探针 P1/P2/P3、编译图节点/边与 p178 基准等值、键≠壳名（`create_code_query` → `code_agent`）、以及 `_RegistryBackedHandlers`「非静态键可写不可读」的已声明行为守卫）。
+- `agentix/orchestration/langgraph/lg_builder.py` 删 7 条 application import 语句（6 条 handler 模块位 + 1 条 router re-export 块）与 4 个零消费者的 re-export 私有别名（`_heuristic_router`、`_extract_configurable`、`_coerce_to_bool`、`AdditionalGuardrailsOutput`；reviewer 独立确认全仓无任何调用点在 import 期依赖它们），改为 9 个**延迟解析壳**（壳与被解析真身签名逐字相同，在**调用期**才向 `agentix/orchestration/node_registry.py` 解析）；机制理由是本模块在 import 期就执行 `graph = build_graph(...)`，把解析点放到建图期会炸掉一切不经装配根的直调进程。
+- 反向边 orchestration → application 按 AST 全树（函数体内延迟 import 也计）实测 **20 → 13**（lg_builder 单文件面 15 → 8；lg_supervisor 2 条归 M3-4、contract 3 条与 lg_builder 的 lg_prompts 等残差归 M3-5/M3-6）——终态判据是「只剩 `lg_prompts` 一条」，由后续批次收口。
+- 新增第 4 个装配根挂线位 `agentix/application/services/chat_service.py`（覆盖 `evals/`、`bench/` 这类不经 FastAPI/CLI 装配根的直调链），`agentix/application/wiring.py` 的挂线位清单由 3 条同步为 4 条。
+- 闭合 M3-2 遗留的一般项 S1（挂线位缺正向守卫）与 S2（非静态键可写不可读的不对称未声明）：前者由 p180 的正向挂线守卫 + subprocess 探针 P3 钉住，后者由 docstring 明文声明 + p180 用例钉住，`agentix/orchestration/langgraph/lg_supervisor.py` 该处零行为改动。
+- 未新增任何开关；与基线的行为差异只有一条：不经装配根直 import `lg_builder` 再执行图的入口，从「隐式可用」变为首个执行点 `NodeNotRegistered`（fail-closed）——该类入口经全仓核查为空，且 `node_registry` 口径本就禁止静默兜底。
+
 ### 架构 · M1 把归属表变成可执行断言（闭包矩阵守卫，纯测试与文档批，零产品代码改动）（2026-10-29 落地）
 
 路线图 §7 M1（口径：`docs/architecture/分层架构与依赖规则.md` §7.3 与 `.qoder/rules/task-order.md` §5）：
