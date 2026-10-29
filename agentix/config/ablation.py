@@ -79,7 +79,7 @@ WIRED_FLAGS: Dict[str, str] = {
         "（False ⇒ 不调 LLM 意图分类，固定走 kb-query 通道）"
     ),
     "tools_enabled": (
-        "agentix/orchestration/langgraph/lg_builder.py::create_research_plan "
+        "agentix/application/agents/research_handler.py::create_research_plan "
         "（False ⇒ 不进入 KG 多工具子图，退回直接 LLM 作答）"
     ),
     "memory_enabled": (

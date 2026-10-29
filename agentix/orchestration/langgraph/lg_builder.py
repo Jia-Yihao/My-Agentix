@@ -9,15 +9,16 @@ handler 与路由判定不再顶层 import 具体模块（§7.5 第③步，M3-3
 （_heuristic_router / _extract_configurable / _coerce_to_bool /
 AdditionalGuardrailsOutput）已删——全仓 0 消费者，判据源在各自真身模块。
 
-Only create_research_plan and check_hallucinations remain here due to
-complex dependencies on kg_sub_graph internals.
+`create_research_plan` 的真身已随 M3-4 迁到 `agentix/application/agents/research_handler.py`
+（KG 面的具体实现不再由编排层 import），本模块只留它的第 10 个延迟解析壳；
+`check_hallucinations` 仍留本文件——它是 DEAD-CODE(P2-5)｜保留·有意不接线的文档化未接线能力
+（绊线与处置理由见 `tests/test_p24_deadcode_marking.py`）。
 """
 
 import sys
-from functools import lru_cache
-from typing import cast, get_type_hints, Any, Dict, List, Optional
+from typing import cast, get_type_hints, Any, Dict, List
 
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from loguru import logger
 
@@ -34,17 +35,8 @@ from agentix.orchestration.langgraph.policies import (
 from agentix.application.agents.lg_prompts import (
     CHECK_HALLUCINATIONS,
 )
-from agentix.application.agents.kg_sub_graph.kg_neo4j_conn import get_neo4j_graph
-from agentix.application.agents.kg_sub_graph.agentic_rag_agents.retrievers.cypher_examples.legal_retriever import (
-    LegalCypherRetriever,
-)
-from agentix.application.agents.kg_sub_graph.agentic_rag_agents.workflows.multi_agent.multi_tool import (
-    create_multi_tool_workflow,
-)
 from agentix.application.agents.llm_factory import get_llm_client
 from agentix.application.agents.router import _ensure_router
-from agentix.application.agents.constants import SCOPE_DESCRIPTION
-from agentix.tools.registry_init import get_active_tools
 from agentix.orchestration import node_registry
 
 
@@ -60,9 +52,12 @@ from agentix.orchestration import node_registry
 # 失败（fail-closed，绝不静默降级）。
 #
 # 键名映射（照 agentix/application/wiring.py 的登记，不是本模块发明的第二真源）：
-# 8 个 handler 壳里只有 `create_code_query` 的**壳名 ≠ 注册键**——它解析的是
+# 9 个 handler 壳里只有 `create_code_query` 的**壳名 ≠ 注册键**——它解析的是
 # `"code_agent"` 键（wiring 登记 `code_agent` → `code_handler.create_code_query`，
 # 节点名与 handler 函数名本就不同，沿用改造前的映射）。其余壳的键与壳名逐字相同。
+# 10 个壳里有 9 个的真身住 application（M3-3 的 8 个 + M3-4 迁入
+# `agentix/application/agents/research_handler.py` 的 `create_research_plan`）；
+# `route_query` 是同步壳，真身与其余 handler 同在 application。
 #
 # 签名纪律：壳的参数名/kind（含 keyword-only 的 `config`）必须与真身逐字一致——
 # langgraph 的 config 注入按签名判定（去掉 `config` 形参则注入不到），节点名按
@@ -133,130 +128,9 @@ async def create_code_query(state: AgentState, *, config: RunnableConfig):
     return await node_registry.resolve("code_agent")(state, config=config)
 
 
-def _extract_legal_sources(cyphers: Any) -> List[Dict[str, Any]]:
-    """Extract legal source references (law name + article number) from Cypher results."""
-    sources: List[Dict[str, Any]] = []
-    seen: set = set()
-    for cypher in cyphers or []:
-        records = getattr(cypher, "records", None)
-        if records is None and isinstance(cypher, dict):
-            records = cypher.get("records")
-        if isinstance(records, dict) and "result" in records:
-            records = records.get("result") or []
-        if not isinstance(records, list):
-            continue
-        for rec in records:
-            if not isinstance(rec, dict):
-                continue
-            law = rec.get("法规") or rec.get("law") or ""
-            article = rec.get("条号") or rec.get("article") or ""
-            if not law or not article:
-                continue
-            source_label = f"《{law}》{article}"
-            if source_label in seen:
-                continue
-            seen.add(source_label)
-            snippet = rec.get("内容") or rec.get("content_snippet") or ""
-            sources.append({
-                "type": "graphrag",
-                "law": law,
-                "article": article,
-                "content_snippet": snippet if isinstance(snippet, str) else str(snippet),
-                "source": source_label,
-            })
-    return sources
-
-
-@lru_cache(maxsize=4)
-def _get_compiled_multi_tool_workflow(
-    tool_schemas_key: tuple,
-    scope_description: Optional[str],
-    llm_cypher_validation: bool,
-):
-    """按配置指纹缓存编译后的 KG 子图（P1-2b）。
-
-    key 只由「影响图结构的参数」构成；llm/graph/retriever/dict 等
-    运行时对象在闭包内获取（单例或常量），不参与 key：
-    - llm: 编译期构造一次。复用不影响埋点归属——_TrackedChatOpenAI
-      上报时 trace_id 从 ContextVar 动态读取（llm_factory.py），并非
-      构造时固化
-    - graph: get_neo4j_graph() 进程内单例（P1-2a）。建连失败异常向上
-      传播（lru_cache 不缓存异常），由 chat.py 既有 except 链兜底，
-      下次请求自动重试
-    - retriever: LegalCypherRetriever 无状态（纯函数 get_examples），
-      随图固化安全
-    """
-    from agentix.application.agents.kg_sub_graph.agentic_rag_agents.components.predefined_cypher.legal_cypher_dict import (
-        predefined_cypher_dict,
-    )
-
-    return create_multi_tool_workflow(
-        # P0-2(b) 未接线（后续项）：此处同一 llm 实例同时服务 KG 子图内的多角色
-        # （planner / tool_selection / guardrails / finalize 共用），
-        # 需 per-node 注入才能差异化，已列为后续项。
-        llm=get_llm_client(temperature=0.7, tags=["research_plan"]),
-        graph=get_neo4j_graph(),
-        tool_schemas=list(tool_schemas_key),
-        predefined_cypher_dict=predefined_cypher_dict,
-        cypher_example_retriever=LegalCypherRetriever(),
-        scope_description=scope_description,
-        llm_cypher_validation=llm_cypher_validation,
-    )
-
-
-async def create_research_plan(
-    state: AgentState, *, config: RunnableConfig
-) -> Dict[str, List[str] | str]:
-    """Graph RAG query node - decomposes queries and runs multi-tool workflow."""
-    logger.info("------execute local knowledge base query------")
-
-    # 消融开关（AGENTIX_ABLATION_TOOLS_ENABLED=false）：
-    # 不进入 KG 多工具子图（planner → 工具选择 → text2cypher → finalize），
-    # 退回直接 LLM 作答。语义 = 「关掉工具调用循环」；这与变体 C_rag_router
-    # （router=true / tools=false）想要表达的「有路由与检索通道、但没有工具调用」
-    # 一致。复用 general 角色，避免另起一条 LLM 链路导致口径分裂。
-    if not ablation.is_enabled("tools_enabled"):
-        logger.info(
-            "ablation[tools_enabled=False]: skip KG multi-tool subgraph, "
-            "fall back to direct LLM answer"
-        )
-        return await respond_to_general_query(state, config=config)
-
-    if not settings.OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is not configured for research plan generation.")
-
-    # P1-3: 工具 schema 由注册表提供（settings.DISABLED_TOOLS 可裁剪），
-    # 新增工具只需改 registry_init.py 一处；tuple 化后兼作 P1-2b 编译缓存 key。
-    tool_schemas: tuple = tuple(get_active_tools())
-
-    # P1-2b: 子图按配置指纹缓存编译，消除每请求 Neo4j 建连 + StateGraph
-    # 重建开销；llm/graph 运行时对象在工厂闭包内获取，不参与缓存 key。
-    multi_tool_workflow = _get_compiled_multi_tool_workflow(
-        tool_schemas_key=tool_schemas,
-        scope_description=SCOPE_DESCRIPTION,
-        llm_cypher_validation=True,
-    )
-
-    last_message = state.messages[-1].content if state.messages else ""
-    input_state = {
-        "question": last_message,
-        "data": [],
-        "history": [],
-        "route_type": _ensure_router(getattr(state, "router", None)).type,
-    }
-
-    # P1-4：转发 config 进 KG 子图，使其内部节点的 LLM 事件可冒泡（经白名单过滤，
-    # 仅回答类节点外泄；KG 子图的 guardrails/planner/tool_selection 会被过滤掉）。
-    response = await multi_tool_workflow.ainvoke(input_state, config=config)
-
-    cyphers = response.get("cyphers", []) or []
-    sources = _extract_legal_sources(cyphers)
-
-    ai_message = AIMessage(content=response.get("answer", ""))
-    if sources:
-        ai_message.additional_kwargs["sources"] = sources
-
-    return {"messages": [ai_message], "sources": sources}
+async def create_research_plan(state: AgentState, *, config: RunnableConfig):
+    """延迟解析壳：调用时解析 `create_research_plan` 并原样转发。"""
+    return await node_registry.resolve("create_research_plan")(state, config=config)
 
 
 # DEAD-CODE(P2-5)｜处置=保留·有意不接线：本函数**有意不接线**（2026-09 审计确认，非"待删除"）。

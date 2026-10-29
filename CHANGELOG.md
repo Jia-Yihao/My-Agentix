@@ -30,6 +30,46 @@
 - 闭合 M3-2 遗留的一般项 S1（挂线位缺正向守卫）与 S2（非静态键可写不可读的不对称未声明）：前者由 p180 的正向挂线守卫 + subprocess 探针 P3 钉住，后者由 docstring 明文声明 + p180 用例钉住，`agentix/orchestration/langgraph/lg_supervisor.py` 该处零行为改动。
 - 未新增任何开关；与基线的行为差异只有一条：不经装配根直 import `lg_builder` 再执行图的入口，从「隐式可用」变为首个执行点 `NodeNotRegistered`（fail-closed）——该类入口经全仓核查为空，且 `node_registry` 口径本就禁止静默兜底。
 
+### 架构 · M3-4 KG 面去具体化（`create_research_plan` 真身迁 application，lg_builder 只留延迟解析壳，2026-10-30 落地）
+
+- 新增 `agentix/application/agents/research_handler.py`：主图最后一个真身仍住编排层的节点
+  `create_research_plan` 迁入此，连同它**独占**的两个私有辅助函数
+  （`_extract_legal_sources` / `_get_compiled_multi_tool_workflow`，含 `@lru_cache(maxsize=4)`
+  的 P1-2b 编译缓存）。函数体逐字符照搬，唯一一处刻意不等价：消融分支
+  （`ablation.tools_enabled=False`）的退回调用从同层直调 `respond_to_general_query` 改为
+  `node_registry.resolve("respond_to_general_query")`，延续 M3-3 的既有不变式「这条分支同样
+  经注册表解析、装配缺失时响亮抛 `NodeNotRegistered`」——直接同层调用会让它不经装配也能跑，
+  等于静默改掉一个已审过的失效面。
+- `agentix/orchestration/langgraph/lg_builder.py` 删该节点的三条 KG import
+  （`kg_neo4j_conn.get_neo4j_graph` / `legal_retriever.LegalCypherRetriever` /
+  `multi_tool.create_multi_tool_workflow`）、`constants.SCOPE_DESCRIPTION`、函数体内的
+  `legal_cypher_dict` 延迟 import，以及随之失去全部消费者的 `lru_cache` / `AIMessage` /
+  `get_active_tools` / `Optional`；改为第 10 个**延迟解析壳**（与其余 9 个同形态、同样不写
+  返回注解）。`lg_builder` 的全树 application import 由 **8 条降到 3 条**（AST 全树口径实测；
+  余下三条的归口分别是：`lg_prompts` 由 `tests/test_p71_m2_orchestration_migration.py`
+  字面钉住、`llm_factory` 的消费者是 `check_hallucinations`（DEAD-CODE(P2-5) 有意不接线）、
+  `router._ensure_router` 归 M3-5 的 T3）。`SCOPE_DESCRIPTION` 一条提前随本批收掉——它的
+  唯一消费点就在被迁走的函数里，同一条 import 的两个消费点不可能分两批改。
+- `agentix/application/wiring.py`：该键的 provider 由 `lambda: lg_builder.create_research_plan`
+  改为 `lambda: research_handler.create_research_plan`（注册键、`awaits=True`、
+  `takes_config=True` 一个字未改）；`lg_builder` 这个模块 import 在 wiring 里再无消费者，
+  随之一并删除；上方那段「provider 指向 orchestration 侧」的注释按新事实改写。
+- 口径镜像同步：`agentix/config/ablation.py` 的 `WIRED_FLAGS["tools_enabled"]` 接线点、
+  `docs/项目实现手册.md` §7.6 表内那一格，均改指
+  `agentix/application/agents/research_handler.py::create_research_plan`。
+- 测试侧**只改打点/读源码的目标，不改判据**：`tests/test_p12_reuse.py`（12 处
+  `patch.object` + 2 处 `cache_clear()` + 模块 docstring）、`tests/test_p14_streaming.py`
+  的源码级转发守卫（壳里也含 `config=config`，只改判据不改目标会「绿而测不到」）、
+  `tests/test_ablation_wiring.py`（`monkeypatch.setattr` 目标与两处直调真身）。
+  `tests/test_p180_builder_shells.py` 的冻结基准随事实更新：`SHELL_TO_KEY` 10 项、
+  `SHELL_SOURCE_MODULES` 8 个模块、application import 白名单 **8 → 3**
+  （`lg_prompts` / `llm_factory` / `router`）与同名计数常量、以及两处「9 个壳」的措辞——
+  守卫逻辑本体零改动，`tests/test_p178_node_registry.py`（注册键全集、节点名/边基准）与
+  `tests/test_p179_supervisor_wiring.py`（lg_supervisor 恰 2 条）零改动，本批不增不减注册键、
+  不改图结构。**本批刻意不新增任何用例**。
+- 未新增开关、未改提示词/路由/图结构与节点名；编译图的节点名集合与 18 条边逐位不变
+  （由 p178/p180 的等值守卫与 `tests/test_p24_deadcode_marking.py` 的节点绊线共同钉住）。
+
 ### 架构 · M1 把归属表变成可执行断言（闭包矩阵守卫，纯测试与文档批，零产品代码改动）（2026-10-29 落地）
 
 路线图 §7 M1（口径：`docs/architecture/分层架构与依赖规则.md` §7.3 与 `.qoder/rules/task-order.md` §5）：
