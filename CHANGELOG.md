@@ -12,6 +12,8 @@
 
 ## [Unreleased]
 
+- M3-1（编排层去具体化第①步）：新增 `agentix/orchestration/node_registry.py` 节点注册表底座与 `tests/test_p178_node_registry.py` 编译图等价守卫；零行为变化，orchestration → application 反向边仍 27 条，默认注册表为空。
+
 ### 架构 · M1 把归属表变成可执行断言（闭包矩阵守卫，纯测试与文档批，零产品代码改动）（2026-10-29 落地）
 
 路线图 §7 M1（口径：`docs/architecture/分层架构与依赖规则.md` §7.3 与 `.qoder/rules/task-order.md` §5）：
