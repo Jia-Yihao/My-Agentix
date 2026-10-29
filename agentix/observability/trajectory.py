@@ -190,7 +190,7 @@ def _jsonable(value: Any) -> Any:
 
 
 def _dump_dir() -> Path:
-    from agentix.retrieval.settings import settings
+    from agentix.config.settings import settings
 
     root = Path(settings.TRAJECTORY_DIR)
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")

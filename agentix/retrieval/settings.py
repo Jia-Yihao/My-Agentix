@@ -102,12 +102,16 @@ class _RetrievalSettingsCompat:
     SESSION_MAX_AGE_SECONDS = int(os.getenv("SESSION_MAX_AGE_SECONDS", str(14 * 24 * 3600)))
     SESSION_HTTPS_ONLY = _bool_env("SESSION_HTTPS_ONLY", "false")
 
-    LOG_JSON_ENABLED = _bool_env("LOG_JSON_ENABLED", "true")
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-
     TRAJECTORY_ENABLED = _bool_env("TRAJECTORY_ENABLED", "true")
     TRAJECTORY_DUMP_ALL = _bool_env("TRAJECTORY_DUMP_ALL", "false")
-    TRAJECTORY_DIR = os.getenv("TRAJECTORY_DIR", str(_BASE_DIR / "eval" / "results" / "traces"))
+
+    # M2-1 拆反向边：原先印在上面那两行（`SESSION_HTTPS_ONLY` 之后）的
+    # `LOG_JSON_ENABLED` / `LOG_LEVEL` / `TRAJECTORY_DIR` 已删——它们是通用可观测性配置、
+    # 不属检索域，真源上提到 `agentix/config/settings.py`（口径见
+    # docs/architecture/分层架构与依赖规则.md §7.4）。这里刻意**不留第二份定义**：
+    # 留着就是同一个判定两个源（AGENTS.md 纪律 6 ④，改一处漏一处必然漂移）。
+    # 删后这三个键经 `_RetrievalSettingsCompat.__getattr__` 自动委托统一 settings
+    # ⇒ 全仓任何 `from agentix.retrieval.settings import settings` 读它们仍然可用。
 
     OUTPUT_FILTER_ENABLED = _bool_env("OUTPUT_FILTER_ENABLED", "true")
     OUTPUT_FILTER_PII_ENABLED = _bool_env("OUTPUT_FILTER_PII_ENABLED", "true")

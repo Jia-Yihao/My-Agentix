@@ -84,7 +84,7 @@ def _build_dict_config(json_enabled: bool, level: str) -> dict:
 
 def setup_logging() -> None:
     """应用启动时调用一次；LOG_JSON_ENABLED=false 时退回纯文本格式。"""
-    from agentix.retrieval.settings import settings
+    from agentix.config.settings import settings
 
     logging.config.dictConfig(
         _build_dict_config(settings.LOG_JSON_ENABLED, settings.LOG_LEVEL)

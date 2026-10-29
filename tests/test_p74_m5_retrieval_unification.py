@@ -444,8 +444,13 @@ RETRIEVAL_BYPASS_ALLOW: dict[str, frozenset[str]] = {
     "agentix/application/agents/kg_sub_graph/agentic_rag_agents/components/cypher_tools/node.py": frozenset(
         {"agentix.retrieval.settings"}
     ),
-    "agentix/observability/logging_config.py": frozenset({"agentix.retrieval.settings"}),
-    "agentix/observability/trajectory.py": frozenset({"agentix.retrieval.settings"}),
+    # M2-1（拆边）：原此处两条 `"agentix/observability/logging_config.py"` /
+    # `"agentix/observability/trajectory.py"` → `agentix.retrieval.settings` 的豁免**已删除**。
+    # 理由：这两行是把「observability→retrieval.settings」这条旧架构边硬编码进豁免清单；
+    # 三键真源上提到 config.settings、observability 直读 config 之后，边消失 ⇒ 豁免应当消失
+    # （`test_outside_import_surface_equals_frozen_allowlist` 用的是相等棘轮
+    # `used == allowed_pairs`，留着就是僵尸豁免、断言必红）。删豁免是**收紧**，
+    # 判据本身一字未动，也没有删/弱化任何既有守卫。
     # F1b·M-P1-1（Stage F 批次评审）：进程内记忆 provider 复用检索域向量栈
     # 做 embedding（embed_texts_sync，httpx 直连，不另建框架）。
     "agentix/agent/memory/service.py": frozenset(
