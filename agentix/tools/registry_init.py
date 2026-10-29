@@ -28,8 +28,10 @@ from pydantic import BaseModel, Field
 from agentix.config import settings
 from agentix.tools.definitions import ToolSpec, registry
 
-# 延迟导入使本模块 import 期完全无副作用（kg_tools_list 是纯 pydantic 模型定义，
-# 但保持函数内导入以防其未来演进引入依赖链副作用）。
+# 延迟导入使本模块 import 期完全无副作用（kg schema 类是纯 pydantic 模型定义，
+# 规范位在同层兄弟模块 agentix/tools/kg_arg_schemas.py——参数 schema 是工具契约数据，
+# 不下沉 domain（p17 守卫对 domain 零豁免第三方依赖），也不留在 application
+# （拆 tools → application 边由该模块承接），但保持函数内导入以防其未来演进引入依赖链副作用）。
 
 
 class _ReadSkillSchema(BaseModel):
@@ -54,7 +56,7 @@ class create_skill_draft(BaseModel):
 
 
 def _import_schemas() -> Tuple[Type[BaseModel], ...]:
-    from agentix.application.agents.kg_sub_graph.kg_tools_list import (  # noqa: PLC0415
+    from agentix.tools.kg_arg_schemas import (  # noqa: PLC0415
         cypher_query,
         microsoft_graphrag_query,
         predefined_cypher,
