@@ -3,12 +3,14 @@
 ## 覆盖面
 
 1. **AST 双面守卫**：`lg_builder.py` 内指向 `agentix.application*` 的 import
-   语句（`ast.walk` 全树口径，函数体内延迟 import 也计）**恰 8 条**且目标模块
-   逐个落在冻结白名单里（= 简报口径「15 → 8」）；**顶层**（module body 直接
-   子节点）对 7 个被壳替代的 handler 模块的 import **恰 0 条**（唯一例外是
+   语句（`ast.walk` 全树口径，函数体内延迟 import 也计）**恰 3 条**且目标模块
+   逐个落在冻结白名单里（M3-3 的「15 → 8」，M3-4 把 `create_research_plan` 真身
+   迁出后收口到 3 条：`lg_prompts` / `llm_factory` / `router._ensure_router`）；
+   **顶层**（module body 直接子节点）对 8 个被壳替代的 handler 模块的 import
+   **恰 0 条**（唯一例外是
    `router._ensure_router` 辅助函数位，属 M3-5 的既定边界，按「名字集合」
    显式放行——壳名若被 import 回来，白名单与名字判据都会红）。
-2. **签名同源守卫（AGENTS.md 纪律 6 ④ 的兜底）**：9 个壳逐个
+2. **签名同源守卫（AGENTS.md 纪律 6 ④ 的兜底）**：10 个壳逐个
    `inspect.signature(壳)` 与 `inspect.signature(node_registry.resolve(键))`
    **逐字相等**（参数名、kind、keyword-only、默认值、求值后的注解）；异步形态
    用 `node_registry.is_awaitable_result` 与注册项 `awaits` 对账（判据与注册表
@@ -70,6 +72,7 @@ import agentix.application.agents.file_handler as file_handler
 import agentix.application.agents.general_handler as general_handler
 import agentix.application.agents.guardrails as guardrails_module
 import agentix.application.agents.image_handler as image_handler
+import agentix.application.agents.research_handler as research_handler
 import agentix.application.agents.router as router_module
 import agentix.application.agents.task_handler as task_handler
 from agentix.orchestration import node_registry
@@ -92,7 +95,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 LG_BUILDER_PATH = REPO_ROOT / "agentix" / "orchestration" / "langgraph" / "lg_builder.py"
 
 #: 壳名 → 注册键（以 `agentix/application/wiring.py` 的登记为唯一真源，本表只是
-#: 测试侧对「哪 9 个壳必须存在」的清单——逐条映射在守卫里现场核对注册表）。
+#: 测试侧对「哪 10 个壳必须存在」的清单——逐条映射在守卫里现场核对注册表）。
 #: 唯一「壳名 ≠ 键」的是 `create_code_query` → `code_agent`。
 SHELL_TO_KEY: dict = {
     "analyze_and_route_query": "analyze_and_route_query",
@@ -102,11 +105,13 @@ SHELL_TO_KEY: dict = {
     "get_additional_info": "get_additional_info",
     "create_image_query": "create_image_query",
     "create_file_query": "create_file_query",
+    "create_research_plan": "create_research_plan",
     "execute_task": "execute_task",
     "create_code_query": "code_agent",
 }
 
-#: 被壳替代、顶层必须零 import 的 7 个 application 模块（简报点名的 7 条边）。
+#: 被壳替代、顶层必须零 import 的 8 个 application 模块（M3-3 点名的 7 条边 +
+#: M3-4 迁入的 research_handler）。
 #: `router` 只禁**壳名**——`router._ensure_router`（纯辅助函数位）是 M3-5 的
 #: 既定边界，按名字显式放行；把壳名 import 回来正是本批要拆的边。
 SHELL_SOURCE_MODULES: dict = {
@@ -122,26 +127,24 @@ SHELL_SOURCE_MODULES: dict = {
         "respond_to_general_query",
         "create_kb_query",
     },
+    "agentix.application.agents.research_handler": {"create_research_plan"},
     "agentix.application.agents.task_handler": {"execute_task"},
     "agentix.application.agents.code_handler": {"create_code_query"},
 }
 
-#: lg_builder 全树 application import 的冻结白名单（8 条，多一条少一条都红）。
-#: 名称取 import 目标模块的**完整模块名**；`router` 出现两条（lg_prompts 之外的
-#: :44 `_ensure_router`），白名单是「逐条可枚出的模块名集合」，条数由计数断言单独钉。
+#: lg_builder 全树 application import 的冻结白名单（3 条，多一条少一条都红）。
+#: 名称取 import 目标模块的**完整模块名**；条数由计数断言单独钉。
+#: 三条的归口：`lg_prompts` 由 p71 字面钉住（业务 prompt 留 application）、
+#: `llm_factory` 的消费者是 `check_hallucinations`（DEAD-CODE(P2-5) 有意不接线）、
+#: `router` 只有 `_ensure_router` 一处（`route_query` 注解挂接块仍需要它，归 M3-5）。
 APPLICATION_IMPORT_BASENAME_ALLOWLIST: frozenset = frozenset(
     {
         "lg_prompts",
-        "kg_neo4j_conn",
-        "legal_retriever",
-        "multi_tool",
         "llm_factory",
         "router",
-        "constants",
-        "legal_cypher_dict",
     }
 )
-EXPECTED_APPLICATION_IMPORT_COUNT = 8
+EXPECTED_APPLICATION_IMPORT_COUNT = 3
 
 
 def _builder_tree() -> ast.Module:
@@ -184,8 +187,9 @@ def _isolate_default_registry() -> Any:
 
 
 class TestAstImportGuards:
-    def test_application_import_statements_exactly_eight(self) -> None:
-        """全树口径 application import 语句**恰 8 条**（15 → 8，集合相等不写 `<=`）。"""
+    def test_application_import_statements_exactly_three(self) -> None:
+        """全树口径 application import 语句**恰 3 条**（M3-3 收 8 条，M3-4 迁走
+        `create_research_plan` 真身后收口到 3 条；集合相等不写 `<=`）。"""
         found = _application_imports_full_tree(_builder_tree())
         assert len(found) == EXPECTED_APPLICATION_IMPORT_COUNT, (
             f"application import 语句数漂移：实得 {len(found)}，冻结基准 "
@@ -360,6 +364,7 @@ SHELL_TO_REAL_SOURCE: dict = {
     "create_file_query": (file_handler, "create_file_query"),
     "execute_task": (task_handler, "execute_task"),
     "create_code_query": (code_handler, "create_code_query"),
+    "create_research_plan": (research_handler, "create_research_plan"),
 }
 
 

@@ -771,8 +771,12 @@ class TestEndToEndConfigForwarding:
         """源码级守卫：关键转发点必须存在（防止回归时被误删）。"""
         import inspect
 
-        from agentix.application.agents import general_handler, guardrails, image_handler
-        from agentix.orchestration.langgraph import lg_builder
+        from agentix.application.agents import (
+            general_handler,
+            guardrails,
+            image_handler,
+            research_handler,
+        )
         from agentix.application.agents.kg_sub_graph.agentic_rag_agents.workflows.multi_agent.kb_nodes import (
             finalize_node,
         )
@@ -782,7 +786,7 @@ class TestEndToEndConfigForwarding:
         assert "config=config" in inspect.getsource(general_handler.create_kb_query)
         assert "config=config" in inspect.getsource(guardrails.get_additional_info)
         assert "config=config" in inspect.getsource(image_handler.create_image_query)
-        assert "config=config" in inspect.getsource(lg_builder.create_research_plan)
+        assert "config=config" in inspect.getsource(research_handler.create_research_plan)
         assert "config=config" in inspect.getsource(finalize_node.create_finalize_node)
 
     def test_internal_calls_do_not_forward_config(self):

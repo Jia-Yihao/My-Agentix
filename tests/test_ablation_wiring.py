@@ -19,8 +19,7 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agentix.application.agents import general_handler, router as router_module
-from agentix.orchestration.langgraph import lg_builder
+from agentix.application.agents import general_handler, research_handler, router as router_module
 from agentix.orchestration.langgraph.lg_states import AgentState, Router
 from agentix.config import ablation
 from agentix.config import settings as app_settings
@@ -243,13 +242,13 @@ class TestToolsAblation:
         monkeypatch.setattr(general_handler, "get_llm_client", lambda **kw: model)
         monkeypatch.setattr(app_settings, "LLM_API_KEY", "")
         monkeypatch.setattr(
-            lg_builder,
+            research_handler,
             "_get_compiled_multi_tool_workflow",
             lambda **kw: pytest.fail("tools_enabled=False 时不得编译 KG 多工具子图"),
         )
         _set(monkeypatch, "tools_enabled", False)
 
-        result = await lg_builder.create_research_plan(_state(), config={})
+        result = await research_handler.create_research_plan(_state(), config={})
         assert result["messages"][0].content == "没有工具，直接作答。"
 
     @pytest.mark.asyncio
@@ -257,7 +256,7 @@ class TestToolsAblation:
         """默认路径保持原有前置校验（不得被消融分支无意放宽）。"""
         monkeypatch.setattr(app_settings, "LLM_API_KEY", "")
         with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
-            await lg_builder.create_research_plan(_state(), config={})
+            await research_handler.create_research_plan(_state(), config={})
 
 
 class TestMemoryAblation:

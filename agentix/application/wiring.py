@@ -47,9 +47,9 @@ import agentix.application.agents.file_handler as file_handler
 import agentix.application.agents.general_handler as general_handler
 import agentix.application.agents.guardrails as guardrails
 import agentix.application.agents.image_handler as image_handler
+import agentix.application.agents.research_handler as research_handler
 import agentix.application.agents.router as router
 import agentix.application.agents.task_handler as task_handler
-import agentix.orchestration.langgraph.lg_builder as lg_builder
 from agentix.orchestration import node_registry
 
 # ``ROUTE_HANDLERS`` 的 8 个键：唯一调用点形态是
@@ -69,11 +69,12 @@ node_registry.register(
     awaits=True,
     takes_config=True,
 )
-# `create_research_plan` 的 provider 指向 **orchestration 侧**的 lg_builder 模块属性：
-# 装配根在 application，允许 application → orchestration，不构成反向边。
+# `create_research_plan` 的真身自 M3-4 起住 application
+# （`agentix/application/agents/research_handler.py`）：KG 面的具体实现不再被编排层 import。
+# `lg_builder` 侧只留同名延迟解析壳，键名与壳名逐字相同；`awaits/takes_config` 迁移前后未变。
 node_registry.register(
     "create_research_plan",
-    lambda: lg_builder.create_research_plan,
+    lambda: research_handler.create_research_plan,
     awaits=True,
     takes_config=True,
 )

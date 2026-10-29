@@ -3,7 +3,7 @@
 覆盖：
 - kg_neo4j_conn: 进程内单例（双检锁）、失败不缓存自动重试、reset 重建、
   构造期 refresh_schema=False（避免每次实例化扫全库 schema）、并发首调用
-- lg_builder._get_compiled_multi_tool_workflow: 配置指纹缓存命中/miss、
+- research_handler._get_compiled_multi_tool_workflow: 配置指纹缓存命中/miss、
   llm/graph 运行时对象不参与缓存 key（方案 P1-2 验收标准 3 的单测化）
 """
 
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import agentix.application.agents.kg_sub_graph.kg_neo4j_conn as kg_conn
-import agentix.orchestration.langgraph.lg_builder as lg_builder
+import agentix.application.agents.research_handler as research_handler
 from agentix.application.agents.kg_sub_graph.kg_tools_list import (
     cypher_query,
     microsoft_graphrag_query,
@@ -26,10 +26,10 @@ from agentix.application.agents.kg_sub_graph.kg_tools_list import (
 def _isolate_singletons():
     """每个用例前后清理单例/编译缓存状态，避免跨用例污染。"""
     kg_conn.reset_neo4j_graph()
-    lg_builder._get_compiled_multi_tool_workflow.cache_clear()
+    research_handler._get_compiled_multi_tool_workflow.cache_clear()
     yield
     kg_conn.reset_neo4j_graph()
-    lg_builder._get_compiled_multi_tool_workflow.cache_clear()
+    research_handler._get_compiled_multi_tool_workflow.cache_clear()
 
 
 def _make_graph():
@@ -118,14 +118,14 @@ class TestCompiledWorkflowCache:
         """相同配置指纹 → 命中缓存，返回同一编译图对象（只编译一次）。"""
         compiled = MagicMock(name="compiled_graph")
         with patch.object(
-            lg_builder, "create_multi_tool_workflow", return_value=compiled
+            research_handler, "create_multi_tool_workflow", return_value=compiled
         ) as mw, patch.object(
-            lg_builder, "get_neo4j_graph", return_value=MagicMock()
+            research_handler, "get_neo4j_graph", return_value=MagicMock()
         ), patch.object(
-            lg_builder, "get_llm_client", return_value=MagicMock()
+            research_handler, "get_llm_client", return_value=MagicMock()
         ):
-            w1 = lg_builder._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
-            w2 = lg_builder._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
+            w1 = research_handler._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
+            w2 = research_handler._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
         assert w1 is w2 is compiled
         assert mw.call_count == 1
 
@@ -133,14 +133,14 @@ class TestCompiledWorkflowCache:
         """配置指纹变化（tool_schemas 元组）→ 缓存 miss，新图生效（验收 3）。"""
         c1, c2 = MagicMock(name="c1"), MagicMock(name="c2")
         with patch.object(
-            lg_builder, "create_multi_tool_workflow", side_effect=[c1, c2]
+            research_handler, "create_multi_tool_workflow", side_effect=[c1, c2]
         ) as mw, patch.object(
-            lg_builder, "get_neo4j_graph", return_value=MagicMock()
+            research_handler, "get_neo4j_graph", return_value=MagicMock()
         ), patch.object(
-            lg_builder, "get_llm_client", return_value=MagicMock()
+            research_handler, "get_llm_client", return_value=MagicMock()
         ):
-            w1 = lg_builder._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
-            w2 = lg_builder._get_compiled_multi_tool_workflow(
+            w1 = research_handler._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
+            w2 = research_handler._get_compiled_multi_tool_workflow(
                 self.KEY[:2], "scope", True
             )
         assert w1 is c1 and w2 is c2
@@ -151,14 +151,14 @@ class TestCompiledWorkflowCache:
         闭包只执行一次（get_neo4j_graph/get_llm_client 各调用一次）。"""
         compiled = MagicMock()
         with patch.object(
-            lg_builder, "create_multi_tool_workflow", return_value=compiled
+            research_handler, "create_multi_tool_workflow", return_value=compiled
         ), patch.object(
-            lg_builder, "get_neo4j_graph", return_value=MagicMock()
+            research_handler, "get_neo4j_graph", return_value=MagicMock()
         ) as graph_factory, patch.object(
-            lg_builder, "get_llm_client", return_value=MagicMock()
+            research_handler, "get_llm_client", return_value=MagicMock()
         ) as llm_factory:
-            w1 = lg_builder._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
-            w2 = lg_builder._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
+            w1 = research_handler._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
+            w2 = research_handler._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
         assert w1 is w2
         # 缓存命中时工厂闭包不再执行，运行时对象获取也随之跳过
         assert graph_factory.call_count == 1
@@ -168,12 +168,12 @@ class TestCompiledWorkflowCache:
         """编译时 graph 参数来自 get_neo4j_graph 单例（连接复用贯通）。"""
         singleton_graph = MagicMock()
         with patch.object(
-            lg_builder, "create_multi_tool_workflow", return_value=MagicMock()
+            research_handler, "create_multi_tool_workflow", return_value=MagicMock()
         ) as mw, patch.object(
-            lg_builder, "get_neo4j_graph", return_value=singleton_graph
+            research_handler, "get_neo4j_graph", return_value=singleton_graph
         ), patch.object(
-            lg_builder, "get_llm_client", return_value=MagicMock()
+            research_handler, "get_llm_client", return_value=MagicMock()
         ):
-            lg_builder._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
+            research_handler._get_compiled_multi_tool_workflow(self.KEY, "scope", True)
         assert mw.call_args.kwargs["graph"] is singleton_graph
         assert mw.call_args.kwargs["tool_schemas"] == list(self.KEY)
