@@ -14,6 +14,13 @@
 
 - M3-1（编排层去具体化第①步）：新增 `agentix/orchestration/node_registry.py` 节点注册表底座与 `tests/test_p178_node_registry.py` 编译图等价守卫；零行为变化，orchestration → application 反向边仍 27 条，默认注册表为空。
 
+### 架构 · M3-2 编排层去具体化第②步（handler 改由 application 装配期注册，2026-10-29 落地）
+
+- 新增 `agentix/application/wiring.py`：10 条节点 provider 的唯一注册落点（全部模块形态 thunk），由 `agentix/main.py`、`agentix/application/agents/main.py`、`tests/conftest.py` 三个装配根显式 import。
+- `agentix/orchestration/langgraph/lg_supervisor.py` 删 7 条顶层 application import，`ROUTE_HANDLERS` 改为注册表背书的惰性映射（静态键域 + 覆盖表 + 每次现取 `resolve`），保 17 处 `monkeypatch.setitem` 与 `is` 同一性断言零改动。
+- 反向边 orchestration → application import 语句 **27 → 20**；lg_supervisor 顶层 0，余 2 条 `get_llm_client` 归 M3-4。
+- 新增 `tests/test_p179_supervisor_wiring.py`（23 条：AST 双面守卫、fail-closed、monkeypatch 兼容、编译图节点/边等值）。
+
 ### 架构 · M1 把归属表变成可执行断言（闭包矩阵守卫，纯测试与文档批，零产品代码改动）（2026-10-29 落地）
 
 路线图 §7 M1（口径：`docs/architecture/分层架构与依赖规则.md` §7.3 与 `.qoder/rules/task-order.md` §5）：
