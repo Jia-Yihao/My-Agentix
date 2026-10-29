@@ -54,7 +54,7 @@ from agentix.orchestration.strategies.multi_agent.isolation import (
     take_memory_snapshot,
     wrap_peer,
 )
-from agentix.orchestration import node_registry
+from agentix.orchestration import capabilities, node_registry
 from agentix.orchestration.langgraph.lg_states import AgentState, InputState
 from agentix.config import settings
 
@@ -379,6 +379,10 @@ async def supervisor_dispatch(
         if _llm_available():
             try:
                 revised = await _llm_revise(goal=goal, proposal=draft, feedback=context)
+            except capabilities.CapabilityError:
+                # 治理闸（M3-4b 卡1）：装配缺失/注入位故障属 fail-closed，不能被下面
+                # 「退回草稿」的宽 except 吞成「修订没发生」——那会把「装配没跑」伪装成正常交付。
+                raise
             except Exception as exc:  # noqa: BLE001 —— 修订失败退回草稿，不挂链路
                 logger.warning("supervisor: revise failed, keep draft: {}", exc)
                 revised = ""
@@ -407,6 +411,10 @@ async def supervisor_dispatch(
             )
         try:
             review_text = await _llm_review(goal=goal, proposal=proposal)
+        except capabilities.CapabilityError:
+            # 治理闸（M3-4b 卡1）：装配缺失不许被下面这条 fail-open 吞成 `approve`——
+            # 「审阅通过」与「审阅根本没跑起来」必须是两回事。
+            raise
         except Exception as exc:  # noqa: BLE001 —— 审阅失败 fail-open 到草稿质量线
             logger.warning("supervisor: LLM review failed, fail-open approve: {}", exc)
             review_text = "approve"
@@ -452,6 +460,10 @@ async def supervisor_dispatch(
     outcome = None
     try:
         outcome = await manager.run(goal)
+    except capabilities.CapabilityError:
+        # 治理闸（M3-4b 卡1）：内层两处闸 re-raise 出来后，这里再挡一次——否则
+        # 「注入位没装配」会被这条宽 except 收敛成「回退草稿」，链路照常绿，谁都不知道没装配。
+        raise
     except Exception as exc:  # noqa: BLE001 —— Manager 异常同样回退草稿
         logger.warning("supervisor: manager.run failed, fallback to draft: {}", exc)
 
