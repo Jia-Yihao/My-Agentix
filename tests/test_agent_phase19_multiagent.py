@@ -96,7 +96,12 @@ class TestSupervisorTopology:
 
     def test_route_handlers_match_route_query_literal(self):
         """``ROUTE_HANDLERS`` 必须与 ``route_query`` 的 Literal 收口一致。"""
-        ret = typing.get_type_hints(lg_builder.route_query)["return"]
+        # M3-3 起 lg_builder 的 `route_query` 是延迟解析壳、不携带 Literal 注解
+        # （壳抄注解 = 第二份契约源）；绊线改读真源 router.route_query，
+        # 判定强度不降（读的正是契约真源）。
+        from agentix.application.agents import router as router_module
+
+        ret = typing.get_type_hints(router_module.route_query)["return"]
         assert set(typing.get_args(ret)) == set(lg_supervisor.ROUTE_HANDLERS)
 
 
