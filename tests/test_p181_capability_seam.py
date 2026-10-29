@@ -29,7 +29,8 @@
    `contract.py` 也不经 `capabilities.py`，与本注入位**无依赖关系**，至多作为「模块属性
    patch 惯用法同形」的旁证提及，**不得**写成注入位的前提；未 patch 时经注入位走真身外置成
    `obs://`，取回路径同理命中默认 store；显式传入 `store` 时 `resolve_evidence_ref` 不得经
-   注入位再取默认 store（`contract.py:280` 的短路逐字保持）；**未装配态 + 显式 `store`**
+   注入位再取默认 store（`contract.py::resolve_evidence_ref` 的 `store is not None` 短路逐字
+   保持，HEAD `c3acb8e` 实测该语句在 `:283`）；**未装配态 + 显式 `store`**
    仍必须能解析（返工项 R1 的守卫：显式传 store 本就不需要任何装配）。
 8. **未装配态 fail-closed 探针**：subprocess 起干净解释器，只 import `contract` 并调
    `_offload_text` ⇒ 必须抛 `CapabilityNotRegistered`（与 M3-3 的 P1/P2 探针同形态）。
@@ -373,7 +374,8 @@ class TestConsumerBehaviorEquivalence:
 
     def test_resolve_evidence_ref_prefers_explicit_store(self) -> None:
         """显式传 store 时**不得调用**注入位取回的默认 store 工厂
-        （`contract.py:280` 的 `store is not None` 短路逐字保持）。
+        （`contract.py::resolve_evidence_ref` 的 `store is not None` 短路逐字保持，HEAD `c3acb8e`
+        实测该语句在 `:283`）。
 
         判据不是「没解析」：`resolve` 只是取 thunk，它一定会执行。真正的短路证据是
         「解析到的工厂没有被调用」——工厂里登记一次调用即可观察（若把它写成抛异常，
@@ -399,7 +401,7 @@ class TestConsumerBehaviorEquivalence:
         上一批把 `capabilities.resolve` 放在 `store` 短路**之前**无条件执行，抛出的
         `CapabilityNotRegistered` 会被本函数既有的 `except Exception` 吞成 `None`，
         于是「显式传 store」这条路在未装配进程里静默失效。修法是把 resolve 折进
-        `else` 支（`contract.py:280`）。
+        `else` 支（`contract.py::resolve_evidence_ref`，HEAD `c3acb8e` 实测在 `:283`）。
 
         判据写成「返回值 == 正文」而**不是**「不抛异常」：本函数的既有契约是绝不抛
         （`except Exception` 兜一切），断言不抛会绿而测不到东西（假绿）。
