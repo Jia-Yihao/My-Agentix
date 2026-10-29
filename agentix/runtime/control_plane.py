@@ -42,9 +42,11 @@ from loguru import logger
 if TYPE_CHECKING:
     # 注解专用：``AgentRun.budget``/``spawn(budget=)`` 两处皆字符串注解
     # （``from __future__ import annotations``），运行期零引用——``to_dict()``
-    # 走鸭子类型。保持 Runtime 簇**运行期自包含**，不产生 runtime → application
-    # 运行期边（先例：``runtime/state.py`` 对 ``steps`` 的 TYPE_CHECKING 回指）。
-    from agentix.application.services.token_budget import TokenBudget
+    # 走鸭子类型。保持 Runtime 簇**运行期自包含**：M2-3 拆边后 TokenBudget
+    # 规范位在 ``domain/runtime/token_budget.py``（纯数据下沉，application 侧
+    # 为再导出 shim），连 TYPE_CHECKING 边也不再指向 application
+    # （先例：``runtime/state.py`` 对 ``steps`` 的 TYPE_CHECKING 回指）。
+    from agentix.domain.runtime.token_budget import TokenBudget
 
 __all__ = [
     "RunState",
