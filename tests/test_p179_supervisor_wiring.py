@@ -27,7 +27,9 @@
    交给 langgraph 的是同一个真身）。
 7. **静态守卫**：`lg_supervisor.py` **顶层** application import 语句 AST 计数 == 0
    （`ast.walk` 全树口径下余 2 条 = 函数体内 `llm_factory.get_llm_client` 延迟 import，
-   属分派面之外的 LLM 工厂依赖，已登记归 M3-4）；`wiring.py` 不 import `langgraph`；
+   属分派面之外的 LLM 工厂依赖，已登记归 M3-4——**时点限定：以上是 2026-10-26 核验时点的读数，
+   2026-10-30 M3-4b 卡2 拆掉这两条后全树为 0 条**，判据本体见
+   `test_lg_supervisor_deferred_application_imports_are_gone`）；`wiring.py` 不 import `langgraph`；
    `agentix/orchestration/**` 全树不 import `agentix.application.wiring`
    （防止把反向边换个名字绕回来）；`lg_supervisor.py` 模块体顶层指向
    `lg_builder` 的 import **恰 0 条**（2026-10-29 M3-5b 返工追加：`lg_builder`
