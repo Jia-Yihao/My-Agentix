@@ -70,6 +70,48 @@
 - 未新增开关、未改提示词/路由/图结构与节点名；编译图的节点名集合与 18 条边逐位不变
   （由 p178/p180 的等值守卫与 `tests/test_p24_deadcode_marking.py` 的节点绊线共同钉住）。
 
+### 架构 · M3-5a 非节点能力注入位（`contract.py` 的 3 条 `artifact_store` 反向边改经注入位解析，2026-10-30 落地）
+
+- 新增 `agentix/orchestration/capabilities.py`：与 `agentix/orchestration/node_registry.py`
+  同层的**非节点**能力注入位（`register` / `provider` / `resolve` / `require` / `names`，
+  `override` 默认关；进程级单例 `DEFAULT_CAPABILITIES` + 同名模块级转发函数）。形态照抄
+  节点注册表的三条口径（fail-closed / 零参 thunk 每次现取 / 同一个判定单源），但**不登记
+  `awaits` / `takes_config`**——能力面的消费者是普通调用点，形态由被调真身决定，再存一份
+  就是第二个判据源。它刻意**不进 `DEFAULT_REGISTRY`**：注册成第 11 个节点键会同时破三条
+  「注册表全集相等」守卫（`tests/test_p178_node_registry.py:527`、
+  `tests/test_p179_supervisor_wiring.py:121-122`、
+  `tests/test_p180_builder_shells.py:544`，三条一律不许放宽），故两把键集互不相交。
+  未注册即抛 `CapabilityNotRegistered`，提示串**复用** `node_registry.WIRING_HINT`
+  （`AGENTS.md` 纪律 6 ④），本模块源码不出现那份字面量。
+- `agentix/orchestration/strategies/multi_agent/contract.py` 删 3 条函数体内的
+  `agentix.application.services.artifact_store` import（`offload_content` 两处、
+  `get_artifact_store` 一处），改按键名经注入位解析（`capabilities.resolve(...)`）；
+  入参、返回值处理、两处既有降级分支（`try_offload_face` / `resolve_evidence_ref` 的
+  `except Exception`）与 `store is not None` 的短路**逐字保持**；模块上方「application
+  依赖全部函数内延迟 import」的架构注记按新事实改写，不留与代码不符的注释。
+- `agentix/application/wiring.py`：追加 `offload_content` / `get_artifact_store` 两键，
+  provider 一律是**每次现取的模块属性 thunk**（`lambda: artifact_store.offload_content`）——
+  这是 `tests/test_p78_index_cascade_isolate.py` 两处 `monkeypatch.setattr(store_mod, ...)`
+  降级用例继续生效的前提；docstring 的落点说明随之补「本文件同时是非节点能力注入位的
+  唯一写入点」。
+- 反向边 orchestration → application 按 AST 全树（函数体内延迟 import 也计）实测
+  **8 → 5**：余 `agentix/orchestration/langgraph/lg_builder.py` 3 条
+  （`lg_prompts` / `llm_factory` / `router._ensure_router`）与
+  `agentix/orchestration/langgraph/lg_supervisor.py` 2 条（`get_llm_client`），分别归
+  M3-5b / M3-4b / M3-6，本批一律不动。
+- 新增 `tests/test_p181_capability_seam.py`（32 条：两把键集互不相交、能力面全集相等
+  （两键清单，注释指向 §8 台账 M3-4b 的扩键指针）、真身同源、fail-closed 与 thunk 语义、
+  `WIRING_HINT` 单源静态守卫、AST 三面守卫（`capabilities.py` 零 `application` 零
+  `langgraph`、`contract.py` 0 条、全仓恰 5 条且**分布**逐文件冻结）、消费者行为等价
+  （模块属性 patch 生效 / 真外置成 `obs://` 并可取回 / 显式 store 短路）、未装配态
+  subprocess 探针）。AST 取数复用 `tests/test_p178_node_registry.py` 的 `_imported_modules`，
+  不另写第二份判据。
+- 未新增任何开关（`CODE_EXEC_*` 之类一律未动）；与基线的行为差异只有一条：不经装配根
+  直 import `contract` 再外置/取回的调用点，从「隐式可用（延迟 import 直接命中
+  application）」变 `CapabilityNotRegistered` 响亮失败——`_offload_text` 处抛出，
+  `try_offload_face` / `resolve_evidence_ref` 两处沿用既有降级分支（返回 `None`）。
+  装配态（FastAPI / CLI / `tests/conftest.py` / `chat_service` 四条挂线位）行为逐字不变。
+
 ### 架构 · M1 把归属表变成可执行断言（闭包矩阵守卫，纯测试与文档批，零产品代码改动）（2026-10-29 落地）
 
 路线图 §7 M1（口径：`docs/architecture/分层架构与依赖规则.md` §7.3 与 `.qoder/rules/task-order.md` §5）：
