@@ -8,6 +8,13 @@
 （M3-2 起的拆边批次）。第②步的落点必须只有这一个文件：哪些名字、什么形态进入注册表，
 是编排层解析节点的唯一事实（`AGENTS.md` 纪律 6 ④：同一个判定不许两个源）。
 
+自 **M3-5a** 起，本文件同时是**非节点能力注入位**（`agentix/orchestration/capabilities.py`）
+的唯一写入点：编排层要用的应用侧能力（内容外置 `offload_content`、产物存储
+`get_artifact_store`）在这里按键名登记。它刻意用**另一把键集**而不是往
+`DEFAULT_REGISTRY` 加第 11 个键——三条「注册表全集相等」守卫
+（`tests/test_p178_node_registry.py:527`、`tests/test_p179_supervisor_wiring.py:121-122`、
+`tests/test_p180_builder_shells.py:544`）是等价性基准线，一律不许放宽。
+
 ## 为什么 provider 一律是「模块形态 + 零参 thunk」
 
 注册协议要求 thunk 返回**当前模块属性**而非 import 期快照（`node_registry` 模块
@@ -50,7 +57,8 @@ import agentix.application.agents.image_handler as image_handler
 import agentix.application.agents.research_handler as research_handler
 import agentix.application.agents.router as router
 import agentix.application.agents.task_handler as task_handler
-from agentix.orchestration import node_registry
+import agentix.application.services.artifact_store as artifact_store
+from agentix.orchestration import capabilities, node_registry
 
 # ``ROUTE_HANDLERS`` 的 8 个键：唯一调用点形态是
 # ``await handler(exec_state, config=exec_config)``
@@ -126,3 +134,16 @@ node_registry.register(
     awaits=True,
     takes_config=True,
 )
+
+# ---------------------------------------------------------------------------
+# 非节点能力注入位（M3-5a）：编排层要用的应用侧能力，键集与上面的节点键**互不相交**
+# （注册成第 11 个节点键会破三条「注册表全集相等」守卫：p178:527 / p179:121-122 /
+# p180:544，三条一律不许放宽，所以另立一把键集，见 `agentix/orchestration/capabilities.py`）。
+#
+# provider 仍必须是**每次现取的模块属性 thunk**（上面「模块形态」一节的同一条口径）：
+# 写 `capabilities.register("offload_content", artifact_store.offload_content)` 会把
+# 函数对象绑死在装配那一刻，测试 patch 应用侧模块属性就打不中——实测兼容面是
+# `tests/test_p78_index_cascade_isolate.py:227` / `:554` 的 `monkeypatch.setattr(store_mod, "offload_content", ...)`，
+# patch 的正是本文件所指向的那个模块属性。
+capabilities.register("offload_content", lambda: artifact_store.offload_content)
+capabilities.register("get_artifact_store", lambda: artifact_store.get_artifact_store)

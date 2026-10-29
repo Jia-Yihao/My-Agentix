@@ -21,8 +21,12 @@ Peer 结果进黑板的面从 giant string 换成结构化契约::
 
 flag-off = Manager 现行为逐位等价（``bound_result_face`` 全文截断）。
 
-架构注记：``agentix.application`` 依赖全部**函数内延迟 import**
-（orchestration 不顶层反向依赖 application）；本模块不 import manager
+架构注记：本模块要用的两项应用侧能力（内容外置、产物存储）自 **M3-5a** 起不再直接
+import ``agentix.application``，改经编排层同层的**非节点能力注入位**
+``agentix/orchestration/capabilities.py`` 按键名在**调用期**解析（每次现取，不缓存）。
+键由 ``agentix/application/wiring.py`` 在装配期登记（``offload_content`` /
+``get_artifact_store``）；未装配即抛 ``CapabilityNotRegistered``——这是本批刻意保留的
+fail-closed 现况，绝不静默退回进程内兜底实现。本模块不 import manager
 （manager import 本模块，避免环）。
 """
 
@@ -34,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from agentix.config import settings
+from agentix.orchestration import capabilities
 from agentix.orchestration.strategies.multi_agent.peer import (
     PeerResult,
     has_information_increment,
@@ -90,9 +95,13 @@ def _derive_claims(
 
 
 def _offload_text(text: str, *, kind: str) -> str:
-    """内容 → ``obs://`` 句柄；外置失败/过短 → 有界内联短串（永不抛）。"""
-    from agentix.application.services.artifact_store import offload_content
+    """内容 → ``obs://`` 句柄；外置失败/过短 → 有界内联短串。
 
+    能力经注入位解析（M3-5a）：``resolve`` 每次现取应用侧当前模块属性，所以测试
+    patch ``artifact_store.offload_content`` 照常生效。解析不到（装配没跑）时
+    抛 ``CapabilityNotRegistered`` 响亮失败——本函数不吞它。
+    """
+    offload_content = capabilities.resolve("offload_content")
     result = offload_content(
         text,
         kind=kind,
@@ -239,15 +248,14 @@ def try_offload_face(payload: str, *, kind: str = "result_contract") -> Optional
     if not str(payload or ""):
         return None
     try:
-        from agentix.application.services.artifact_store import offload_content
-
+        offload_content = capabilities.resolve("offload_content")
         result = offload_content(
             payload,
             kind=kind,
             inline_threshold=_FACE_FORCE_OFFLOAD,
             summary="subagent result contract",
         )
-    except Exception:  # noqa: BLE001 - 外置失败降级基线截断，不阻断
+    except Exception:  # noqa: BLE001 - 外置失败或能力未装配都降级基线截断，不阻断
         return None
     if result.is_offloaded and result.ref is not None:
         return f"…[结果面已外置，可取回 {_OBS_PREFIX}{result.ref.artifact_id}]"
@@ -269,11 +277,10 @@ def resolve_evidence_ref(
     if not artifact_id:
         return None
     try:
-        from agentix.application.services.artifact_store import get_artifact_store
-
+        get_artifact_store = capabilities.resolve("get_artifact_store")
         target = store if store is not None else get_artifact_store()
         return target.get(artifact_id)
-    except Exception:  # noqa: BLE001 - 存储异常按不可解析处理
+    except Exception:  # noqa: BLE001 - 存储异常或能力未装配按不可解析处理
         return None
 
 
