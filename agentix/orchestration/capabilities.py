@@ -186,10 +186,10 @@ class CapabilityRegistry:
             raise CapabilityNotRegistered(missing, available=self._sorted_names())
 
     def registered(self, name: str) -> bool:
-        """存在性查询（不抛）。**仅供诊断/日志与守卫断言使用**。
-
-        禁止用它做「未注册即跳过」的分支条件：那等于在本文件里给 fail-closed 开了一条
-        合法绕行口，装配缺失会被伪装成「这条支路不该走」。
+        """存在性查询（不抛）。**仅供诊断/日志与守卫断言使用**；禁止用它做「未注册即跳过」的
+        分支条件：那等于在本文件里给 fail-closed 开了一条合法绕行口，装配缺失会被伪装成
+        「这条支路不该走」。现况留痕（`docs/design/审批与中断恢复优化规划.md` M3-6 行⑭，裁「留并
+        加留痕」）：HEAD 实测零生产消费者，仅 `tests/test_p178_node_registry.py` 两条用例测局部实例。
         """
         return name in self._providers
 

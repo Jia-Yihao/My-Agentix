@@ -101,6 +101,9 @@ def route_query(state: AgentState):
 _route_query_ret = get_type_hints(node_registry.resolve("route_query")).get("return")
 if _route_query_ret is not None:
     route_query.__annotations__["return"] = _route_query_ret
+else:  # 本分支只留痕、不兜底（与上方「刻意不加 try/except、不做 registered() 兜底」同一口径）
+    # 塌缩不静默：tests/test_p180_builder_shells.py 的 BRANCH_TARGETS 与 p178 EXPECTED_GRAPH_EDGES(18) 当场判红
+    logger.warning("lg_builder: route_query 返回注解取不到 ⇒ 条件边 Literal 塌缩")
 del _route_query_ret
 
 

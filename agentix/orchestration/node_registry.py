@@ -233,11 +233,11 @@ class NodeRegistry:
 
     def registered(self, name: str) -> bool:
         """存在性查询（不抛）。**仅供诊断/日志与守卫断言使用**；要拿形态仍必须走 `entry`。
-
         禁止用它做「未注册即跳过」的分支条件：那等于在本文件里给 fail-closed 开了一条
         合法绕行口（见模块 docstring 第 1 条），装配缺失会被伪装成「这条支路不该走」。
         需要「该不该走这条支路」的判定请由调用方的显式配置/意图决定，节点解析本身
-        一律 `resolve`/`require`，缺失即抛。
+        一律 `resolve`/`require`，缺失即抛。现况留痕（`docs/design/审批与中断恢复优化规划.md`
+        M3-6 行⑭，裁「留并加留痕」）：HEAD 实测零生产消费者，仅 `tests/test_p178_node_registry.py` 两条用例测局部实例。
         """
         return name in self._entries
 
