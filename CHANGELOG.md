@@ -12,6 +12,52 @@
 
 ## [Unreleased]
 
+### 架构 · M2 拆三条最便宜的架构反向依赖边（纯结构重构，判跳/取值语义零变化；.env 文件基准有一处已登记口径差异）（2026-10-28 落地，2026-10-29 复验与登记）
+
+路线图 §7 M2（口径：`docs/architecture/分层架构与依赖规则.md` §7.4）点名的三条边全部拆除：
+`grep --include="*.py" "agentix\.application" agentix/tools/`、同式判 `agentix/runtime/`、
+以及 `grep "agentix\.retrieval" agentix/observability/` 现均为空。**三条都不改术语与接口字段、
+不改判跳与取值语义，只改定义规范位与 import 源**；**唯一已登记的口径差异在边1 的 `.env` 文件基准**
+——工作目录 ≠ 仓库根时两个方向都有差异（stray CWD `.env` 会被读到；仓库根 `.env` 的值会丢、回落默认），
+指向台账 M2-1 行偏离列①②。M2 等量验收：后置 `5847 passed / 40 skipped / 6 deselected / 91 warnings`
+（主会话独立复跑，退出码 0），前置同为 `5847 / 40 / 6 / 91`；**两次读数均在含 T3/评测批次在飞改动
+（`evals/**` 19 处、其中 `evals/golden_source.py` 未跟踪）的同一工作树态取得**，等量结论只在
+「该批次两侧恒定」这一限定下归因给 M2（详见台账 M2-5 行）。
+
+- **[边1 `observability → retrieval`]** `LOG_JSON_ENABLED` / `LOG_LEVEL` / `TRAJECTORY_DIR`
+  三键真源从 `agentix/retrieval/settings.py` 上提到 `agentix/config/settings.py`（通用可观测性
+  配置不属检索域；检索侧删行不留第二源，经 `_RetrievalSettingsCompat.__getattr__` 委托仍可读）。
+  两个 `field_validator(mode="before")` **逐位复刻旧 env 值语义**（旧 `_bool_env` 字符串只认
+  `1/true/yes`，`on`/`y`/`t` 判 False；`LOG_LEVEL` 无条件 `.upper()`；`TRAJECTORY_DIR` 默认路径与
+  旧检索域 `_BASE_DIR` 上溯三级同源）。该复刻限于 env **值**语义；**`.env` 文件基准随真源上提
+  变为工作目录口径**：旧实现在仓库根绝对路径 `load_dotenv` 之后导入期现算，新实现由统一
+  Settings 按 `env_file=".env"`（CWD 相对）解析，故工作目录 ≠ 仓库根时存在两个方向的差异
+  （stray CWD `.env` 会被读到；仓库根 `.env` 的值会丢回落默认），已按规划 §8 台账 M2-1 行
+  登记偏离（彻底等价须改 `model_config` 的 `env_file` 为仓库根绝对路径，影响 200+ 个键、
+  越出本批范围）。`logging_config.py` / `trajectory.py` 的函数内延迟 import 改指 config。配置键按纪律 4 五处同步；`.env.example` 里
+  `TRAJECTORY_DIR` 取**注释行**形态（写空串会让 `Path("")` 把落盘根变成 CWD，不等价），故
+  `selfcheck.py` 的 `DEFAULT_IGNORED_MISSING` 只新增 `LOG_JSON_ENABLED`。同批删除 `test_p74`
+  两条僵尸豁免（相等棘轮要求「边消失则豁免消失」，属收紧，不放宽任何守卫）。
+- **[边2 `tools → application`]** 纯作用域类型 `RequestScope` / `_scope_var` / `get_current_scope`
+  下沉新建 `agentix/domain/request_scope.py`（纯 stdlib，与 `domain/tracing.py` 的 ContextVar
+  同构）；`application/services/request_scope.py` 改为**对象同一**的再导出，写入实现与模块导入期
+  `set_remaining_provider(...)` 注册留在 application；`tools/gateway/executor.py` 的延迟 import
+  改指 domain。另一半：4 个 KG 工具参数模型（`cypher_query` / `predefined_cypher` /
+  `microsoft_graphrag_query` / `text2sql_query`）规范位落 `agentix/tools/kg_arg_schemas.py`，
+  `kg_tools_list.py` 保留为再导出 shim。**落位裁决：tools 层而非 domain**——
+  `tests/test_p17_domain_layer.py` 对 `agentix/domain/**` 零豁免禁第三方依赖（含 pydantic），
+  参数模型进 domain 必红该守卫；且参数 schema 是工具契约数据，与 `ToolSpec` 同源同层，
+  `registry_init.py` 本地早有同类参数模型（`create_skill_draft`）先例，不为拆一条边把它挪进不该去的层。
+- **[边3 `runtime → application`]** `DEFAULT_WARN_RATIO` / `BudgetVerdict` / `TokenBudget`
+  下沉新建 `agentix/domain/runtime/token_budget.py`（纯 stdlib；`to_dict()` 键序不变、类名未改），
+  `application/services/token_budget.py` 再导出，`BudgetLedger` 与 ContextVar 台账读写留在
+  application；`runtime/control_plane.py` 的 TYPE_CHECKING 引用改指 domain（保持惰性形态）。
+  同批把 `test_p73:164` 断言指向 domain 落位并新增「application 路径不得进 TYPE_CHECKING」
+  反向断言（判据强度只增不减）。
+- **[窗口内零新增用例]** M2 等量验收窗口（`task-order.md` §3 第 2 条）内未加任何测试：
+  `tests/` 被改的三个文件（p73 / p74 / p41）HEAD/工作树 `def test_` 计数全等
+  （14=14、22=22、40=40），`git diff HEAD -- tests/` 中增删 `def test_` 行数为 0。
+
 ### 路由层 · T30 三层路由收敛为单层（flag 门控，默认关）（2026-10-28）
 
 T29 实测显示一次 kb-query 请求要做**两次**独立的模型路由：L1 意图分类只产意图，KB 检索通道
