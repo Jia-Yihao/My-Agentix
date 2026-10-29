@@ -25,8 +25,11 @@ flag-off = Manager 现行为逐位等价（``bound_result_face`` 全文截断）
 import ``agentix.application``，改经编排层同层的**非节点能力注入位**
 ``agentix/orchestration/capabilities.py`` 按键名在**调用期**解析（每次现取，不缓存）。
 键由 ``agentix/application/wiring.py`` 在装配期登记（``offload_content`` /
-``get_artifact_store``）；未装配即抛 ``CapabilityNotRegistered``——这是本批刻意保留的
-fail-closed 现况，绝不静默退回进程内兜底实现。本模块不 import manager
+``get_artifact_store``）；未装配时注入位抛 ``CapabilityNotRegistered``、绝不静默退回
+进程内兜底实现，但**抛出后是否可见按调用点分**：``_offload_text`` 原样抛给调用方；
+``try_offload_face`` 与 ``resolve_evidence_ref`` 的既有 ``except Exception`` 契约（降级
+返回 ``None``、绝不抛）会把它兜成降级；``resolve_evidence_ref`` 在调用方**显式传入**
+``store`` 时不经注入位，未装配也能解析（所以那条路不依赖装配）。本模块不 import manager
 （manager import 本模块，避免环）。
 """
 
