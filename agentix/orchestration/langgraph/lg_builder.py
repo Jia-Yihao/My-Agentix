@@ -39,8 +39,7 @@ from agentix.orchestration.langgraph.policies import (
 from agentix.application.agents.lg_prompts import (
     CHECK_HALLUCINATIONS,
 )
-from agentix.application.agents.llm_factory import get_llm_client
-from agentix.orchestration import node_registry
+from agentix.orchestration import capabilities, node_registry
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +163,9 @@ async def check_hallucinations(
 
     # P0-2(b)：显式绑定 hallucination 角色 → 确定性 profile（temperature=0.0,
     # timeout=15s, max_retries=1）。调用点传 temperature=0.7 → 落到 profile 温度 0.0。
-    model = get_llm_client(temperature=0.7, tags=["hallucinations"], role="hallucination")
+    model = capabilities.resolve("get_llm_client")(
+        temperature=0.7, tags=["hallucinations"], role="hallucination"
+    )
 
     system_prompt = CHECK_HALLUCINATIONS.format(
         documents=state.documents,

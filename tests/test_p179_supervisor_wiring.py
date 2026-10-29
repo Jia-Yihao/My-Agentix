@@ -518,26 +518,26 @@ def _top_level_imports_of(path: pathlib.Path, target: str) -> List[Tuple[int, st
 class TestStaticDependencyGuards:
     def test_lg_supervisor_has_zero_top_level_application_imports(self) -> None:
         """本批目标判据：顶层 application import ⇒ 0 条（函数体内延迟 import 不计入
-        本条，另由下一条恰钉为 2 条 llm_factory——不许悄悄变多，也不许本批顺手删）。"""
+        本条，另由下一条冻结——2026-10-26 时点恰 2 条 llm_factory，2026-10-30 卡2 起
+        为 0 条反向守卫；不许悄悄变多，也不许本批顺手删）。"""
         offenders = _top_level_application_imports(LG_SUPERVISOR_PATH)
         assert offenders == [], f"lg_supervisor.py 顶层出现 application import: {offenders}"
 
-    def test_lg_supervisor_deferred_application_imports_are_the_two_frozen_llm_factory(
+    def test_lg_supervisor_deferred_application_imports_are_gone(
         self,
     ) -> None:
-        """全树（`ast.walk`，函数体内延迟 import 也计）口径如实冻结当前残留：恰 2 条，
-        且目标模块都是 `agentix.application.agents.llm_factory`。这是 M3-2 简报
-        「余 2 条 `get_llm_client` 归 M3-4」的机器可读登记位——残留数只减不增，
-        出现第 3 条或指向别的 application 模块即红。"""
+        """全树（`ast.walk`，函数体内延迟 import 也计）反向守卫：supervisor 侧
+        application 延迟 import 为 0 条。沿革：2026-10-26 冻结时恰 2 条，且目标模块都是
+        `agentix.application.agents.llm_factory`（M3-2 简报「余 2 条 `get_llm_client` 归
+        M3-4」的机器可读登记位）；2026-10-30 M3-4b 卡2 把两条边收到能力注入位
+        （`capabilities.resolve("get_llm_client")`）⇒ 本条改为 0 条反向守卫——
+        残留数只减不增，出现任何 application import 即红。"""
         residual = [
             (line, mod)
             for line, mod in _imported_modules(LG_SUPERVISOR_PATH)
             if mod == "agentix.application" or mod.startswith("agentix.application.")
         ]
-        assert len(residual) == 2, f"application 延迟 import 应恰 2 条，实得: {residual}"
-        assert all(
-            mod == "agentix.application.agents.llm_factory" for _line, mod in residual
-        ), f"残留必须全部是 llm_factory（M3-4 范围）: {residual}"
+        assert residual == [], f"supervisor 侧 application 延迟 import 应为 0 条，实得: {residual}"
 
     def test_wiring_does_not_import_langgraph(self) -> None:
         """wiring 是纯注册文件：import langgraph 会把 p66 守卫 #11 的 equality 棘轮
