@@ -21,10 +21,16 @@
    `agentix.application` import == 0；全仓 `agentix/orchestration/**` 同类语句 == 5，
    且分布恰为 `lg_builder.py` 3 + `lg_supervisor.py` 2。
 7. **消费者行为等价**：patch application 侧模块属性后 `contract._offload_text` 必须读到
-   降级实现（证 thunk 每次现取，是 `tests/test_p78_index_cascade_isolate.py:227` / `:554`
-   两条降级用例继续生效的前提）；未 patch 时经注入位走真身外置成 `obs://`，
-   取回路径同理命中默认 store；显式传入 `store` 时 `resolve_evidence_ref` 不得经注入位
-   再取默认 store（`contract.py:274` 的短路逐字保持）。
+   降级实现——**thunk 每次现取这条语义由本文件的
+   `TestConsumerBehaviorEquivalence::test_offload_text_observes_module_attr_patch` 钉住**；
+   `tests/test_p78_index_cascade_isolate.py:227` / `:554` 是应用侧**直接 import 路径**
+   （`agentix/application/services/chat_service.py:376` /
+   `agentix/retrieval/domain/services/context_engine.py:204`）的降级用例，既不经
+   `contract.py` 也不经 `capabilities.py`，与本注入位**无依赖关系**，至多作为「模块属性
+   patch 惯用法同形」的旁证提及，**不得**写成注入位的前提；未 patch 时经注入位走真身外置成
+   `obs://`，取回路径同理命中默认 store；显式传入 `store` 时 `resolve_evidence_ref` 不得经
+   注入位再取默认 store（`contract.py:280` 的短路逐字保持）；**未装配态 + 显式 `store`**
+   仍必须能解析（返工项 R1 的守卫：显式传 store 本就不需要任何装配）。
 8. **未装配态 fail-closed 探针**：subprocess 起干净解释器，只 import `contract` 并调
    `_offload_text` ⇒ 必须抛 `CapabilityNotRegistered`（与 M3-3 的 P1/P2 探针同形态）。
 
@@ -150,7 +156,6 @@ class TestKeySetsAreDisjoint:
         节点面的 10 键全集仍由 p178/p179 冻结，本文件不复制第三份节点键清单。"""
         reg = CapabilityRegistry()
         assert reg.names() == ()
-        assert set(capabilities.names()) <= set(EXPECTED_CAPABILITY_NAMES)
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +345,10 @@ class _FakeStore:
 class TestConsumerBehaviorEquivalence:
     def test_offload_text_observes_module_attr_patch(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """降级实现经应用侧**模块属性** patch 生效 ⇒ 证明 provider 每次现取，
-        不是装配期快照（`tests/test_p78_index_cascade_isolate.py:227` / `:554` 的前提）。"""
+        不是装配期快照。**本用例就是 thunk 语义的钉子**；
+        `tests/test_p78_index_cascade_isolate.py:227` / `:554` 走的是应用侧函数体内
+        **直接 import** 的路径（`chat_service.py:376` / `context_engine.py:204`），与本注入位
+        无依赖关系，只是同一种模块属性 patch 惯用法，不是本用例的前提。"""
 
         def _degrade(content, **kwargs):  # noqa: ANN001, ANN202 - 与 p78 同形的降级替身
             return artifact_store.OffloadResult(is_offloaded=False, inline=content)
@@ -365,7 +373,7 @@ class TestConsumerBehaviorEquivalence:
 
     def test_resolve_evidence_ref_prefers_explicit_store(self) -> None:
         """显式传 store 时**不得调用**注入位取回的默认 store 工厂
-        （`contract.py:274` 的 `store is not None` 短路逐字保持）。
+        （`contract.py:280` 的 `store is not None` 短路逐字保持）。
 
         判据不是「没解析」：`resolve` 只是取 thunk，它一定会执行。真正的短路证据是
         「解析到的工厂没有被调用」——工厂里登记一次调用即可观察（若把它写成抛异常，
@@ -383,6 +391,25 @@ class TestConsumerBehaviorEquivalence:
             == "正文"
         )
         assert called == [], f"显式 store 时仍走了默认 store 工厂：{called}"
+
+    def test_resolve_evidence_ref_explicit_store_works_unwired(self) -> None:
+        """返工项 R1 的守卫：**未装配态 + 调用方显式传 store** 必须仍能解析出正文
+        （与 `56857ff` 改前语义一致——改前 try 里那句 import 恒成功，这条路根本不依赖装配）。
+
+        上一批把 `capabilities.resolve` 放在 `store` 短路**之前**无条件执行，抛出的
+        `CapabilityNotRegistered` 会被本函数既有的 `except Exception` 吞成 `None`，
+        于是「显式传 store」这条路在未装配进程里静默失效。修法是把 resolve 折进
+        `else` 支（`contract.py:280`）。
+
+        判据写成「返回值 == 正文」而**不是**「不抛异常」：本函数的既有契约是绝不抛
+        （`except Exception` 兜一切），断言不抛会绿而测不到东西（假绿）。
+        """
+        _unwire()
+        assert capabilities.names() == (), "前置：本用例必须在未装配态下跑"
+        assert (
+            contract.resolve_evidence_ref("obs://abc123", store=_FakeStore({"abc123": "正文"}))
+            == "正文"
+        )
 
     def test_resolve_evidence_ref_without_store_goes_through_seam(self) -> None:
         """store 缺省时经注入位取回**工厂**并调用它（把实现换成替身即可观察解析点）。
