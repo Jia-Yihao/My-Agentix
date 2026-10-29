@@ -30,7 +30,7 @@ LangGraph 的 reducer，本文件不起主图（主图会拉进 checkpointer / N
    ``with_structured_output(schema)`` 与 ``ainvoke``，按 schema 回放**合法固定值**。
 2. ``general_handler.KnowledgeGateway`` ⇒ 返回两条固定文档的假检索（真 ``local_search``
    节点照跑，``kb_retrieval.hybrid_retrieve`` 照跑）。**必须有结果**：``finalize_node.py``
-   在空结果时提前返回、不调模型（``:70-77``），那样量到的跳数不是 T29 块 B 的「典型」形态。
+   在空结果时提前返回、不调模型（``:63-70``），那样量到的跳数不是 T29 块 B 的「典型」形态。
 3. ``agentix.application.services.observability.get_observability`` ⇒ 空实现。理由：
    ``kb_retrieval._record_rag_retrieval`` 会往 Redis 写埋点（宿主 ``.env`` 的
    ``REDIS_URL=redis://redis:6379/0`` 在本机不可达），而埋点不属判跳链路。
