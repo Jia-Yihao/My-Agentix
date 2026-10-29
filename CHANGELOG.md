@@ -173,6 +173,21 @@
   2026-10-26 / 2026-10-29 时点括注；p181 docstring 里两处会漂移的行号锚（p180:544、
   chat_service.py:376）改为函数名/位置描述锚。`EXPECTED_CAPABILITY_NAMES` 仍两键未动；
   未新增任何 Settings 开关、未新增任何宽 `except`。
+- **同批返工（2026-10-29，修上面②的 p71 连带回归）**：裁决为**改 `lg_supervisor.py`、
+  p71 一字不动**——`lg_builder` 的顶层 import（原 `:58`）下移到唯一消费函数
+  `build_supervisor_graph()` 体内。理由：`lg_supervisor` 自己 import 期不需要
+  `lg_builder`，顶层 import 它等于把 `lg_builder` 自 M3-5b 起的 import 期装配依赖
+  转嫁给每一个 import supervisor 的进程（p71 `TestLoadOrderSafety` 在干净解释器里
+  import `lg_supervisor` 正是这么砸红的），而编排层不许 import 装配根（p179 静态
+  守卫），supervisor 无法自救，只能下移。p71
+  `test_supervisor_new_path_works_old_path_gone` 一字未动地恢复绿；p179 新增一条
+  静态守卫（用例总数 +1）：`lg_supervisor.py` 模块体顶层指向 `lg_builder` 的
+  import 恰 0 条。代价面收窄：需自行挂线的入口从 `{lg_builder, lg_supervisor,
+  chat_service, bench, 独立脚本}` 缩到 `{lg_builder, chat_service, bench, 独立
+  脚本}`；调用期 fail-closed 不弱化（未装配时 `build_supervisor_graph()` 仍经
+  `lg_builder` 响亮抛 `NodeNotRegistered`）。两个 `__init__.py` 里「lg_builder ↔
+  lg_supervisor 模块级互引」的旧表述按「原句保留 + 时点括注」更正，两文件维持
+  零 import。
 
 ### 架构 · M1 把归属表变成可执行断言（闭包矩阵守卫，纯测试与文档批，零产品代码改动）（2026-10-29 落地）
 

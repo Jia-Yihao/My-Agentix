@@ -29,7 +29,10 @@
    （`ast.walk` 全树口径下余 2 条 = 函数体内 `llm_factory.get_llm_client` 延迟 import，
    属分派面之外的 LLM 工厂依赖，已登记归 M3-4）；`wiring.py` 不 import `langgraph`；
    `agentix/orchestration/**` 全树不 import `agentix.application.wiring`
-   （防止把反向边换个名字绕回来）。
+   （防止把反向边换个名字绕回来）；`lg_supervisor.py` 模块体顶层指向
+   `lg_builder` 的 import **恰 0 条**（2026-10-29 M3-5b 返工追加：`lg_builder`
+   import 期要读注册表，顶层 import 会把装配依赖转嫁给 supervisor 的所有
+   importer——p71 `TestLoadOrderSafety` 被砸红的直接教训，判据与理由见用例）。
 
 ## 验收口径
 
@@ -484,6 +487,34 @@ def _top_level_application_imports(path: pathlib.Path) -> List[Tuple[int, str]]:
     return out
 
 
+def _top_level_imports_of(path: pathlib.Path, target: str) -> List[Tuple[int, str]]:
+    """**模块体顶层**（tree.body 直接子节点）指向全限定模块 `target` 的 import 语句。
+
+    这不是第二个判据源，而是上面两个既有口径（`_top_level_application_imports` 的
+    「只扫 tree.body 直接子节点」 + `_imported_modules` 的「level==0 绝对导入、
+    `from <父包> import <叶>` 折算成 `<父包>.<叶>` 全限定名」）原样收窄到指定目标
+    模块：判定形状逐字沿用，只是把「前缀等于 agentix.application」换成「等于
+    `target`」。同时覆盖 `import a.b.c.d` 与 `from a.b.c import d` 两种写法——
+    契约钉的是「顶层把该模块拉进 import 期」这一效果，换写法不解约。
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    parent, _, leaf = target.rpartition(".")
+    out: List[Tuple[int, str]] = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            out.extend(
+                (node.lineno, alias.name)
+                for alias in node.names
+                if alias.name == target or alias.name.startswith(f"{target}.")
+            )
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            if node.module == target or (
+                node.module == parent and any(alias.name == leaf for alias in node.names)
+            ):
+                out.append((node.lineno, node.module))
+    return out
+
+
 class TestStaticDependencyGuards:
     def test_lg_supervisor_has_zero_top_level_application_imports(self) -> None:
         """本批目标判据：顶层 application import ⇒ 0 条（函数体内延迟 import 不计入
@@ -530,3 +561,25 @@ class TestStaticDependencyGuards:
                 ):
                     offenders.append((str(path.relative_to(REPO_ROOT)), line, mod))
         assert offenders == [], f"orchestration 出现 wiring import: {offenders}"
+
+    def test_lg_supervisor_has_no_top_level_import_of_lg_builder(self) -> None:
+        """M3-5b 起 `lg_builder.py` **import 期**就经 `node_registry.resolve("route_query")`
+        读注册表取 `route_query` 注解返回类型（langgraph 在 `add_conditional_edges`
+        一刻读 `Literal`，而 `lg_builder` 在模块体就编译 graph ⇒ 取源只能发生在
+        import 期）。`lg_supervisor` 自己 import 期不需要 `lg_builder`——顶层 import
+        它等于把这份 import 期装配依赖**转嫁**给每一个 import supervisor 的进程，
+        而编排层不许 import 装配根（上面那条守卫），supervisor 无法自救。
+        `tests/test_p71_m2_orchestration_migration.py::TestLoadOrderSafety::
+        test_supervisor_new_path_works_old_path_gone` 正是这么被砸红的：它在干净
+        解释器（未挂线）里 import `lg_supervisor`，验证「旧路径已消失、新路径可
+        导入」，顶层 import 让这一步在装配缺失态直接抛 `NodeNotRegistered`。
+        唯一消费点在 `build_supervisor_graph()` 函数体内，下移为调用期 import：
+        未装配时仍由 `lg_builder` 自己抛 `NodeNotRegistered`（fail-closed 不弱化）。
+        """
+        offenders = _top_level_imports_of(
+            LG_SUPERVISOR_PATH, "agentix.orchestration.langgraph.lg_builder"
+        )
+        assert offenders == [], (
+            "lg_supervisor.py 顶层 import lg_builder，会把 lg_builder 的 import 期"
+            f"装配依赖转嫁给 supervisor 的所有 importer: {offenders}"
+        )
