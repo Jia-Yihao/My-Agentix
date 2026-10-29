@@ -465,10 +465,10 @@ def _top_level_application_imports(path: pathlib.Path) -> List[Tuple[int, str]]:
     """**模块体顶层**（tree.body 直接子节点）的 agentix.application import。
 
     顶层 vs 全树分开判，是本批口径的最小必要拆分：§7.5 第③步拆的是「分派文件
-    不再顶层 import 具体 handler」；函数体内 2 条 `llm_factory.get_llm_client`
-    延迟 import 属 LLM 面、已登记归 M3-4，本批刻意不动（简报「不在本批范围」节）。
-    全树计数在下面单独立一条**恰为 2 且全部是 llm_factory** 的守卫——不放宽、
-    只把残留显式登记进断言，M3-4 拆到最后一条时它自然升级为 0。
+    不再顶层 import 具体 handler」；2026-10-26 时点函数体内尚余 2 条 `llm_factory.get_llm_client`
+    延迟 import（属 LLM 面、当时登记归 M3-4，该批刻意不动）。全树计数在下面单独立一条守卫
+    冻结残留——2026-10-26 时点恰为 2 且全部是 llm_factory，M3-4b 卡2（2026-10-30）拆到
+    0 条后升级为 0 条反向守卫：不放宽、只把残留显式登记进断言，出现任何 application import 即红。
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     out: List[Tuple[int, str]] = []
