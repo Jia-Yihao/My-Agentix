@@ -9,8 +9,8 @@
 
 不能把它们注册成 `agentix/orchestration/node_registry.py` 的第 11 个键：三条「注册表全集
 相等」守卫（`tests/test_p178_node_registry.py:527`、
-`tests/test_p180_builder_shells.py:544`、
-`tests/test_p179_supervisor_wiring.py:121-122`）会把多出来的键判红，而那三条是本机制
+`test_p180` 的 `test_p3_chat_service_wires_ten_keys`、
+`test_p179` 的 `test_names_exactly_the_wired_ten`）会把多出来的键判红，而那三条是本机制
 等价性证明的基准线，一律不许放宽。所以本文件另立一把**与节点键集互不相交**的键集，
 形态照抄节点注册表（同一套 fail-closed / thunk / 单源口径），但语义只到「名字 → 真身」。
 

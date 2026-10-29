@@ -78,9 +78,9 @@
   节点注册表的三条口径（fail-closed / 零参 thunk 每次现取 / 同一个判定单源），但**不登记
   `awaits` / `takes_config`**——能力面的消费者是普通调用点，形态由被调真身决定，再存一份
   就是第二个判据源。它刻意**不进 `DEFAULT_REGISTRY`**：注册成第 11 个节点键会同时破三条
-  「注册表全集相等」守卫（`tests/test_p178_node_registry.py:527`、
-  `tests/test_p179_supervisor_wiring.py:121-122`、
-  `tests/test_p180_builder_shells.py:544`，三条一律不许放宽），故两把键集互不相交。
+  「注册表全集相等」守卫（`tests/test_p178_node_registry.py:527`、`test_p179` 的
+  `test_names_exactly_the_wired_ten`、`test_p180` 的 `test_p3_chat_service_wires_ten_keys`，
+  三条一律不许放宽），故两把键集互不相交。
   未注册即抛 `CapabilityNotRegistered`，提示串**复用** `node_registry.WIRING_HINT`
   （`AGENTS.md` 纪律 6 ④），本模块源码不出现那份字面量。
 - `agentix/orchestration/strategies/multi_agent/contract.py` 删 3 条函数体内的
@@ -156,12 +156,12 @@
   ① `bench/adaptive_ab.py::_apply_window` 改前实测抛 `NodeNotRegistered: node(s) not
   registered: 'route_query' — application wiring not loaded`（该臂不 import chat_service），
   本批在它 import `lg_builder` 之前补一行自行挂线；
-  ② **在干净解释器里 import `lg_supervisor`（其顶层 import `lg_builder`）的进程同样受
+  ② **在干净解释器里 import `lg_supervisor`（当时其顶层 import `lg_builder`）的进程同样受
   影响**——已发现一处连带回归：
   `tests/test_p71_m2_orchestration_migration.py::TestLoadOrderSafety::test_supervisor_new_path_works_old_path_gone`
   以 subprocess 起干净解释器 import `lg_supervisor`，现改红（1 failed）。它在简报允许改动
   文件之外，executor 未越界修改，**待 organizer 裁决**（修法是一行：该探针脚本在 import
-  `lg_supervisor` 前补 `import agentix.application.wiring`）。
+  `lg_supervisor` 前补 `import agentix.application.wiring`；该建议未采纳，实际裁决与复绿见下方「同批返工（2026-10-29）」条目）。
   ③ `lg_builder.py` 模块注释里「建图不依赖注册表 / 干净解释器 `names()` 为空」的旧断言
   自本批起与事实不符，已按新事实改写，不留与代码不符的注释。
 - 计数与白名单同步：p180 `APPLICATION_IMPORT_BASENAME_ALLOWLIST` 删 `router`（3 → 2）、

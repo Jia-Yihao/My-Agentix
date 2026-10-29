@@ -575,6 +575,8 @@ class TestStaticDependencyGuards:
         导入」，顶层 import 让这一步在装配缺失态直接抛 `NodeNotRegistered`。
         唯一消费点在 `build_supervisor_graph()` 函数体内，下移为调用期 import：
         未装配时仍由 `lg_builder` 自己抛 `NodeNotRegistered`（fail-closed 不弱化）。
+        附注：本守卫按 `node.level == 0` 过滤，只覆盖绝对导入形态，`from . import
+        lg_builder` 这类同包相对导入由 p71 `test_supervisor_new_path_works_old_path_gone` 兜。
         """
         offenders = _top_level_imports_of(
             LG_SUPERVISOR_PATH, "agentix.orchestration.langgraph.lg_builder"
