@@ -12,6 +12,7 @@
 
 ## [Unreleased]
 
+- M3-4b 卡1（治理闸先行，不拆边）：`agentix/orchestration/langgraph/lg_supervisor.py` 三处宽 `except Exception`（proposer 修订轮 / reviewer fail-open / 外层 `manager.run`）前各加一条 `except capabilities.CapabilityError: raise` 治理闸——注入位装配缺失属 fail-closed，不再被吞成「审阅通过 approve」或「回退草稿」；普通 LLM 故障仍照旧 fail-open。新增 `tests/test_p182_supervisor_governance_gate.py`（3 条用例逐闸钉住）。三条 `llm_factory` 反向边（`lg_builder.py:42` 顶层、`lg_supervisor.py:281`/`:293` 函数体内）本卡**未拆**，orchestration → application 残留边数仍为 4。
 - M3-1（编排层去具体化第①步）：新增 `agentix/orchestration/node_registry.py` 节点注册表底座与 `tests/test_p178_node_registry.py` 编译图等价守卫；零行为变化，orchestration → application 反向边仍 27 条，默认注册表为空。
 
 ### 架构 · M3-2 编排层去具体化第②步（handler 改由 application 装配期注册，2026-10-29 落地）
