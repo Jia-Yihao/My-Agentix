@@ -28,7 +28,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -54,18 +54,9 @@ from agentix.orchestration.strategies.multi_agent.isolation import (
     take_memory_snapshot,
     wrap_peer,
 )
+from agentix.orchestration import node_registry
 from agentix.orchestration.langgraph import lg_builder
-from agentix.application.agents.guardrails import get_additional_info
-from agentix.application.agents.file_handler import create_file_query
-from agentix.application.agents.general_handler import (
-    create_kb_query,
-    respond_to_general_query,
-)
-from agentix.application.agents.image_handler import create_image_query
 from agentix.orchestration.langgraph.lg_states import AgentState, InputState
-from agentix.application.agents.router import analyze_and_route_query, route_query
-from agentix.application.agents.task_handler import execute_task
-from agentix.application.agents.code_handler import create_code_query
 from agentix.config import settings
 
 __all__ = [
@@ -74,19 +65,122 @@ __all__ = [
     "ROUTE_HANDLERS",
 ]
 
-#: ``route_query`` 的 8 个目标节点 → handler。与扁平图条件边同一收口，
-#: 保证 supervisor 与扁平的「路由 → 子 agent」映射逐位一致。
-#: 测试可直接替换条目（勿 monkeypatch lg_builder 属性——本 dict 已持有引用）。
-ROUTE_HANDLERS: Dict[str, Any] = {
-    "respond_to_general_query": respond_to_general_query,
-    "get_additional_info": get_additional_info,
-    "create_research_plan": lg_builder.create_research_plan,
-    "create_image_query": create_image_query,
-    "create_file_query": create_file_query,
-    "create_kb_query": create_kb_query,
-    "execute_task": execute_task,
-    "code_agent": create_code_query,
-}
+#: ``route_query`` 的 8 个目标节点名（**静态键集**，顺序与改造前的
+#: ``ROUTE_HANDLERS`` 字面量逐字一致）。它是映射的键域真源：``__iter__`` /
+#: ``__len__`` / ``__contains__`` 只读这里、不查注册表——phase19 的绊线
+#: （``set(ROUTE_HANDLERS)`` 对齐 ``route_query`` 的 Literal）与 p49/p71 的成员
+#: 断言必须在「装配未加载」的导入期也成立，否则键集判据会被 fail-closed 伪装成
+#: 真失败（键集是编排层自己的声明，注册表只负责值）。
+_HANDLER_KEYS: Tuple[str, ...] = (
+    "respond_to_general_query",
+    "get_additional_info",
+    "create_research_plan",
+    "create_image_query",
+    "create_file_query",
+    "create_kb_query",
+    "execute_task",
+    "code_agent",
+)
+
+
+#: 「注册表此刻解析不出真身」的哨兵（装配缺失态）：与任何 handler 真身都不可能是
+#: 同一对象，保证 __setitem__ 的等价撤销判定在缺失态下退化为「照常写覆盖表」。
+_UNRESOLVED: Any = object()
+
+
+class _RegistryBackedHandlers:
+    """节点注册表上的惰性映射视图（§7.5 第③步：分派文件只接收注册表）。
+
+    为什么不是 dict、也不是 ``MutableMapping`` 子类：
+    * 真身不存这里——handler 由 ``node_registry.resolve`` **每次现取**（thunk 语义），
+      测试 patch application 模块属性才能透进来；import 期快照会退化成改造前的
+      字面量 dict，把去具体化又做回去。
+    * 刻意不继承 ``MutableMapping``：混入的 ``pop``/``clear``/``update`` 会扩大
+      写入口语义面；这里只实现测试兼容面实际用到的五件
+      （``__getitem__`` / ``__setitem__`` / ``__contains__`` / ``__iter__`` /
+      ``__len__``）加 ``get`` / ``__delitem__``。
+
+    覆盖表（``_overrides``）只承接测试替换（``monkeypatch.setitem`` 等），
+    **不写注册表**：注册表是装配期容器，运行期测试替换不该污染它。
+    """
+
+    def __init__(self) -> None:
+        self._overrides: Dict[str, Any] = {}
+
+    # -- 键集三件：只读静态键域，不触注册表（见 _HANDLER_KEYS 注释） --------
+
+    def __iter__(self):
+        return iter(_HANDLER_KEYS)
+
+    def __len__(self) -> int:
+        return len(_HANDLER_KEYS)
+
+    def __contains__(self, key: object) -> bool:
+        return key in _HANDLER_KEYS
+
+    # -- 读取：覆盖表优先，回落注册表；未注册让 NodeNotRegistered 原样抛出 --
+
+    def __getitem__(self, key: str) -> Any:
+        if key not in _HANDLER_KEYS:
+            raise KeyError(key)
+        if key in self._overrides:
+            return self._overrides[key]
+        # fail-closed：装配缺失就是装配缺失，异常文本自带 `application wiring
+        # not loaded`；不许 except 后返回 None——那会把「装配没跑」伪装成
+        # 「路由到了不存在的支路」（supervisor_dispatch 的 unknown route 分支）。
+        return node_registry.resolve(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """显式实现（映射不是 dict，没有免费的 ``get``）。
+
+        key 在静态键集 ⇒ 走 ``__getitem__``，**可能抛** ``NodeNotRegistered``，
+        且**绝不返回 default**：``supervisor_dispatch`` 用 ``get`` 取 handler，
+        若装配缺失被静默成 ``None``，:235 的 ``unknown route`` 就把「装配没跑」
+        伪装成「路由到了不存在的支路」。
+        key 不在键集 ⇒ 返回 default（保住原字面量 dict 的
+        ``ValueError("unknown route")`` 可达语义）。
+        """
+        if key not in _HANDLER_KEYS:
+            return default
+        return self[key]
+
+    # -- 写入：只进覆盖表 --------------------------------------------------
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        # 等价回写即撤销：pytest 的 ``monkeypatch.setitem`` 撤销路径是
+        # ``dic[key] = 旧值``（旧值 = 本映射 setup 时经注册表解析出的真身），
+        # 若照单存入覆盖表，撤销之后覆盖表会永久留下一份**快照**，
+        # 「覆盖撤销后回落注册表解析」与 thunk 的「每次现取」语义都会失效
+        # （且失效形态是测试顺序依赖——最难查）。写入值与注册表当前解析
+        # 同一对象 ⇒ 语义上就是「恢复原状」，清掉覆盖而不是存快照。
+        # 等价判定只在静态键域内做（非登记键没有「注册表当前解析」可言）；
+        # 注册表不可解析（装配缺失）时不在此处抛：写覆盖表是本就合法的测试
+        # 替换动作，读取侧的 fail-closed 由 __getitem__/get 负责。
+        if key in _HANDLER_KEYS:
+            try:
+                resolved = node_registry.resolve(key)
+            except node_registry.NodeNotRegistered:
+                resolved = _UNRESOLVED
+            if value is resolved:
+                self._overrides.pop(key, None)
+                return
+        self._overrides[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        # 覆盖表的删除语义：key 必须"存在于映射视图"（静态键集），否则 KeyError
+        # （与 dict 对非登记键 delitem 同形）；删除动作只清覆盖表——注册表条目
+        # 属装配期容器，运行期删不掉也不该删。删除后读取回落到注册表解析。
+        if key not in _HANDLER_KEYS:
+            raise KeyError(key)
+        self._overrides.pop(key, None)
+
+
+#: ``route_query`` 的 8 个目标节点 → handler 的惰性映射（真身在注册表，
+#: provider 由 application 装配期登记，见 ``agentix/application/wiring.py``）。
+#: 与扁平图条件边同一收口，保证 supervisor 与扁平的「路由 → 子 agent」映射逐位一致。
+#: 测试仍可直接替换条目（写进覆盖表；勿 monkeypatch lg_builder 属性——语义同前：
+#: 生效的是覆盖表/注册表里的实现，不是模块属性快照）。
+ROUTE_HANDLERS: _RegistryBackedHandlers = _RegistryBackedHandlers()
 
 #: supervisor 内 Manager 的轮次上限：结构路径第 1 轮必收敛；
 #: LLM 审阅否决 → 第 2 轮修订 → 第 3 轮复审。3 轮封顶防成本失控。
@@ -230,7 +324,11 @@ async def supervisor_dispatch(
     （策略 / 会话 / 只读快照规模 / live registry 观测，见 §A-P2-1）。
     """
     goal = state.messages[-1].content if state.messages else ""
-    handler_name = route_query(state)
+    # 路由判定不再顶层 import（§7.5 第③步）：每次调用现取注册表真身、不缓存
+    # （与 node_registry.resolve 的底座口径一致；注册表项 awaits=False/takes_config=False
+    # 的声明以本行同步 `route_fn(state)` 形态为唯一事实来源，改这里必须同批改声明）。
+    route_fn = node_registry.resolve("route_query")
+    handler_name = route_fn(state)
     handler = ROUTE_HANDLERS.get(handler_name)
     if handler is None:  # route_query 的 Literal 收口，理论不可达
         raise ValueError(f"supervisor_dispatch: unknown route {handler_name!r}")
@@ -445,7 +543,10 @@ def build_supervisor_graph(checkpointer=None):
             getattr(settings, "LG_TOKEN_HISTORY_BUDGET", 0),
         ),
     )
-    builder.add_node(analyze_and_route_query)
+    # 建图期解析、把真身交给 langgraph：节点名与签名仍由 langgraph 按真函数推断，
+    # 行为与改造前的 `add_node(analyze_and_route_query)` 逐位不变。本批不引入解析壳
+    # （壳是 M3-3 的事——supervisor 的建图是惰性的，不在模块 import 期发生）。
+    builder.add_node(node_registry.resolve("analyze_and_route_query"))
     builder.add_node("supervisor_dispatch", supervisor_dispatch)
     builder.add_edge(START, "message_window")
     builder.add_edge("message_window", "analyze_and_route_query")

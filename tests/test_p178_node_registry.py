@@ -425,6 +425,27 @@ EXPECTED_GRAPH_EDGES: Tuple[Tuple[str, str, bool], ...] = (
 #: 直接读数，比集合差集更好定位；且它必须与 `EXPECTED_GRAPH_EDGES` 的实际长度一致。
 EXPECTED_GRAPH_EDGE_COUNT = 18
 
+#: 装配期（M3-2 起，`agentix/application/wiring.py` = §7.5 第②步唯一落点）登记的节点名
+#: 全集：8 个 `ROUTE_HANDLERS` 键 + `route_query` + `analyze_and_route_query`。
+#: `names()` 返回排序元组，故常量按 `sorted` 冻结——判据与 `node_registry.names()` 同形，
+#: 保持**全集相等**口径（新增/缺失/替换实现名都会让它红）。
+EXPECTED_WIRED_NAMES: Tuple[str, ...] = tuple(
+    sorted(
+        {
+            "respond_to_general_query",
+            "get_additional_info",
+            "create_research_plan",
+            "create_image_query",
+            "create_file_query",
+            "create_kb_query",
+            "execute_task",
+            "code_agent",
+            "route_query",
+            "analyze_and_route_query",
+        }
+    )
+)
+
 
 class TestCompiledGraphEquivalence:
     """守卫「现在的编译图长什么样」，作为后续拆边的等价性基准线。
@@ -493,13 +514,17 @@ class TestCompiledGraphEquivalence:
         )
         assert edges == EXPECTED_GRAPH_EDGES
 
-    def test_registry_is_not_wired_into_the_graph_yet(self, compiled_graph: Any) -> None:
-        """本批的**零变化**证明：底座建好但没有任何节点从注册表解析 ⇒ 默认注册表为空。
+    def test_registry_is_wired_by_application_assembly(self) -> None:
+        """M3-2 起装配已接入：默认注册表**恰含** wiring 登记的 10 个节点名。
 
-        后续批次开始写入装配时这条会红，那是预期的（届时按当时的批次口径改写它，
-        并在同批说明理由）。
+        本用例原口径（M3-1 底座批次）是 `DEFAULT_REGISTRY.names() == ()`——当时注册表
+        还没有任何生产写入点，空集即「底座建好但没有任何节点从注册表解析」的零变化证明。
+        原 docstring 明确预告：「后续批次开始写入装配时这条会红，那是预期的（届时按
+        当时的批次口径改写它，并在同批说明理由）」——M3-2 即该批次：
+        `agentix/application/wiring.py`（§7.5 第②步）经 `tests/conftest.py` 挂线，
+        装配名集合成为新的冻结基准。**改写保持全集相等，不放宽为成员/子集判断。**
         """
-        assert DEFAULT_REGISTRY.names() == ()
+        assert DEFAULT_REGISTRY.names() == EXPECTED_WIRED_NAMES
 
 
 # ---------------------------------------------------------------------------

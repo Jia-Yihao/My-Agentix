@@ -7,6 +7,9 @@ from typing import List, Optional, Sequence
 root_dir = Path(__file__).parent.parent.parent
 sys.path.append(str(root_dir))
 
+# M3-2（§7.5 第②步）：独立 CLI 同为装配根——下面 import lg_builder 会在模块期建图，
+# 注册线必须挂在它之前，否则 supervisor 分派路径解析不到 handler（fail-closed 即抛）。
+import agentix.application.wiring  # noqa: F401 - 装配期注册节点 handler（§7.5 第②步）
 from agentix.orchestration.langgraph.lg_states import InputState
 from agentix.application.agents.utils import new_uuid
 # 说明（非缺陷）：本模块是独立 CLI 入口（`__main__` 直接运行），全仓 0 处 import 它。
