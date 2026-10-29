@@ -6,7 +6,7 @@
    `DEFAULT_REGISTRY.names()` 的交集必须为空集。把能力注册成第 11 个节点键会同时破三条
    「注册表全集相等」守卫（`tests/test_p178_node_registry.py:527`、
    `tests/test_p180_builder_shells.py` 的 P3 探针 `test_p3_chat_service_wires_ten_keys`、
-   `tests/test_p179_supervisor_wiring.py:121-122`），
+   `test_p179` 的 `test_names_exactly_the_wired_ten`），
    这三条一律不许放宽——所以注入位另立一把键集，本文件把「两把键集互不相交」钉成断言。
 2. **装配面**：装配后能力键集**全集相等**于两键清单（不是子集、不是成员判断）。
 3. **真身同源**：`resolve("offload_content") is artifact_store.offload_content`——注入位
@@ -112,7 +112,7 @@ EXPECTED_RESIDUAL_EDGES = {
     "langgraph/lg_supervisor.py": 2,
 }
 #: 全仓残留总数，由 §8.3 的批次划分决定（`lg_prompts` 一条与 `llm_factory` 三条
-#: 分别归 M3-5b/M3-4b/M3-6，本批一律不动）。
+#: 分别归 M3-6/M3-4b/M3-6，本批一律不动；`lg_prompts` 的字面终态判归见规划 §8 的 M3-5 行）。
 #: 2026-10-29 时点：M3-5b 收下 `router._ensure_router` 这一条 ⇒ 总数 5 → 4
 #: （`lg_prompts` 那条它字面钉在 p71，本批未动；`llm_factory` 三条仍归 M3-4b/M3-6）。
 EXPECTED_RESIDUAL_TOTAL = 4

@@ -12,8 +12,8 @@
 的唯一写入点：编排层要用的应用侧能力（内容外置 `offload_content`、产物存储
 `get_artifact_store`）在这里按键名登记。它刻意用**另一把键集**而不是往
 `DEFAULT_REGISTRY` 加第 11 个键——三条「注册表全集相等」守卫
-（`tests/test_p178_node_registry.py:527`、`tests/test_p179_supervisor_wiring.py:121-122`、
-`tests/test_p180_builder_shells.py:544`）是等价性基准线，一律不许放宽。
+（`tests/test_p178_node_registry.py:527`、`test_p179` 的 `test_names_exactly_the_wired_ten`、
+`test_p180` 的 `test_p3_chat_service_wires_ten_keys`）是等价性基准线，一律不许放宽。
 
 ## 为什么 provider 一律是「模块形态 + 零参 thunk」
 
