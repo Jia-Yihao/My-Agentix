@@ -24,7 +24,7 @@
    **每次都走 thunk**、不缓存。这条语义由
    `tests/test_p181_capability_seam.py::TestConsumerBehaviorEquivalence::test_offload_text_observes_module_attr_patch`
    钉住。`tests/test_p78_index_cascade_isolate.py:227` / `:554` 是应用侧**直接 import 路径**
-   （`agentix/application/services/chat_service.py:376` /
+   （旧句 `agentix/application/services/chat_service.py`:376（2026-10-30 实测现值 :381）/
    `agentix/retrieval/domain/services/context_engine.py:204` 的函数体内 import）的降级用例，
    既不经 `contract.py` 也不经本文件，与本注入位**无依赖关系**，至多作为「模块属性 patch
    惯用法同形」的旁证——不得写成前提。

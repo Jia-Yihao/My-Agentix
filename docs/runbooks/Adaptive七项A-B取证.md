@@ -274,7 +274,7 @@ lag 阶梯（`current_level()`，两臂各跑满 5 轮，`repeat_deterministic=t
 ### 3.8 token 窗口 `token_window`
 
 注入：`LG_TOKEN_HISTORY_BUDGET=0`（对照）/ `=800`（臂内 `_patched_settings` 注入，退出即还原；
-生产接线同源：`agentix/orchestration/langgraph/lg_builder.py:481-484`）。窗口节点拿到的两个实参
+生产接线同源：`agentix/orchestration/langgraph/lg_builder.py:481-484`）（2026-10-30 实测更正：该接线块现为同文件 `agentix/orchestration/langgraph/lg_builder.py`:428-435，`481-484` 系登记时点的旧行号快照；取数 `grep -n "^    builder.add_node(" agentix/orchestration/langgraph/lg_builder.py`）。窗口节点拿到的两个实参
 （`MAX_HISTORY_MESSAGES`、`LG_TOKEN_HISTORY_BUDGET`）**都从 settings 读**，脚本不往里传字面量预算；
 `results.flag_values` 记的是 settings 实际被读到的值。历史 24 条、每条 400 字；
 `count_tokens` 默认口径是 `len(text)//4`（非真分词器）。

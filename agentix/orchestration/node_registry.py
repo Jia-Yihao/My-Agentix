@@ -10,7 +10,7 @@
 ## 为什么是「延迟解析」而不是「装配期注入」
 
 `agentix/orchestration/langgraph/lg_builder.py` 文件末尾的 `checkpointer = MemorySaver()`
-+ `graph = build_graph(checkpointer=checkpointer)`（时点 `:480-481`）在**模块 import 期**就执行，不存在「先装配、再建图」的时间窗；且大量测试
++ `graph = build_graph(checkpointer=checkpointer)`（时点 `:480-481`）（2026-10-30 实测：这两句在同文件 `:480-481`，是**模块体尾部的实例化段**而非严格末行——其后 `:482-524` 是 Phase 19 supervisor 接线与 `safety_guardrails`，与建图时序无关，故「延迟解析」的结论不变）在**模块 import 期**就执行，不存在「先装配、再建图」的时间窗；且大量测试
 直接 `import lg_builder` 而不经过 `application`。所以注册表必须支持：建图期只登记
 **名字与形态**，节点**首次被调用时**才向注册表解析真身。本批提供这个底座。
 
