@@ -466,7 +466,7 @@ async def supervisor_dispatch(
         outcome = await manager.run(goal)
     except capabilities.CapabilityError:
         # 保险闸（M3-4b 卡1）：卡2 后生产不可达（入口 provider 早取 + wiring 一处写三键⇒
-        # 无半装配态）；防未来取源被这条宽 except 收敛成「回退草稿」——链路照常绿，没装配无人知。
+        # 无半装配态），也是内层两闸 re-raise 的外层兜底——防未来 try 体内新增取源被吞成「回退草稿」，链路照常绿而没装配无人知。
         raise
     except Exception as exc:  # noqa: BLE001 —— Manager 异常同样回退草稿
         logger.warning("supervisor: manager.run failed, fallback to draft: {}", exc)
