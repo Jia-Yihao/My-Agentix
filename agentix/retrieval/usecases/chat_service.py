@@ -325,7 +325,7 @@ def _as_page_content_doc(doc):
 def _similarity_search_with_fetch(vectorstore, question, *, search_k, metadata_filter, fetch_k) -> list:
     """统一封装带 fetch_k 的向量检索，返回已按距离阈值过滤、截断到 search_k 的文档列表。
 
-    R2-2（指南 §2.2.7①）：距离阈值过滤后、截断前应用数据条目有效性后过滤
+    R2-2（指南 §2.2.7①）：数据条目有效性后过滤先于距离阈值过滤与截断执行
     （已失效/未生效条文不进入召回；缺失有效性字段的存量数据默认有效）。
     """
     if hasattr(vectorstore, "similarity_search_with_score"):

@@ -37,6 +37,10 @@
 3. **``reasoning`` 丢弃**只在本文件钉「值里没有 ``reasoning`` 键」；生产侧没有
    消费点这一事实靠代码位置（``code_handler.py:326`` / ``task_handler.py:105``
    原样透传）阅读确认，无用例守护。
+
+4. **只服务单轮**：写侧判据是 ``len(state.messages) == 1``（``router.py`` 里 ``_store_routing_cache`` 的调用点），
+   多轮请求既不查也不写缓存。本文件钉的是单轮口径下的查/写判据，**不**验证多轮
+   请求的命中率（按设计恒不命中）。
 """
 
 from __future__ import annotations

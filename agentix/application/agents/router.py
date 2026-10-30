@@ -208,6 +208,8 @@ def _fastpath_router(question: str) -> Optional[Tuple[str, Router]]:
     - ``statute_direct``（短句单条数据条目直取，无任何推理词）→ ``graphrag-query``
       （与既有 ``_heuristic_router`` 数据条目关键词映射同向）；
     - ``capability_meta``（"你会做什么 / 你有哪些功能"）→ ``general-query``；
+      （示例句式须与 ``tests/test_p173_routing_cache.py`` 的 ``_FASTPATH_EXPANSION_HITS``
+      样本同源：改一处必须同批改另一处，否则规则与用例各说一套。）
     - ``identity_meta``（"你是 AI 吗 / 你是什么模型"）→ ``general-query``；
     - ``ack_meta``（"我明白了 / 谢谢你的解答 / 辛苦了"）→ ``general-query``。
 
@@ -560,9 +562,10 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
 
     sanitized_router = router_cls(**sanitized_kwargs)
 
-    # PhaseK 任务 4：路由决策值上 span 的**唯一落点**——白名单校验通过后的最终
-    # route（有界枚举，纪律 3；理由文本不落）。兜底出口另有 _record_router_fallback
-    # 指标归因，此处不写第二源；纯 Python 分派的 route_query() 不调（它不返回
+    # PhaseK 任务 4：路由决策值上 span 的**两个落点之一**——白名单校验通过后的最终
+    # route（有界枚举，纪律 3；理由文本不落）。缓存命中分支（route.cache_hit span 处）也调本 helper，
+    # 两处同走 record_route_decision 单源，不另立第二份判据。兜底出口另有
+    # _record_router_fallback 指标归因；纯 Python 分派的 route_query() 不调（它不返回
     # route_type）。fail-open 由 helper 自身保证（无 span/异常 ⇒ no-op，纪律 2）。
     record_route_decision(sanitized_router.type)
 

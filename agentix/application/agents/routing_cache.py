@@ -22,6 +22,9 @@
 * **值**：只存 ``{"type", "logic", "decision", "confidence"}`` 四个字段。
   - **不存 ``question``**：命中时用**当前这次请求的原文**回填，缓存里因此不含
     任何用户输入；
+  - **保留 ``logic``**：它与 ``reasoning`` 同为模型自由文本，留着是因为下游把它
+    拼进 system prompt（``general_handler.py:86`` / ``guardrails.py:101``）有消费点；
+    本缓存承诺的是「不含问句原文」，**不**承诺「不含模型文本」。
   - **不存 ``reasoning``**：它是模型的叙述性文本，可能整段复述问句（等于又把
     原文存了一份）；而且生产侧**没有任何消费点读它**——全仓只有
     ``code_handler.py:326`` / ``task_handler.py:105`` 把它从上一个 ``Router``
@@ -147,7 +150,7 @@ class RoutingCache:
 
     @property
     def entries(self) -> "OrderedDict[str, Tuple[float, Dict[str, Any]]]":
-        """内部存储的只读句柄（对账用：``len`` / 迭代键 / 读值）。"""
+        """内部存储的直接句柄（对账用：``len`` / 迭代键 / 读值；返回的是本体而非副本，用例经它改写 value 制造脏条目）。"""
         return self._entries
 
     def get(self, question: Optional[str], *, generation: str) -> Optional[Dict[str, Any]]:

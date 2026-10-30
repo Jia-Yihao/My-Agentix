@@ -57,7 +57,7 @@ function sanitizeRowHeight(rowHeight: number): number {
   return Number.isFinite(rowHeight) && rowHeight > 0 ? rowHeight : DEFAULT_ROW_HEIGHT
 }
 
-/** overscan 非法（NaN / 负数 / 小数）按 0 处理：少渲染几条总好过渲染负数条。 */
+/** overscan 非法值分两支：非有限（NaN / ±Infinity）回落 DEFAULT_OVERSCAN，有限值向下取整且负数取 0；刻意不设上界——窗口区间由 computeVirtualWindow 钳到 [0, total]。 */
 function sanitizeOverscan(overscan: number | undefined): number {
   if (!Number.isFinite(overscan)) return DEFAULT_OVERSCAN
   return Math.max(0, Math.floor(overscan as number))
