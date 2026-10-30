@@ -1,4 +1,4 @@
-"""编排层非节点能力注入位（M3-5a，本批只收 `artifact_store` 的两键）。
+"""编排层非节点能力注入位（M3-5a，本批只收 `artifact_store` 的两键；2026-10-30 现值三键，见下方「键的归属」）。
 
 ## 这个文件为什么存在
 
@@ -48,7 +48,7 @@
 
 哪些名字进这把键集，由 `agentix/application/wiring.py` 一处说了算；编排层不得 import
 装配文件（那等于把反向边换个名字绕回来，由 `tests/test_p179_supervisor_wiring.py` 的
-静态守卫钉住）。本批登记的键：`offload_content`、`get_artifact_store`。
+静态守卫钉住）。本批登记的键：`offload_content`、`get_artifact_store`（2026-10-30 现值三键：再加 `get_llm_client`；`:52-54` 那句「后续批 M3-4b 会把…」已兑现）。
 后续批 M3-4b 会把 `llm_factory` 的三条边也接到本注入位（指针：
 `docs/design/审批与中断恢复优化规划.md` §8 台账的 M3-4b 行），届时键数变三，
 `tests/test_p181_capability_seam.py` 的全集相等清单同批改。
