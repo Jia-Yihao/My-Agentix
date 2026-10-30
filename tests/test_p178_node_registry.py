@@ -358,21 +358,21 @@ class TestAwaitableCriterion:
 # 6 — 编译图等价取证守卫（M3 新增的唯一等价性证据）
 # ---------------------------------------------------------------------------
 
-#: 扁平主图的 10 个节点名，取自 `agentix/orchestration/langgraph/lg_builder.py:479-518`
-#: 的 `add_node` 调用（与 `lg_builder.py:470-474` 注释里点名的集合一致；
+#: 扁平主图的 10 个节点名，取自 `lg_builder.py` 的 `builder.add_node(...)` 块（时点 `:428-467`）；
+#: 与 `lg_builder.py` 上方「本块仅注册下列 10 个节点」注释（时点 `:419-422`）点名的集合一致；
 #: `check_hallucinations` 有意不接线，故不在集合内）。
 EXPECTED_GRAPH_NODE_NAMES: frozenset = frozenset(
     {
-        "message_window",  # lg_builder.py:479-486
-        "analyze_and_route_query",  # lg_builder.py:487
-        "respond_to_general_query",  # lg_builder.py:488
-        "get_additional_info",  # lg_builder.py:489
-        "create_research_plan",  # lg_builder.py:490-495
-        "create_image_query",  # lg_builder.py:496
-        "create_file_query",  # lg_builder.py:497
-        "create_kb_query",  # lg_builder.py:498
-        "execute_task",  # lg_builder.py:504-509
-        "code_agent",  # lg_builder.py:513-518
+        "message_window",  # lg_builder.py:428-435
+        "analyze_and_route_query",  # lg_builder.py:436
+        "respond_to_general_query",  # lg_builder.py:437
+        "get_additional_info",  # lg_builder.py:438
+        "create_research_plan",  # lg_builder.py:439-444
+        "create_image_query",  # lg_builder.py:445
+        "create_file_query",  # lg_builder.py:446
+        "create_kb_query",  # lg_builder.py:447
+        "execute_task",  # lg_builder.py:453-458
+        "code_agent",  # lg_builder.py:462-467
     }
 )
 

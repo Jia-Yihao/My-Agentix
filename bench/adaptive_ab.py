@@ -1506,7 +1506,7 @@ def _apply_window(messages: List[Any]) -> Dict[str, Any]:
     """跑真实窗口节点，返回「剩下多少条 / 多少 token」以及节点交回的删除集。
 
     两个实参**一律从 settings 读**，与生产接线同形
-    （``agentix/orchestration/langgraph/lg_builder.py:481-484``）。臂值由调用方经
+    （``lg_builder.py`` 的 `create_message_window_node(...)` 实参位（时点 `:430-433`））。臂值由调用方经
     ``_patched_settings(LG_TOKEN_HISTORY_BUDGET=...)`` 注入 Settings 后再进来——
     本函数**不接收字面量预算**，否则量到的是「参数注入」而不是「配置生效」，
     读数就不能代表生产路径（bench 铁律 1：走原接口，不复制逻辑）。
@@ -1665,7 +1665,7 @@ def _token_window_state(
             "budget_source": (
                 "臂值经 `_patched_settings(LG_TOKEN_HISTORY_BUDGET=...)` 注入 Settings、"
                 "退出即还原（生产接线同源："
-                "`agentix/orchestration/langgraph/lg_builder.py:481-484` 也是从 "
+                "`lg_builder.py:430-433`（时点）也是从 "
                 "`settings.MAX_HISTORY_MESSAGES` 与 `settings.LG_TOKEN_HISTORY_BUDGET` 取实参）；"
                 "`_apply_window` 不接收字面量预算，`results.flag_values` 记的是 settings "
                 "实际被读到的值"

@@ -48,7 +48,7 @@
    不是 `"create_code_query"`。
 8. **S2 收口（M3-2 遗留一般项）**：`_RegistryBackedHandlers` 对非静态键
    「可写不可读」的不对称已在该类 docstring 明文声明；本文件钉住「写入非静态键后
-   `in` / `iter` / `len` 均不可见、`get` 返回 default」这一**已声明**行为。
+   `in` / `iter` / `len` 均不可见、`get` 返回 default」这一**已声明**行为（只声明，不改行为）。
 9. **取源 else 留痕守卫（M3-6 ⑪ G-3）**：钉住注解 if 的 else 与 warning 留痕在位。
 
 ## 验收口径
@@ -782,7 +782,7 @@ class TestRegistryBackedDeclaredAsymmetry:
 
 
 def _route_query_else_defects(node: ast.If) -> List[str]:
-    """判据：`ast.If` 的 `orelse` 非空且内含一条 `logger.warning(...)` 调用。
+    """判据两条：`orelse` 非空且内含一条 `logger.warning(...)`；且 `orelse` 每条语句必须是该留痕调用本身。
 
     返回缺陷列表（空 = 合格）。接受任意 `ast.If` 入参——同一条用例用它同时
     走真身与内联负样例，守卫不因「只测真树」失去敏感性（不读文件字面量凑判）。
@@ -804,6 +804,18 @@ def _route_query_else_defects(node: ast.If) -> List[str]:
                 has_warning = True
     if not has_warning:
         defects.append("else 里没有 logger.warning 留痕调用")
+    for stmt in node.orelse:
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Call)
+            and isinstance(stmt.value.func, ast.Attribute)
+            and stmt.value.func.attr == "warning"
+            and isinstance(stmt.value.func.value, ast.Name)
+            and stmt.value.func.value.id == "logger"
+        ):
+            defects.append(
+                f"else 里出现留痕之外的语句：{ast.unparse(stmt)}——塌缩分支只许 logger.warning 留痕，不许兜底动作"
+            )
     return defects
 
 
@@ -832,3 +844,11 @@ class TestRouteQueryAnnotationElseTrace:
         ).body[1]
         assert isinstance(negative, ast.If)
         assert _route_query_else_defects(negative), "负样例（无 else）应被判不合格——判据失去敏感性"
+        negative2 = ast.parse(
+            'x = 1\nif x is not None:\n    y = x\nelse:\n    logger.warning("m")\n    y = None\n'
+        ).body[1]
+        assert isinstance(negative2, ast.If)
+        assert _route_query_else_defects(negative2), (
+            "负样例 2（else 里除留痕外还有兜底赋值）应被判不合格——"
+            "否则判据退化成「只要有 else 就合格」"
+        )
