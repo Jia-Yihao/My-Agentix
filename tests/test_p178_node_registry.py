@@ -360,7 +360,7 @@ class TestAwaitableCriterion:
 
 #: 扁平主图的 10 个节点名，取自 `lg_builder.py` 的 `builder.add_node(...)` 块（时点 `:428-467`）；
 #: 与 `lg_builder.py` 上方「本块仅注册下列 10 个节点」注释（时点 `:419-422`）点名的集合一致；
-#: `check_hallucinations` 有意不接线，故不在集合内）。
+#: `check_hallucinations` 有意不接线，故不在集合内。
 EXPECTED_GRAPH_NODE_NAMES: frozenset = frozenset(
     {
         "message_window",  # lg_builder.py:428-435

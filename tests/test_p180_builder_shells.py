@@ -782,7 +782,7 @@ class TestRegistryBackedDeclaredAsymmetry:
 
 
 def _route_query_else_defects(node: ast.If) -> List[str]:
-    """判据两条：`orelse` 非空且内含一条 `logger.warning(...)`；且 `orelse` 每条语句必须是该留痕调用本身。
+    """判据：`orelse` 非空；其中至少含一条 `logger.warning(...)`；且 `orelse` 每条语句必须是该留痕调用本身。
 
     返回缺陷列表（空 = 合格）。接受任意 `ast.If` 入参——同一条用例用它同时
     走真身与内联负样例，守卫不因「只测真树」失去敏感性（不读文件字面量凑判）。
