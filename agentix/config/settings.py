@@ -675,6 +675,8 @@ class Settings(BaseSettings):
     # 已闭合的补偿记录（decided_by=system:node_error_handler），并把一条如实的
     # 失败回执写进 messages 后路由到 END。handler **不重跑节点**（副作用铁律）。
     # 记录写失败按纪律 2 fail-open：只告警，失败收尾照常。
+    # 前置：补偿记录真的落库还须 HITL_PENDING_PERSIST_ENABLED=true（装配判据唯一源
+    # hitl_bridge.resolve_pending_store）；该键关（默认 false）时只给失败回执 + warning。
     NODE_ERROR_HANDLER_ENABLED: bool = Field(
         default=False,
         description="Attach native error_handler compensation to side-effecting nodes (execute_task/code_agent); default off",

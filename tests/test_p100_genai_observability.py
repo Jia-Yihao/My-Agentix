@@ -250,7 +250,8 @@ ALLOWED_METRIC_LABELS = frozenset(
         "rating",   # P2-1 feedback_total{rating}：有界枚举 up|down
         "reason",
         "result",  # T22 checkpointer_upgrade_total{result}：有界枚举 ok|fail；
-        # T26 task_queue_claimed_total{result}：有界枚举 ok|empty|error
+        # T26 task_queue_claimed_total{result}：有界枚举 ok|empty|error；
+        # T8 routing_cache_total{result}：有界枚举 hit|miss|error
         "role",
         "scope",
         "stage",

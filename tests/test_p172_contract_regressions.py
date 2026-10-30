@@ -133,7 +133,7 @@ def pinned_dense_settings(monkeypatch):
     另外两个默认开的旋钮**刻意不钉**，因为它们不影响本文件的 id/分数断言。
     推演（读的是 ``retrieve_docs_with_retry`` 的实际控制流）：
 
-    - ``EFFECTIVENESS_FILTER_ENABLED``（默认 ``true``）会在阈值过滤之后再走
+    - ``EFFECTIVENESS_FILTER_ENABLED``（默认 ``true``）会在阈值过滤之前先走
       ``filter_in_force``。本文件语料的 metadata 只有 ``chunk_id`` /
       ``document_id``，**缺全部有效性字段** ⇒ ``is_in_force`` 按"缺失字段视为
       现行有效"返回 True ⇒ 一条都不被剔除，id 序列与分数原样保留。
