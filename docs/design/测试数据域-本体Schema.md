@@ -64,7 +64,7 @@
 }
 ```
 
-- **graphrag 路径**：在 `lg_builder.create_research_plan` 中由 `response["cyphers"][*].records` 按「数据集名 + 条号」抽取并组装，附加到返回的 `AIMessage.additional_kwargs["sources"]`。
+- **graphrag 路径**：在 `lg_builder.create_research_plan` 中由 `response["cyphers"][*].records` 按「数据集名 + 条号」抽取并组装，附加到返回的 `AIMessage.additional_kwargs["sources"]`。（2026-10-30 实测更正：真身在 `agentix/application/agents/research_handler.py::create_research_plan`，`lg_builder` 侧是**延迟解析壳**（`agentix/orchestration/langgraph/lg_builder.py`:145-147），建图与分派经 `agentix/orchestration/node_registry.py` 取；抽取与组装那段逻辑本身没变，它现随入口一起住在 `agentix/application/agents/research_handler.py`（`_extract_legal_sources` 起该文件 `:58`）。）
 - **kb 路径**：沿用 `kb_ingest` 与检索域 usecases 既有 `sources`（`document_id` / `source`；旧 `knowledge_service` 已归档），由 `create_kb_query` 原样透传。
 - **前端**：统一消费 `sources` 渲染「数据条目引用卡片」。
 
