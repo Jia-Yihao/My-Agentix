@@ -10,7 +10,7 @@
 
 自 **M3-5a** 起，本文件同时是**非节点能力注入位**（`agentix/orchestration/capabilities.py`）
 的唯一写入点：编排层要用的应用侧能力（内容外置 `offload_content`、产物存储
-`get_artifact_store`）在这里按键名登记。它刻意用**另一把键集**而不是往
+`get_artifact_store`、LLM 客户端 `get_llm_client`）在这里按键名登记（2026-10-30 实测 `:153-155` 一处写三键）。它刻意用**另一把键集**而不是往
 `DEFAULT_REGISTRY` 加第 11 个键——三条「注册表全集相等」守卫
 （`tests/test_p178_node_registry.py:527`、`test_p179` 的 `test_names_exactly_the_wired_ten`、
 `test_p180` 的 `test_p3_chat_service_wires_ten_keys`）是等价性基准线，一律不许放宽。
@@ -138,8 +138,8 @@ node_registry.register(
 
 # ---------------------------------------------------------------------------
 # 非节点能力注入位（M3-5a）：编排层要用的应用侧能力，键集与上面的节点键**互不相交**
-# （注册成第 11 个节点键会破三条「注册表全集相等」守卫：p178:527 / p179:121-122 /
-# p180:544，三条一律不许放宽，所以另立一把键集，见 `agentix/orchestration/capabilities.py`）。
+# （注册成第 11 个节点键会破三条「注册表全集相等」守卫：p178:527 / p179:126-127 /
+# p180:605（断言 :611）——旧句 p179:121-122 / p180:544 系 2026-10-29 时点锚、2026-10-30 实测已漂；三条一律不许放宽，所以另立一把键集，见 `agentix/orchestration/capabilities.py`）。
 #
 # provider 仍必须是**每次现取的模块属性 thunk**（上面「模块形态」一节的同一条口径）：
 # 写 `capabilities.register("offload_content", artifact_store.offload_content)` 会把
@@ -147,9 +147,9 @@ node_registry.register(
 # `tests/test_p181_capability_seam.py::TestConsumerBehaviorEquivalence::test_offload_text_observes_module_attr_patch`
 # 钉住。`tests/test_p78_index_cascade_isolate.py:227` / `:554` 的
 # `monkeypatch.setattr(store_mod, "offload_content", ...)` 走的是
-# `chat_service.py:376` / `context_engine.py:204` 函数体内的**直接 import** 路径，
-# 既不经 `contract.py` 也不经注入位，与本文件这两键无依赖关系，只是同一种模块属性 patch
-# 惯用法（旁证，不是前提）。
+# 函数体内的**直接 import** 路径（旧句裸名 `chat_service.py:376` 现值 `agentix/application/services/chat_service.py:381`，
+# 旧句 `context_engine.py:204` 行号未漂但真身全路径是 `agentix/retrieval/domain/services/context_engine.py:204`），
+# 既不经 `contract.py` 也不经注入位，与本文件注入位登记的键无依赖关系，只是同一种模块属性 patch 惯用法（旁证，不是前提）。
 capabilities.register("offload_content", lambda: artifact_store.offload_content)
 capabilities.register("get_artifact_store", lambda: artifact_store.get_artifact_store)
 capabilities.register("get_llm_client", lambda: llm_factory.get_llm_client)
