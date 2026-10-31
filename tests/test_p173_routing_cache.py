@@ -10,7 +10,10 @@
 2. ``TestFlagOffEquivalence``——flag-off **逐位等价**：
    ① 缓存模块**没有被 import**（``sys.modules`` 里查不到）；
    ② ``routing_cache_total`` 三个取值零增量；
-   ③ 路由节点打出的日志**逐行等于基线模板序列**（多一行即红）。
+   ③ 路由节点打出的日志**逐行等于基线模板序列**（多一行即红）；
+   ④ 「惰性 import 不许上提到 router 模块级」静态 AST 判据（在
+      ``TestFlagOffEquivalence.test_flag_off_never_imports_cache_module`` 内，
+      补住运行时判据①对顶部 import 的假绿盲区）。
 3. ``TestHitSkipsModel``——命中**不构造模型**：第二次同问句把
    ``get_llm_client`` 换成必炸哨兵，仍返回缓存结论。
 4. ``TestCacheStoresNoOriginalText``——键里没有问句原文（键 = 8 位换代令牌 +
@@ -206,6 +209,55 @@ class TestFlagOffEquivalence:
         assert result["router"].type == "general-query"
         assert model.calls == 1
         assert _CACHE_MODULE not in sys.modules, "flag-off 不得加载缓存模块"
+
+        # 台账表 G G10：上面的运行时判据对「惰性 import 被上提到模块顶部」零敏感——
+        # 顶部 import 后模块早已进 sys.modules，本用例开头 pop 照样摘掉、flag-off 路径
+        # 不再触发，运行时断言仍绿。补一条与运行时同源的静态 AST 守卫：routing_cache 的
+        # import 节点不许出现在 router 的模块级语句里（含模块级 if/try 分支——它们在
+        # import router 时即执行）；只允许落在函数/类体内（惰性 import 的真实位置）。
+        import ast as _ast
+        import inspect as _inspect
+
+        leaf = _CACHE_MODULE.rsplit(".", 1)[-1]
+
+        def _imports_cache(node):
+            if isinstance(node, _ast.Import):
+                return any(
+                    a.name == leaf or a.name.endswith("." + leaf) for a in node.names
+                )
+            if isinstance(node, _ast.ImportFrom):
+                if node.module and (
+                    node.module == _CACHE_MODULE or node.module.endswith("." + leaf)
+                ):
+                    return True
+                return any(a.name == leaf for a in node.names)
+            return False
+
+        router_tree = _ast.parse(_inspect.getsource(router_mod))
+        # 只扫模块级：遇到函数/类定义即停，不下探其内部（内部的才是合法的惰性 import）。
+        module_level: list = []
+        stack = list(router_tree.body)
+        while stack:
+            node = stack.pop()
+            if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+                continue
+            if isinstance(node, (_ast.Import, _ast.ImportFrom)):
+                module_level.append(node)
+            for _field, value in _ast.iter_fields(node):
+                if isinstance(value, list):
+                    for child in value:
+                        if isinstance(child, _ast.stmt):
+                            stack.append(child)
+        hoisted = [n for n in module_level if _imports_cache(n)]
+        assert not hoisted, (
+            f"routing_cache 的 import 被上提到 router 模块级（{len(hoisted)} 处）——"
+            "惰性 import 契约破了，flag-off 不再零加载"
+        )
+        # 正向哨兵：router 里确实存在 routing_cache 的 import（在函数体内）。否则上面的
+        # 「模块级为空」会因压根没这 import 而假绿——用全树 walk 确认它至少出现过一次。
+        assert any(_imports_cache(n) for n in _ast.walk(router_tree)), (
+            "router 里找不到任何 routing_cache import——正向哨兵失效，上面的守卫无从证伪"
+        )
 
     @pytest.mark.asyncio
     async def test_flag_off_has_no_metric_delta(self, monkeypatch):
@@ -721,6 +773,12 @@ _FASTPATH_EXPANSION_HITS = (
 )
 
 #: 近似但不命中表：贴到规则边缘、但**不该**短路（必须落回 LLM 分类）。
+#: 本常量与上方 ``_FASTPATH_EXPANSION_HITS``（应短路集）同 router 侧的 fastpath 判据
+#: 函数 ``agentix/application/agents/router.py::_fastpath_router``（其 reason 词表单源为
+#: ``FASTPATH_REASONS``）**同源维护**：改 router 的任一 fastpath 规则，须同批改这两份样本；
+#: 反之改样本也要回看规则——否则规则与用例各说一套（router 侧的对称登记见 ``_fastpath_router``
+#: 函数定义之前的模块级注释，其 docstring 另有一处仅指 ``_FASTPATH_EXPANSION_HITS`` 的既有登记）。
+#: 这里刻意用符号名而非行号锚点，避免 router.py 位移把注释钉错位置（防腐规则）。
 _FASTPATH_EXPANSION_NEAR_MISSES = (
     # 能力：一旦带上实质动作就不再是元问题
     "你有能力处理这个案子吗",

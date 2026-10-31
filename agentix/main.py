@@ -833,7 +833,10 @@ def _on_task_queue_worker_done(task: asyncio.Task) -> None:
 
 
 def _start_task_queue_worker() -> bool:
-    """起 Redis Stream 队列消费 worker；返回是否真的起了任务（``False`` = 无任务可取消）。
+    """起 Redis Stream 队列消费 worker；返回是否真的起了任务。
+
+    ``False`` 的含义：未留下可取消的任务句柄（赋值前失败或 flag-off）；赋值后失败同样
+    返回 ``False``，但句柄已落位、关停照常取消（详见下方台账表 E G5 的注释分段说明）。
 
     **「要不要跑」的判定只有这里一处**（纪律 6 ④）：``TASK_QUEUE_WORKER_ENABLED``
     为假（默认）⇒ 直接返回，**不建任务、不建连接、不打一行日志、不 import 队列模块**
@@ -868,9 +871,12 @@ def _start_task_queue_worker() -> bool:
             queue.start_worker(), name="task-queue-worker"
         )
         task.add_done_callback(_on_task_queue_worker_done)
-        # 台账表 E G5：句柄赋值与启动日志挪进 try——挪出保护块时"半启动"状态
-        # （任务已建但句柄/日志未落）无人收口，挪进后任何一步失败都走同一条
-        # fail-open 出口，返回 False 让关停路径看得见"其实没有任务"。
+        # 台账表 E G5：本保护块覆盖 add_done_callback、句柄赋值、启动日志三步，任一步
+        # 失败都走同一条 fail-open 出口返回 False。但"返回 False 之后关停看得见什么"分两段：
+        # 句柄赋值先于启动日志 ⇒ 日志自身抛异常时句柄已落位、任务在跑，关停路径仍能取消它；
+        # 赋值之前失败 ⇒ 句柄仍是本函数进入即归零的 None，关停无任务可取消。诚实登记：
+        # except 侧文案里的"disabled"只描述启动这一步的结果，赋值后失败的窗口内消费面其实
+        # 仍在跑，那句日志不区分这两种形态（改它会牵动 test_p171_queue_claim 的文案断言）。
         _task_queue_worker = queue
         _task_queue_worker_task = task
         logger.info(

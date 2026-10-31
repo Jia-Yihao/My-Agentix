@@ -240,6 +240,11 @@ class TestFlagSync:
         # stream_timeout（chat_service 记录），不是「配置项名 + 后缀」拼出来的幻影 token。
         section = text.split("## 16. ", 1)[1].split("\n## ", 1)[0]
         assert "stream_timeout" in section
+        # ① 空闲看门狗行与「① 与 ③ 共用步名」的 bullet 各出一处 ⇒ 少于两处说明 §16 的
+        # 归因面被删薄（例如把 bullet 那句删掉，① 还在但共用口径没了，纯 `in` 判据照绿）。
+        # 判据只写 >= 2：③ 行补齐三件套属后续文档批，届时计数会变 3；写 == 2 会把未做的
+        # 文档批预设为红灯。
+        assert section.count("stream_timeout") >= 2
         assert "stream_idle_timeout" not in section
 
 
