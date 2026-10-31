@@ -87,7 +87,7 @@ INTERVAL_S = 0.02
 #: 滞后与裁决延迟都刻意跨过两个 `stream_hitl.DECISION_POLL_S`（0.25s）轮询点（**下限**：0.9s 跨约 3.6 拍）：
 #: 第一拍只发审批帧、第二拍先查裁决——只有跨过两拍才会真的落到"发心跳"那一拍。
 HEARTBEAT_S = 0.05
-CONSUMER_LAG_S = 0.9  # ≥3 拍（DECISION_POLL_S=0.25），留一拍抖动余量
+CONSUMER_LAG_S = 0.9  # ≥3 拍（DECISION_POLL_S=0.25），余量约 0.6 拍（0.9 − 第三拍 0.75 = 0.15s）
 DECIDE_DELAY_S = 1.4
 
 

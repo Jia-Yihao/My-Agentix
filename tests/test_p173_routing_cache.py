@@ -213,8 +213,9 @@ class TestFlagOffEquivalence:
         # 台账表 G G10：上面的运行时判据对「惰性 import 被上提到模块顶部」零敏感——
         # 顶部 import 后模块早已进 sys.modules，本用例开头 pop 照样摘掉、flag-off 路径
         # 不再触发，运行时断言仍绿。补一条与运行时同源的静态 AST 守卫：routing_cache 的
-        # import 节点不许出现在 router 的模块级语句里（含模块级 if/try 分支——它们在
-        # import router 时即执行）；只允许落在函数/类体内（惰性 import 的真实位置）。
+        # import 节点不许出现在 router 的模块级语句里（含模块级 if/try 分支、try 的
+        # except 臂与模块级类体——它们都在 import router 时即执行）；只允许落在函数体内
+        # （惰性 import 的真实位置）。
         import ast as _ast
         import inspect as _inspect
 
@@ -234,19 +235,20 @@ class TestFlagOffEquivalence:
             return False
 
         router_tree = _ast.parse(_inspect.getsource(router_mod))
-        # 只扫模块级：遇到函数/类定义即停，不下探其内部（内部的才是合法的惰性 import）。
+        # 扫模块级并继续下探类体与 except 臂（都在 import 时即刻执行，其中的 import
+        # 实质就是模块级 import）；只跳过函数体（内部的才是合法的惰性 import）。
         module_level: list = []
         stack = list(router_tree.body)
         while stack:
             node = stack.pop()
-            if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+            if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
                 continue
             if isinstance(node, (_ast.Import, _ast.ImportFrom)):
                 module_level.append(node)
             for _field, value in _ast.iter_fields(node):
                 if isinstance(value, list):
                     for child in value:
-                        if isinstance(child, _ast.stmt):
+                        if isinstance(child, (_ast.stmt, _ast.ExceptHandler)):
                             stack.append(child)
         hoisted = [n for n in module_level if _imports_cache(n)]
         assert not hoisted, (

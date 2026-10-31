@@ -173,7 +173,7 @@ async def test_router_records_route_decision_attr(fake_span, monkeypatch):
     """成功路径拿到最终 route 后必须写 ``agentix.route.decision``（PhaseK 任务 4）。
 
     假模型桩沿用 p118 既有范式（``get_llm_client`` → ``with_structured_output``
-    → 固定结果），不新造桩形态；flag 显式钉到基线组合（fastpath/task/code 全关），
+    → 固定结果），不新造桩形态；flag 显式钉到基线组合（fastpath/task/code/cache 全关），
     保证走的就是"白名单校验通过"的成功路径落点（与缓存命中路径同走 ``record_route_decision`` 单源 helper），且词表就是 7 类。
     """
     from langchain_core.messages import HumanMessage
