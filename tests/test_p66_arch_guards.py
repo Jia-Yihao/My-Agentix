@@ -180,7 +180,20 @@ SHIM_DIRS_ALLOWED: frozenset = frozenset()
 
 
 def _shim_dirs() -> Set[str]:
-    """模块级 ``_TARGET = "..."`` 字符串赋值所在的目录集合（posix 相对路径）。"""
+    """模块级 ``_TARGET = "..."`` 字符串赋值所在的目录集合（posix 相对路径）。
+
+    覆盖面只到此形态为止，这是**裁决而不是遗漏**（台账 §8.2 表 O 的 O1 行，
+    2026-11-01 庚-1 编排方裁决）：本判据认的仍是「模块级 ``_TARGET`` 字符串
+    赋值」这一种形态；模块级**再导出**形态
+    （``from x import (...)  # noqa: F401``，例如
+    ``agentix/application/agents/kg_sub_graph/kg_tools_list.py``
+    把 4 个参数 schema 再导出到规范位 ``agentix.tools.kg_arg_schemas``）
+    **不纳入**。
+    扩面要把仓里现存的合法再导出逐条进允许集并各写理由，成本高于收益；
+    而守卫 #12 设计目的是盯 ``_TARGET`` 转发层的删除进度（M6 终态空集），
+    再导出 shim 不是它要消灭的对象。
+    缺口靠这段文字自身可见，不靠台账兜底。
+    """
     hits: Set[str] = set()
     for f in _iter_py("agentix"):
         tree = _parse(f)
