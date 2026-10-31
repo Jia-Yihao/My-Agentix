@@ -72,6 +72,7 @@ import pathlib
 import subprocess
 import sys
 from typing import Any, List, Tuple
+from typing import get_type_hints
 
 import pytest
 
@@ -407,6 +408,23 @@ class TestForwardingFidelity:
         assert probe.calls == 1
         assert probe.seen_state is probe_state
         assert out is probe.ret
+
+    def test_route_query_shell_return_annotation_is_the_real_source(self) -> None:
+        """§8.2 表 T `T2` 点名的**直接**断言：壳的返回注解已挂上真身对象。
+
+        此前只有 p178 的两处图面守卫与本文件的编译图等值在**间接**兜住——挂接塌了
+        它们才红，红的是「边集不对」，报不出「注解没挂上」这个真因。断言取**对象
+        同一**而非字面量集合，与 `lg_builder.py:85-92` 那条「必须挂对象而不是字符串、
+        刻意不书写第二份契约源」同口径。
+        """
+        hints = get_type_hints(lg_builder.route_query)
+        real = get_type_hints(router_module.route_query)
+        # 必须先断键存在：挂接失效时壳上根本没有 `return`，`dict.get` 双 None
+        # 会被 `is` 比成假绿；这一枚才是「挂接已发生」的直接判据。
+        assert "return" in hints, "壳上没有 return 注解 ⇒ lg_builder 定义期挂接语句已塌"
+        assert hints["return"] is real["return"], (
+            "壳的返回注解必须是 router.route_query 求值后的同一对象，不是抄本/字符串"
+        )
 
     @pytest.mark.asyncio
     async def test_execute_task_shell_fidelity_through_hitl_wrap(self, monkeypatch) -> None:
