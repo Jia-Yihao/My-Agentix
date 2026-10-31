@@ -723,13 +723,15 @@ CLOSURE_BASELINE: dict[str, frozenset[str]] = {
 
 
 # ---------------------------------------------------------------------------
-# §7.1 正文细项（守卫 #6 判据的一侧；三行**计数**直接解析文档正文）
+# §7.1 正文细项（守卫 #6 判据的一侧；三行**计数与括号细项名单**均解析文档正文）
 # ---------------------------------------------------------------------------
 
-#: 守卫 #6 已升级（M1 后续批）：正文三行的**计数**从 ``docs/architecture/分层架构与依赖
-#: 规则.md`` §7.1 实测快照块解析核对（fail-closed——抽不到即红，见 ``_doc_snapshot_counts``），
-#: 本常量不再充当「待批改写文档的证据」。它保留的角色是判据的一侧：正文里也写了的**细项清单**
-#: ——双向边清单、环成员名单、零出边包名清单。
+#: 守卫 #6 已升级（M1 后续批计数侧 + 庚-2 G2-A 名单侧）：正文三行的**计数**由
+#: ``_doc_snapshot_counts`` 解析、括号内的**细项名单**由 ``_doc_snapshot_lists`` 解析
+#: （均 fail-closed——抽不到即红）；来源都是 ``docs/architecture/分层架构与依赖规则.md``
+#: §7.1 实测快照块。本常量不再充当「待批改写文档的证据」，也不再是名单的独源：它保留的
+#: 角色是三方比对的一侧——正文括号名单／本常量／计算器实测两两相等，「改正文括号名单而
+#: 不动加粗数字」从原本不红的形态起，被这条闸堵死。
 #: 技术说明：文档旧快照「9 对双向边 / 12 包同环」系 M2 之前（§7.1 注明 2026-10-28）的读数，
 #: M2 批次（M2-1/M2-2/M2-3/M2-4）拆除 observability↔retrieval、application↔tools、
 #: application↔runtime 三条双向对后实测为 6 对。
@@ -822,6 +824,97 @@ def _doc_snapshot_counts() -> tuple[dict[str, int], list[str]]:
         else:
             counts[key] = int(lm.group(1))
     return counts, missing
+
+
+#: 三行全角括号段的字面形态（庚-2 G2-A）。解析器**不**讲「封族不封例」——它必须正向
+#: 钉住现树逐字存在的那套形态（行前缀与 ``_SNAPSHOT_LINES`` 同源，单位后紧跟全角
+#: ``（…）``），认不出即进 missing，绝不「抽不到就认为等于实测」。
+_SNAPSHOT_LIST_LINES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    (
+        "bidirectional",
+        "`- 双向边：**N** 对（…）` 的全角括号段",
+        re.compile(r"^- 双向边：\*\*\d+\*\* 对（([^（）]*)）", re.M),
+    ),
+    (
+        "scc",
+        "`- 同一强连通分量：**N** 个包（…）` 的全角括号段",
+        re.compile(r"^- 同一强连通分量：\*\*\d+\*\* 个包（([^（）]*)）", re.M),
+    ),
+    (
+        "zero_out",
+        "`- 零出边：**N** 个包（…）` 的全角括号段",
+        re.compile(r"^- 零出边：\*\*\d+\*\* 个包（([^（）]*)）", re.M),
+    ),
+)
+
+#: 条目字面形态：双向边条目＝两枚反引号包名＋中间恰好一枚 `↔`（枚数另行前置判定，
+#: 名字里混进箭头也要红）；包名条目＝恰好一对反引号包裹的包名。
+_LIST_PAIR_ITEM_RE = re.compile(r"`([^`\n]+)`↔`([^`\n]+)`")
+_LIST_NAME_ITEM_RE = re.compile(r"`([^`\n]+)`")
+
+
+def _norm_bidi_pairs(pairs: Iterable[tuple[str, str]]) -> frozenset[tuple[str, str]]:
+    """双向边对的序不敏感规范化：每对折成 ``(min, max)``。
+
+    正文解析／计算器实测／``DOC_CLAIMS`` 三方比之前都过这一个函数——序的规范化判据
+    只许有一个源，两侧各写一份就会漂移（纪律 6 ④）。
+    """
+    return frozenset((min(a, b), max(a, b)) for a, b in pairs)
+
+
+def _doc_snapshot_lists() -> tuple[dict[str, frozenset], list[str]]:
+    """解析 §7.1 实测快照块三行全角括号内的细项名单，返回（名单, 未定位项清单）。
+
+    与 ``_doc_snapshot_counts`` 同一套定位纪律（复用 ``_SNAPSHOT_BLOCK_RE`` 的「恰一处」
+    判据）：快照块 0 处／多处、任一行括号段抽不到、切出空条目、条目形状不合现树逐字
+    形态——全部进 missing，由调用方断红，**绝不**抽不到就跳过。
+    残余如实登记：同一三级标题内相邻植入的第二份同形块会被 ``findall`` 合并为一处
+    匹配，该形态属 §8.2 表 Q ``G-2`` 行已登记的接受面（不阻断）。
+    """
+    text = ARCH_DOC.read_text(encoding="utf-8")
+    blocks = _SNAPSHOT_BLOCK_RE.findall(text)
+    if len(blocks) == 0:
+        return {}, ["快照块（标题含「实测快照」的四级标题）整体未定位"]
+    if len(blocks) > 1:
+        return {}, [
+            f"快照块出现 {len(blocks)} 处（必须恰为 1 处）：抽取目标会漂移到最先匹配的那一块，"
+            "正文里第二份同形块会让名单侧同源失效"
+        ]
+    block = blocks[0]
+    lists: dict[str, frozenset] = {}
+    missing: list[str] = []
+    for key, label, pat in _SNAPSHOT_LIST_LINES:
+        lm = pat.search(block)
+        if lm is None:
+            missing.append(f"{label}（该行逐字形态认不出）")
+            continue
+        bad: list[str] = []
+        names: set[str] = set()
+        pairs: set[tuple[str, str]] = set()
+        for item in lm.group(1).split("、"):
+            if not item:
+                bad.append("空条目（顿号连用或收尾）")
+                continue
+            if key == "bidirectional":
+                if item.count("↔") != 1:
+                    bad.append(f"条目 `↔` 枚数非 1：{item!r}")
+                    continue
+                im = _LIST_PAIR_ITEM_RE.fullmatch(item)
+                if im is None:
+                    bad.append(f"条目非 `` `A`↔`B` `` 形态：{item!r}")
+                    continue
+                pairs.add((im.group(1), im.group(2)))
+            else:
+                im = _LIST_NAME_ITEM_RE.fullmatch(item)
+                if im is None:
+                    bad.append(f"条目非「恰好一对反引号包名」形态：{item!r}")
+                    continue
+                names.add(im.group(1))
+        if bad:
+            missing.append(f"{label} 条目形状不合：{bad}")
+            continue
+        lists[key] = _norm_bidi_pairs(pairs) if key == "bidirectional" else frozenset(names)
+    return lists, missing
 
 
 # ---------------------------------------------------------------------------
@@ -1069,17 +1162,24 @@ def test_no_cross_package_relative_imports(scan: ScanResult) -> None:
 
 
 def test_doc_claims_match_matrix(scan: ScanResult) -> None:
-    """守卫 #6（M1 后续批升级为解析正文）：§7.1 实测快照块三行计数 == 计算器实测。
+    """守卫 #6（M1 后续批升级计数侧、庚-2 G2-A 升级名单侧）：§7.1 实测快照块三行的
+    计数与括号细项名单 == 计算器实测 == ``DOC_CLAIMS``，三方两两相等。
 
     旧形态只核对测试侧常量 ``DOC_CLAIMS`` 与实测，**锁不住文档正文**——正文漂移
-    （只改文档不改常量）时本守卫恒绿。本批与 §7.1 改文**同批**升级为直接解析
-    ``docs/architecture/分层架构与依赖规则.md`` §7.1 实测快照块：
-    **fail-closed**——快照块整体、或三行中任何一行定位不到，都以「判据与正文已脱钩」
-    断言失败，绝不抽不到就跳过（静默跳过等于升级白做）。
-    ``DOC_CLAIMS`` 保留，角色收窄为判据的一侧：正文里也写了的细项清单（双向边清单、
+    （只改文档不改常量）时本守卫恒绿。M1 后续批先把**计数侧**同源化（三行加粗数字由
+    ``_doc_snapshot_counts`` 解析正文）；G2-A 再把**名单侧**同源化：正文括号里的
+    双向边清单／环成员名单／零出边包名清单由 ``_doc_snapshot_lists`` 解析，与
+    ``DOC_CLAIMS``、计算器实测三方两两相等，并在正文内部钉「名单长度 == 同一行
+    加粗计数」——「改正文括号名单而不改数字」这个原本打开的口子就此堵死。
+    **fail-closed**——快照块整体缺失/多处、三行任一定位不到、括号段抽不出、条目
+    形状不合或出现空条目，都以「判据与正文已脱钩」断言失败，绝不抽不到就跳过
+    （静默跳过等于升级白做）。残余如实登记：同一三级标题内相邻植入的第二份同形块
+    会被 ``findall`` 合并为一处匹配，该形态属 §8.2 表 Q ``G-2`` 行已登记的接受面——
+    **不是**「任意植入都被堵死」。
+    ``DOC_CLAIMS`` 保留，角色是三方比对的一侧：正文同样列出的细项清单（双向边清单、
     环成员名单、零出边包名清单）。
 
-    对照三项（计数与清单两侧都比）：双向边对数、同一强连通分量的成员、零出边的包。
+    对照三项（计数与名单两侧都比）：双向边对数、同一强连通分量的成员、零出边的包。
     另断言 ALLOWED 键集 == 实测顶层包集（§1 表若新增/删除包，本文件必须同批改）。
     """
     assert set(ALLOWED) == set(scan.packages), (
@@ -1129,3 +1229,47 @@ def test_doc_claims_match_matrix(scan: ScanResult) -> None:
     assert (
         DOC_CLAIMS["zero_out_packages"] == zero
     ), f"零出边包不符：声称={sorted(DOC_CLAIMS['zero_out_packages'])}，实测={sorted(zero)}"
+    # 名单侧同源（庚-2 G2-A）：正文括号细项名单本身被解析，与 DOC_CLAIMS／计算器实测
+    # 三方两两相等；「改名单不改数字」另在正文内部被「名单长度 == 同一行加粗计数」钉住。
+    doc_lists, list_missing = _doc_snapshot_lists()
+    assert not list_missing, (
+        "文档 §7.1 的实测快照括号细项名单未能定位 ⇒ 判据与正文已脱钩"
+        f"（未定位项={list_missing}）。fail-closed：括号段被删、条目形状腐坏（如 `↔` 换成"
+        "半角连字符）、出现空条目，都必须在红里被看到，不许抽不到就认为等于实测。"
+    )
+    assert len(doc_lists["bidirectional"]) == counts["bidirectional"], (
+        f"§7.1 正文双向边括号名单 {len(doc_lists['bidirectional'])} 条，"
+        f"与同一行加粗计数 {counts['bidirectional']} 不等"
+    )
+    assert len(doc_lists["scc"]) == counts["scc"], (
+        f"§7.1 正文环成员括号名单 {len(doc_lists['scc'])} 个，"
+        f"与同一行加粗计数 {counts['scc']} 不等"
+    )
+    assert len(doc_lists["zero_out"]) == counts["zero_out"], (
+        f"§7.1 正文零出边括号名单 {len(doc_lists['zero_out'])} 个，"
+        f"与同一行加粗计数 {counts['zero_out']} 不等"
+    )
+    assert doc_lists["bidirectional"] == _norm_bidi_pairs(bidi), (
+        f"§7.1 正文双向边名单与计算器实测不符：正文={sorted(doc_lists['bidirectional'])}，"
+        f"实测={sorted(_norm_bidi_pairs(bidi))}"
+    )
+    assert doc_lists["bidirectional"] == _norm_bidi_pairs(DOC_CLAIMS["bidirectional_pairs"]), (
+        f"§7.1 正文双向边名单与 DOC_CLAIMS 不符：正文={sorted(doc_lists['bidirectional'])}，"
+        f"常量={sorted(_norm_bidi_pairs(DOC_CLAIMS['bidirectional_pairs']))}"
+    )
+    assert doc_lists["scc"] == nontrivial[0], (
+        f"§7.1 正文环成员名单与计算器实测不符：正文={sorted(doc_lists['scc'])}，"
+        f"实测={sorted(nontrivial[0])}"
+    )
+    assert doc_lists["scc"] == DOC_CLAIMS["scc_members"], (
+        f"§7.1 正文环成员名单与 DOC_CLAIMS 不符：正文={sorted(doc_lists['scc'])}，"
+        f"常量={sorted(DOC_CLAIMS['scc_members'])}"
+    )
+    assert doc_lists["zero_out"] == zero, (
+        f"§7.1 正文零出边名单与计算器实测不符：正文={sorted(doc_lists['zero_out'])}，"
+        f"实测={sorted(zero)}"
+    )
+    assert doc_lists["zero_out"] == DOC_CLAIMS["zero_out_packages"], (
+        f"§7.1 正文零出边名单与 DOC_CLAIMS 不符：正文={sorted(doc_lists['zero_out'])}，"
+        f"常量={sorted(DOC_CLAIMS['zero_out_packages'])}"
+    )
