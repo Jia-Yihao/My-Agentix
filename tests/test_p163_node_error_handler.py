@@ -468,6 +468,10 @@ class TestStaticGuard:
             "node_error_handler(...) 必须显式传 store=；不传 ⇒ 补偿存储恒为未装配，"
             "生产上补偿记录一条都不会写"
         )
+        # 台账表 H H11：判据取的是 store_values[0]，若出现多处 store= 调用则只看首个、
+        # 第二处的错误装配会被静默放过。这里钉「唯一」，把「取首元素」的盲区补上；
+        # 不改成遍历全部（会重写既有断言语义，属改判据而非只增，本批不取）。
+        assert len(store_values) == 1, f"store= 判据必须唯一，实际 {len(store_values)} 处调用"
         value = store_values[0]
         assert (
             isinstance(value, ast.Call)

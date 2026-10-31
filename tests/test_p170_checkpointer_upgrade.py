@@ -468,6 +468,24 @@ class TestSingleSourceWiring:
             "起停调用的最近父级必须是函数体——被 try / if / with 包住时"
             f"装配失败会让自愈路径一起跳过（实际父级：{type(chain[1]).__name__}）"
         )
+        # 台账表 D G3：把「必须经唯一装配点」从纯子串升级为 AST 检出——上面的纯子串判据
+        # 只保证那行字面出现在源码任意位置，钉不住它确实在 _startup 体内、且先于后续关键
+        # 语句执行。_startup 体内没有 return（读源码实测：函数体一路向下到末尾、无提前
+        # 返回），故「先于后续关键语句」取紧随其后的起停调用 _start_checkpointer_upgrade
+        # 作锚——装配必须在「安排升级重试」之前落定，否则重试跑起来时图还挂着旧 saver。
+        wire_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_wire_graph_checkpointer"
+        ]
+        assert len(wire_calls) == 1, (
+            f"启动段必须经唯一装配点且只调用一次，实际 {len(wire_calls)} 处"
+        )
+        assert wire_calls[0].lineno < calls[0].lineno, (
+            "装配调用必须先于起停调用出现在 _startup 体的语句序里"
+        )
 
     def test_retry_loop_reads_the_marker_not_config(self):
         from agentix import main

@@ -187,6 +187,11 @@ async def test_router_records_route_decision_attr(fake_span, monkeypatch):
     monkeypatch.setattr(router_module.settings, "ROUTING_FASTPATH_ENABLED", False, raising=False)
     monkeypatch.setattr(router_module.settings, "TASK_EXEC_ENABLED", False, raising=False)
     monkeypatch.setattr(router_module.settings, "CODE_EXEC_ENABLED", False, raising=False)
+    # 再 pin 一枚缓存开关到基线（关），与上面三行逐字同形：宿主 .env 若开了
+    # ROUTING_CACHE_ENABLED，本用例就不再稳定走"成功路径"这一支（缓存命中会跳过
+    # 这次 LLM 调用），读数随环境漂移，钉的是读数不随宿主 .env 的缓存开关漂移——缓存显式关才与用例 docstring
+    # 声明的基线组合一致，钉住的是成功路径那个落点。
+    monkeypatch.setattr(router_module.settings, "ROUTING_CACHE_ENABLED", False, raising=False)
 
     class _Structured:
         def __init__(self, result):

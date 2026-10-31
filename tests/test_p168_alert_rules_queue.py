@@ -245,6 +245,18 @@ def test_metric_extractor_validated_on_legacy_rules():
             "要么抽取器有误，要么既有规则引用了不存在的东西"
         )
 
+    # 补自检盲区（台账表 A G7）：上面循环只跑 legacy 8 条，新增规则的 expr 从未被
+    # 「抽取器能抽到东西」覆盖过——若新 expr 形态整体漏抽，只有
+    # test_new_rules_only_use_declared_metrics 的 found 断言会撞见，而那条不判抽取器
+    # 健康。这里只补判「抽得到东西」（非空），不判抽到的是否合法（合法性由那条负责，
+    # 不搬过来）；legacy 段的 continue 与 undeclared 断言一行未动，二者是两件事。
+    for rule in _new_rules():
+        found_new = _promql_metric_names(rule["expr"])
+        assert found_new, (
+            f"{rule['alert']}: 抽取器没从新规则 expr 里抽到任何指标名——自检盲区，"
+            "抽取器对新规则形态漏抽"
+        )
+
 
 def test_new_rules_only_use_declared_metrics():
     allowed = (
@@ -328,6 +340,20 @@ def test_external_metric_prerequisite_is_documented():
         assert "celery-exporter" in raw, "规则文件没写明外部指标的出处（celery-exporter）"
         assert "队列规则前置说明" in raw, "规则文件缺前置说明段落——静默失效就没人知道了"
         assert provenance  # 登记项必须带出处说明（空值等于没登记）
+
+        # 出处串是规则文件正文的压缩转述，整串不可能逐字出现在 raw 里；只判上一行
+        # `assert provenance` 等于没登记——编个假出处照样非空、照样绿。取 provenance 里
+        # 带斜杠的「上游出处名」（如 danihodovic/celery-exporter）做逐字子串判定：它才是
+        # 这条外部指标真正的来源标识，也是上面三句通用断言（celery-exporter / 前置说明段 /
+        # prometheus.yml）都没单独钉住的那个 token——删掉规则文件里的上游出处名，本断言即红。
+        source_tokens = [tok for tok in re.split(r"[\s（）；，,]", provenance) if "/" in tok]
+        assert source_tokens, (
+            f"{metric}: provenance 未登记任何带斜杠的上游出处名，判据无从落地"
+        )
+        assert any(tok in raw for tok in source_tokens), (
+            f"{metric}: 出处名 {source_tokens} 没有一个逐字出现在规则文件正文里——"
+            "登记的出处与实际成文脱节"
+        )
 
     # 前置三步必须可见：抓取目标、exporter 部署、worker 发事件
     assert "prometheus.yml" in raw, "前置说明没指出要改哪个抓取配置"

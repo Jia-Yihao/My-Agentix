@@ -200,7 +200,11 @@ _REASONING_MARKERS = (
     "情形", "情况", "分别", "还是", "以及", "和", "与",
 )
 
-
+# 本函数的 fastpath 规则与测试侧样本同源维护（纪律 6 ④：同一个判定不许两个源）。封闭
+# 句式族的逐字集在 ``tests/test_p173_routing_cache.py`` 的 ``_FASTPATH_EXPANSION_HITS``
+# （应短路）与 ``_FASTPATH_EXPANSION_NEAR_MISSES``（近似但不该短路）：改本函数任一规则，
+# 须同批改这两份样本；反之改样本也要回看规则——否则规则与用例各说一套。用符号名而非行号
+# 锚点，避免本文件位移把注释钉错位置（防腐规则）。
 def _fastpath_router(question: str) -> Optional[Tuple[str, Router]]:
     """高置信确定性规则分类；命中返回 ``(reason, router)``，否则 None（照走 LLM）。
 

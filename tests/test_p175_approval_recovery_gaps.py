@@ -84,10 +84,10 @@ DEADLINE_S = 0.05
 INTERVAL_S = 0.02
 
 #: 类④的心跳间隔 / 消费者滞后 / 裁决延迟（毫秒级，便于在秒级内断言）。
-#: 滞后与裁决延迟都刻意跨过两个 `stream_hitl.DECISION_POLL_S`（0.25s）轮询点：
+#: 滞后与裁决延迟都刻意跨过两个 `stream_hitl.DECISION_POLL_S`（0.25s）轮询点（**下限**：0.9s 跨约 3.6 拍）：
 #: 第一拍只发审批帧、第二拍先查裁决——只有跨过两拍才会真的落到"发心跳"那一拍。
 HEARTBEAT_S = 0.05
-CONSUMER_LAG_S = 0.6
+CONSUMER_LAG_S = 0.9  # ≥3 拍（DECISION_POLL_S=0.25），留一拍抖动余量
 DECIDE_DELAY_S = 1.4
 
 
@@ -360,6 +360,9 @@ class TestRealProcessRestart:
         b = _read_result(out_b)
         assert b["pid"] != a["pid"], "必须是两个不同的操作系统进程（同进程重开 store 不算重启）"
         assert b["restored"] == 1, "启动期 restore 必须把那条未决 pending 拉回内存"
+        # 恒真护栏（台账表 K K3）：进程 B 是全新解释器，内存桥 _requests 起始必为空 ⇒
+        # 这句构造上恒真；真正承重的是上面 restored == 1（restore 把 pending 拉回内存）
+        # 与下面 listing_has_pending is True（跨进程仍能点名）。保留作前置不漂移的哨兵，不删。
         assert b["stats_pending_before"] == 0, "进程 B 起始内存面必须为空（真冷启动）"
         assert b["listing_has_pending"] is True
         assert b["row_status_before"] == "pending"
@@ -392,8 +395,14 @@ class TestMultiReplicaRouting:
         assert b["pid"] != a["pid"]
         # 内存面判据用 stats()["pending"]：`pending()` 会**并库面**（T18 验收③要求
         # 跨实例的 GET 也能点名），所以它必然含该 id，不能用它判"内存里有没有"
+        # 恒真护栏（台账表 K K3）：实例 2 不 restore，内存桥 _requests 必为空 ⇒ 构造上
+        # 恒真；承重的是紧跟其后的 restored == -1（刻意没 restore）与 listing_has_pending
+        # is True（库级回捞仍能点名）。保留作哨兵，不删。
         assert b["stats_pending_before"] == 0, "实例 2 的内存待审面必须是空的"
         assert b["restored"] == -1, "本用例刻意不 restore（走的就是库级回捞通道）"
+        # 恒真护栏（台账表 K K3）：本用例刻意不 restore（restored == -1），内存面全程为空 ⇒
+        # after_restore 也构造性恒 0；承重的是上面 restored == -1 与下面 listing_has_pending
+        # is True。保留作哨兵，不删（丙波「不删不弱化」）。
         assert b["stats_pending_after_restore"] == 0
         assert b["listing_has_pending"] is True, "跨实例待审面必须列出它（运维才拿得到 id）"
         assert b["row_status_before"] == "pending"
@@ -576,6 +585,9 @@ async def test_approval_frames_reach_the_sse_wire_under_backpressure(hitl_env, m
     for beat in heartbeats:
         assert beat["metadata"]["status"] == "waiting_approval"
         assert "waited_s" in beat["metadata"]
+    # 恒真护栏（台账表 K K3）：wire 上的心跳帧只能源自通道发出数 ⇒ 这条 `<=` 构造上恒真；
+    # 承重的是下面严格 `<`（背压下必须有帧被丢）与上面 heartbeats_emitted >= 2（等待期真发过）。
+    # 保留作上界哨兵，不删。
     assert len(heartbeats) <= channel.heartbeats_emitted, "不许出现通道没发却上了线的帧"
     dropped_delta = _sample("sse_dropped_frames_total", reason="backpressure") - dropped_before
     assert dropped_delta >= 1, "队满必须真的发生（否则这条用例没踩到背压分支）"
