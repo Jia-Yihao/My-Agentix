@@ -3,7 +3,8 @@
 卡面：``docs/design/审批与中断恢复优化规划.md`` §4.3 T15 —— 验收①「积压告警规则
 新增且阈值口径成文」。
 
-**本文件钉的是形状与口径，不钉阈值对不对**（阈值合不合理属观测结论，测试管不到）：
+**本文件钉的是形状、口径，外加「阈值与声明容量之间的乘积等式」**（见下第 7 条）。
+第 7 条钉的是**关系**不是**取值**：阈值该不该是这个数，仍属观测结论，测试管不到：
 
 1. 新规则存在，且既有 8 条规则一条都没被删/改名（T15 边界：只新增）；并逐条钉住
    既有 8 条的 ``expr``/``for``/``severity`` 快照基线（台账表 A G2，2026-10-31 登记）；
@@ -22,6 +23,17 @@
 6. 外部指标的前置说明必须在**规则文件本身**里：删掉那段注释，本文件即失败；
    前置说明与部署现状（``docker-compose.yml`` 的 worker command）的**差额**也进断言
    （台账表 A G5），文档与部署两头对不上即红灯。
+7. 容量算术同源（台账表 A G9，断言折在快照基线用例 ``test_legacy_alerts_baseline_shape``
+   体内）：钉两件等式——① ``阈值 == 串行波次 × 副本默认值 × concurrency``（副本与并发从
+   ``docker-compose.yml`` **文本**解析，阈值从 Backlog 的 ``expr`` 经 ``_by_alert()`` 抽取）；
+   ② ``My AgentixCeleryQueueNotDraining`` 的 ``for`` 换算秒数 ==
+   ``INDEX_JOB_TIMEOUT_SECONDS`` 的默认值（从 ``agentix/retrieval/settings.py`` 文本解析）——
+   台账明写这里的 ``30m`` 指「单作业预算 1800s」这一面，**不是** Backlog 规则自身的
+   ``for: 10m`` 持续窗口。四条解析正则各自**必须恰命中一次**，命中 0 次或多次即判红，
+   不静默跳过。
+   **残余（如实登记）**：「串行波次＝10」是登记时点**人工选定的口径**，不从任何真源推出，
+   本条只保证「改了 compose 副本/并发而没人重算阈值」时会红，**不证明 10 这个选择本身
+   合理**；钉的是乘积关系而非字面 20（阈值与波次一起等比改动 ⇒ 乘积仍相等 ⇒ 不红）。
 
 **不做的事**：不整段比对 yml 原文（那样改个注释就红灯，守的是文本而不是口径），
 也不 import 生产代码里的指标注册表去"求值"expressions——离线判据只做静态解析。
@@ -41,6 +53,16 @@ RULES_PATH = REPO_ROOT / "docker" / "monitoring" / "alert_rules.yml"
 METRICS_PY = REPO_ROOT / "agentix" / "observability" / "metrics.py"
 #: 部署现状的只读核对源（台账表 A G5）：worker 的 command 到底开没开 -E/--events
 COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
+#: 容量算术的第四枚真源（台账表 A G9）：单作业预算 ``INDEX_JOB_TIMEOUT_SECONDS`` 的默认值
+RETRIEVAL_SETTINGS_PATH = REPO_ROOT / "agentix" / "retrieval" / "settings.py"
+
+#: 队列阈值推导的「串行波次」乘数（台账表 A G9 显式化的**唯一人工量**）。
+#: 这是**登记时点（2026-11-01）人工选定的口径**，不是从任何真源推出来的——规则文件的注释与
+#: 两条 description 写的都是「20 = 10 个串行波次 × 默认容量（副本 1 × 并发 2）」。
+#: 把它从注释里提出来写成常量，正是为了让「改 compose 副本/并发而不动阈值」必须红：
+#: 想继续绿就得改这里，改这里就等于把波次口径显式改过一遍、留下 diff。
+#: 残余：本批只钉乘积关系，不证明 10 这个选择本身合理（见文件头第 7 条）。
+QUEUE_THRESHOLD_WAVES = 10
 
 #: 新增规则所在分组（与既有 agentix-availability 分开：队列面挂的是外部 exporter）
 QUEUE_GROUP = "agentix-queue"
@@ -176,6 +198,18 @@ _HIGH_CARDINALITY_TOKENS = (
 #: Prometheus 时长字面量：一个或多个 <数字><单位>
 _DURATION_RE = re.compile(r"^(?:\d+(?:ms|s|m|h|d|w|y))+$")
 
+# --- 容量算术的四处解析（台账表 A G9）-------------------------------------------
+# 一律按**文本正则**，不 ``yaml.safe_load(compose)`` 重解析：compose 里 `${...}` 未展开的
+# 形态与本断言无关，正则只钉现树这一种真实写法（本批解析器不讲「封族不封例」——
+# 被钉的永远是那一枚实际生效的默认值，认不出就是认不出，必须红）。
+# 每条都必须在自己的源上**恰命中一次**（0 次＝写法变了，多次＝冒出第二处容量声明）。
+_COMPOSE_REPLICAS_RE = re.compile(r"replicas: \$\{RETRIEVAL_WORKER_REPLICAS:-" + r"(\d+)\}")
+_COMPOSE_CONCURRENCY_RE = re.compile(r"--concurrency=(\d+)")
+_SETTINGS_INDEX_TIMEOUT_RE = re.compile(
+    r'INDEX_JOB_TIMEOUT_SECONDS = int\(os\.getenv\("INDEX_JOB_TIMEOUT_SECONDS", "(\d+)"\)\)'
+)
+_BACKLOG_THRESHOLD_RE = re.compile(r"sum\(celery_queue_length\) > (\d+)")
+
 _IDENT_RE = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
 _QUOTED_RE = re.compile(r"\"[^\"]*\"|'[^']*'")
 _BRACES_RE = re.compile(r"\{[^{}]*\}")
@@ -281,6 +315,12 @@ def test_legacy_alerts_baseline_shape():
     名字面一条都不受影响，既有守卫全部照常绿，而告警行为已经变了：同类破坏与删规则
     一样致命、一样无声。本用例是**快照式基线**：现值逐字登记在
     ``LEGACY_ALERTS_BASELINE``，任何对既有规则的有意改动必须同批在这里显式登记。
+
+    本函数体内现在还钉**台账表 A G9 的容量算术同源**（阈值 == 波次 × 副本 × 并发，以及
+    NotDraining 的 ``for`` 换算秒数 == ``INDEX_JOB_TIMEOUT_SECONDS`` 默认值）。为什么折在
+    这里而不是新开用例：新开用例会动收集面，按台账口径要触发第二次全量 re-cite；只加断言
+    则 ``--collect-only`` 前后同为 14 items，代价为零，而两类红都指向同一件事——
+    「告警文本与部署声明各说一套」，放在一起读才看得出它们是同一个口径的两面。
     """
     rules = _by_alert()
     # G-2（WD-1 第 2 轮退回一般项）：防「向 LEGACY_ALERTS 增名而不增基线」的静默失覆盖——
@@ -308,6 +348,80 @@ def test_legacy_alerts_baseline_shape():
         assert severity == base_severity, (
             f"{alert_name}: severity 与基线不符（基线 {base_severity!r}，实际 {severity!r}）"
         )
+
+    # --- 台账表 A G9：容量算术同源（追加在本函数体内，不新增用例）------------------
+    # 先判解析面（③）再判等式（①②）：等式两边的数字必须是**从真源现读**的，不许是
+    # 「解析失败后回落的某个默认」。四枚正则命中次数不是 1 就红——刻意不 return、
+    # 不 pytest.skip、不 try/except：静默跳过等于把闸拆掉还留着绿，而这类闸一旦漏红
+    # 就再也看不出阈值和部署容量是什么时候分家的。
+    compose_text = COMPOSE_PATH.read_text(encoding="utf-8")
+    settings_text = RETRIEVAL_SETTINGS_PATH.read_text(encoding="utf-8")
+    backlog_rule = rules.get("My AgentixCeleryQueueBacklog")
+    not_draining_rule = rules.get("My AgentixCeleryQueueNotDraining")
+    assert backlog_rule is not None, f"{RULES_PATH} 里没有 Backlog 规则，容量算术无从比对"
+    assert not_draining_rule is not None, (
+        f"{RULES_PATH} 里没有 NotDraining 规则，单作业预算窗口无从比对"
+    )
+
+    replicas_hits = _COMPOSE_REPLICAS_RE.findall(compose_text)
+    concurrency_hits = _COMPOSE_CONCURRENCY_RE.findall(compose_text)
+    timeout_hits = _SETTINGS_INDEX_TIMEOUT_RE.findall(settings_text)
+    threshold_hits = _BACKLOG_THRESHOLD_RE.findall(
+        " ".join(str(backlog_rule.get("expr", "")).split())
+    )
+    for factor, source, pattern, hits in (
+        ("副本默认值", str(COMPOSE_PATH), _COMPOSE_REPLICAS_RE.pattern, replicas_hits),
+        ("并发", str(COMPOSE_PATH), _COMPOSE_CONCURRENCY_RE.pattern, concurrency_hits),
+        (
+            "单作业预算默认值",
+            str(RETRIEVAL_SETTINGS_PATH),
+            _SETTINGS_INDEX_TIMEOUT_RE.pattern,
+            timeout_hits,
+        ),
+        ("Backlog 阈值", str(RULES_PATH), _BACKLOG_THRESHOLD_RE.pattern, threshold_hits),
+    ):
+        assert len(hits) == 1, (
+            f"{factor}：在 {source} 上按 /{pattern}/ 解析实得 {len(hits)} 次（{hits}），"
+            "必须恰命中 1 次——0 次＝那一处容量声明的写法变了、多次＝冒出第二处容量声明，"
+            "两种情况都无从判断乘积关系，判红而不是跳过（台账表 A G9）"
+        )
+
+    replicas = int(replicas_hits[0])
+    concurrency = int(concurrency_hits[0])
+    threshold = int(threshold_hits[0])
+    index_timeout_s = int(timeout_hits[0])
+
+    # ①：阈值 == 波次 × 副本 × 并发（现树 20 == 10 × (1 × 2)）。
+    declared_capacity = replicas * concurrency
+    assert threshold == QUEUE_THRESHOLD_WAVES * declared_capacity, (
+        f"容量算术脱钩：{RULES_PATH} 的 Backlog 阈值 {threshold} != 波次 {QUEUE_THRESHOLD_WAVES}"
+        f" × 声明容量（{COMPOSE_PATH} 的副本 {replicas} × 并发 {concurrency}"
+        f" = {declared_capacity}）——改 compose 容量就得同批重算阈值，"
+        "否则要显式改动 QUEUE_THRESHOLD_WAVES 这枚人工口径，diff 里藏不住"
+    )
+
+    # ②：NotDraining 的 for 换算秒数 == INDEX_JOB_TIMEOUT_SECONDS 默认值（现树 30m == 1800s）。
+    # 换算前先过本文件既有 `_DURATION_RE` 判字面合法（单位表与它的取值域一致），再逐段
+    # 吃满整串：拼不回原文的一截说明有认不出的单位，宁可红也不许「凑」出一个秒数。
+    # 台账明写这里的 30m 指「单作业预算」，不是 Backlog 自身的 for: 10m 持续窗口。
+    not_draining_for = " ".join(str(not_draining_rule.get("for", "")).split())
+    assert _DURATION_RE.match(not_draining_for), (
+        f"{RULES_PATH} 的 NotDraining for {not_draining_for!r}"
+        " 不是合法 Prometheus 时长字面量，无从换算成单作业预算"
+    )
+    unit_seconds = {"ms": 0.001, "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800, "y": 31536000}
+    segments = re.findall(r"(\d+)(ms|s|m|h|d|w|y)", not_draining_for)
+    assert segments and "".join(f"{v}{u}" for v, u in segments) == not_draining_for, (
+        f"{RULES_PATH} 的 NotDraining for {not_draining_for!r} 无法逐段换算成秒"
+        f"（单位表 {sorted(unit_seconds)}）"
+    )
+    not_draining_seconds = sum(int(v) * unit_seconds[u] for v, u in segments)
+    assert not_draining_seconds == index_timeout_s, (
+        f"单作业预算与窗口脱钩：{RULES_PATH} 的 NotDraining for {not_draining_for!r}"
+        f" 换算 {not_draining_seconds:g}s != {RETRIEVAL_SETTINGS_PATH} 的 "
+        f"INDEX_JOB_TIMEOUT_SECONDS 默认 {index_timeout_s}s——窗口取的是作业硬上限本身，"
+        "改超时就得同批改窗口"
+    )
 
 
 # ---------------------------------------------------------------------------
