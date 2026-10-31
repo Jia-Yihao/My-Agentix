@@ -3,7 +3,7 @@
 // 覆盖面与验收口径：
 // - 默认（不传 virtual）/ 显式 virtual=false ⇒ 全量渲染 `.modal-message`，且没有任何占位节点
 //   （= 与基线逐位等价）；
-// - virtual=true 且消息数远大于窗口 ⇒ 只渲染窗口内消息（数量 < 总数），顶/底两个占位元素存在；
+// - virtual=true 且消息数远大于窗口 ⇒ 只渲染窗口内消息，行数与两个占位高度都按窗口反推精确钉住，顶/底两个占位元素存在；
 // - 虚拟模式下批次 C1 折叠中段机制仍以 displayMessages 为数据源，折叠条随窗口滚进滚出；
 // - 虚拟态点击折叠条 ⇒ 展开（G2：此前折叠点击展开只覆盖关闭态）；
 // - 虚拟态量到 clientHeight=0 ⇒ 视口回落 FALLBACK_VIEWPORT_HEIGHT 被精确钉住（G3：全用精确断言）；
@@ -77,20 +77,28 @@ describe('ChatMessageList 虚拟滚动（T14，默认关）', () => {
     const wrapper = mountList(makeMessages(total), true)
 
     // 初始停在顶部：上方无占位，下方占位撑起剩余内容
+    // 精确值反推（庚-2 G2-B）：视口=FALLBACK_VIEWPORT_HEIGHT(600)、DEFAULT_ROW_HEIGHT=72 ⇒
+    // visibleRows=ceil(600/72)=9，加 DEFAULT_OVERSCAN=4 ⇒ 初始窗口 [0, 13)。
+    // 原 :81/:82 两条不等式（>0 且 <total）合并为下面这一条 toBe(13)：13 蕴含 >0 且 <150，
+    // 合并不丢判别力。
     const initialRows = wrapper.findAll('.modal-message').length
-    expect(initialRows).toBeGreaterThan(0)
-    expect(initialRows).toBeLessThan(total)
+    expect(initialRows).toBe(13)
     expect(spacerHeightPx(wrapper, 'top')).toBe(0)
-    expect(spacerHeightPx(wrapper, 'bottom')).toBeGreaterThan(0)
+    // 底部占位＝窗口外条数×行高：(150-13)×72（原 :84 的 >0 换精确值）
+    expect(spacerHeightPx(wrapper, 'bottom')).toBe((150 - 13) * 72)
 
     // 滚到中部（估算行高 72 ⇒ 第 50 条附近）：上下占位都非 0
     await scrollTo(wrapper, 50 * 72)
 
+    // scrollTop=50×72 ⇒ first=50 ⇒ 窗口 [50-4, 50+9+4)=[46, 63)（visibleRows=ceil(600/72)=9）。
+    // 原 :90/:91 两条不等式（>0 且 <total）合并为下面这一条 toBe(63-46)：17 蕴含 >0 且 <150，
+    // 合并不丢判别力。
     const midRows = wrapper.findAll('.modal-message').length
-    expect(midRows).toBeGreaterThan(0)
-    expect(midRows).toBeLessThan(total)
-    expect(spacerHeightPx(wrapper, 'top')).toBeGreaterThan(0)
-    expect(spacerHeightPx(wrapper, 'bottom')).toBeGreaterThan(0)
+    expect(midRows).toBe(63 - 46)
+    // 顶部占位＝窗口前条数×行高：46×72（原 :92 的 >0 换精确值）
+    expect(spacerHeightPx(wrapper, 'top')).toBe(46 * 72)
+    // 底部占位＝窗口外条数×行高：(150-63)×72（原 :93 的 >0 换精确值）
+    expect(spacerHeightPx(wrapper, 'bottom')).toBe((150 - 63) * 72)
     // 窗口内是第 50 条附近，首条消息已不在 DOM 里
     expect(wrapper.text()).toContain('消息50')
     expect(wrapper.text()).not.toContain('消息0')
@@ -106,7 +114,9 @@ describe('ChatMessageList 虚拟滚动（T14，默认关）', () => {
     const wrapper = mountList(makeMessages(250), true)
 
     // 窗口在顶部（首 50 条之外）：折叠条不在窗口内，不渲染
-    expect(wrapper.findAll('.modal-message').length).toBeLessThan(200)
+    // 250 条经批次 C1 折叠为 200 条数据源后初始窗口仍是 [0, 13)（visibleRows=ceil(600/72)=9
+    // 加 overscan 4）——原 :109 的 <200 松判据换成精确 13（此 13 是「200 条数据源的初始窗口」）
+    expect(wrapper.findAll('.modal-message')).toHaveLength(13)
     expect(wrapper.find('.message-fold-bar').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('消息60')
 
@@ -145,12 +155,13 @@ describe('ChatMessageList 虚拟滚动（T14，默认关）', () => {
   })
 
   it('virtual=true 量到 clientHeight=0 ⇒ 视口回落 FALLBACK_VIEWPORT_HEIGHT，精确钉住（G3）', async () => {
-    // G3 实际缺口（按实测改判，两段式）：前半面——台账点名的 `>=`/`<=` 形态（toBeGreaterThanOrEqual/
-    // toBeLessThanOrEqual）实测在 web/src 的**断言面** 0 命中；对该词做全量 grep 只命中本注释自身的这几行
-    // （2026-10-31 实测：web/src 下命中全在本文件此处，无一处是断言）——**除本注释自指外**断言面才是 0 命中。
-    // 但严格不等式 toBeGreaterThan(/toBeLessThan( 仍有
-    // 8 处（:81 :82 :84 :90 :91 :92 :93 :109，均属本文件 HEAD 既有旧用例）⇒ 按「形态已迁移、未全闭合」登记，
-    // 那 8 处本批不改（判据只紧不松）；本条钉的是 G3 后半面「回落分支未被钉住」。
+    // G3 实际缺口（按实测改判，两段式）：前半面——台账点名的 `>=`/`<=` 形态（GreaterThanOrEqual/
+    // LessThanOrEqual 两族 matcher）实测在 web/src 的**断言面** 0 命中；对该词做全量 grep 只命中本注释自身的这几行
+    // （2026-10-31 实测：web/src 下命中全在本文件此处，无一处是断言；该时点本注释含两族全称）——**除本注释自指外**断言面才是 0 命中。
+    // 后半面——登记时点严格不等式（GreaterThan/LessThan 两族 matcher）尚有 8 处（登记时点行号
+    // :81 :82 :84 :90 :91 :92 :93 :109，均属本文件既有旧用例）⇒ 当时按「形态已迁移、未全闭合」登记；
+    // 该 8 处已由庚-2 G2-B 批（2026-11-01）改为 6 处精确断言（:81+:82 与 :90+:91 各自合并，
+    // toBe 蕴含原上下界、判据只紧不松）；本条钉的是 G3 后半面「回落分支未被钉住」。
     // happy-dom 里 clientHeight 恒 0，
     // 现有虚拟态用例全部经由 ChatMessageList.vue::refreshMetrics 的回落分支
     // （viewportPx = src.clientHeight > 0 ? src.clientHeight : FALLBACK_VIEWPORT_HEIGHT，
