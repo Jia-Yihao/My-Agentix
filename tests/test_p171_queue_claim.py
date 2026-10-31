@@ -374,6 +374,49 @@ class TestStartWiring:
         assert main._task_queue_worker is None
         assert any("task queue worker start failed" in r for r in records)
 
+    @pytest.mark.asyncio
+    async def test_worker_coro_exception_surfaced_by_done_callback(self, monkeypatch):
+        """G5：worker 协程**内部**抛异常必须可观测——done-callback 记一条 ERROR（含类型与消息）。
+
+        同步侧构造/启动失败已由 ``test_start_failure_is_fail_open`` 钉住；本用例补的是
+        "任务起好了、协程跑起来才炸"这段此前不可见的窗口：error 日志里必须出现回调
+        文案（与新实现逐字对榫），且**不得**是同批挪进 try 的那句启动失败文案
+        （启动本身成功了）。优雅关停走取消路径不记 error，由既有关停用例覆盖。
+        """
+        from agentix import main
+
+        class _BoomQueue:
+            stream_name = "agentix:tasks"
+            consumer_group = "workers"
+            consumer_name = "w-test"
+
+            async def start_worker(self) -> None:
+                raise RuntimeError("worker coroutine exploded")
+
+        monkeypatch.setattr(settings, "TASK_QUEUE_WORKER_ENABLED", True, raising=False)
+        monkeypatch.setattr(tq, "get_task_queue", lambda: _BoomQueue())
+        monkeypatch.setattr(main, "_task_queue_worker_task", None)
+        monkeypatch.setattr(main, "_task_queue_worker", None)
+
+        records: List[str] = []
+        handler_id = logger.add(lambda m: records.append(str(m)), level="ERROR")
+        try:
+            assert main._start_task_queue_worker() is True
+            task = main._task_queue_worker_task
+            assert task is not None
+            with pytest.raises(RuntimeError):
+                await task
+            # done-callback 经 call_soon 排队：await 结束后再给循环一拍，确保回调已执行
+            await asyncio.sleep(0)
+        finally:
+            logger.remove(handler_id)
+
+        joined = "\n".join(records)
+        assert "task queue worker crashed" in joined, "协程内异常必须由回调记为 ERROR"
+        assert "RuntimeError" in joined, "留痕必须带异常类型"
+        assert "worker coroutine exploded" in joined, "留痕必须带异常消息"
+        assert "task queue worker start failed" not in joined, "启动本身成功，不该报同步侧文案"
+
 
 class TestSingleSourceOfDecision:
     def test_start_worker_does_not_read_the_flag(self):
