@@ -357,6 +357,75 @@ def test_perf_gate_is_actually_enforcing():
     )
 
 
+def test_perf_gate_report_contract_branch_has_no_zero_fallback():
+    """★ 表 B G9：「报告契约破了 ⇒ 判红」分支不许被写回 `or 0` 式兜底。
+
+    **为什么只能靠结构断言**：这段 Python 活在 workflow 的 ``run:`` 字符串里，
+    本仓不把它 import 进来跑，判据只能是"形状"层面的。本条钉的是**回归面**——
+    一旦 ``report.get("errors") or 0`` 这种兜底被写回，缺失会静默退化成 0/None，
+    ``_is_count`` 判据根本没生效，而既有断言（比对语义、阻断形态）照样全绿；
+    它**不是**在验证当前行为正确性（那是 workflow 内 ``_is_count`` 自己的事）。
+
+    四条合取：① ``_is_count`` 的定义与消费点（逐字 ``if not _is_count(value)``）
+    同时在场——只断言"名字出现过"会被注释里的引用糊过去；② ``errors`` / ``success``
+    / ``requests`` 三枚键全在 ``invalid_counts`` 列表推导的取值面里，缺一即红；
+    ②′（第 2 轮返工）``errors`` / ``success`` / ``requests_total`` 三行赋值逐字钉
+    **无默认参**裸形态——``report.get("errors", 0)`` 这类写回不含 ``or 0``，子串判据
+    够不着，必须靠逐字在场断言封死；③ 执行面（非注释行）不出现 ``or 0``；④ 契约破的
+    红必须有自己的文案
+    （「报告契约破了」）与自己的失败行标记（``_failed_row(slug, "报告字段缺失：``），
+    与「真有失败样本」那种红分得开。
+
+    实测偏离（落笔时点）：``perf-baseline.yml:281`` 的**注释**逐字保留着历史形态
+    ``report.get("errors") or 0`` 作警示，故第 ③ 条按"非注释行"取判据——注释是叙述、
+    不在判据作用面；该收窄不损判别力（证伪自检：代码行写回兜底必红）。
+    """
+    text = _workflow_text(PERF_PATH)
+    compare_block = text.split("Compare with previous baseline")[-1]
+
+    # ① 判据单源在用：定义与消费点并存。
+    assert "def _is_count" in compare_block, (
+        "`_is_count` 的定义不在了——判据没有单源，消费点形同引用空气"
+    )
+    assert "if not _is_count(value)" in compare_block, (
+        "`_is_count` 的消费点（逐字 `if not _is_count(value)`）不在——判据没被任何执行语句用上"
+    )
+
+    # ② 三枚键全过闸：invalid_counts 列表推导的取值面逐枚在场。
+    for entry in ('("errors", errors)', '("success", success)', '("requests", requests_total)'):
+        assert entry in compare_block, f"报告键 {entry} 不在 _is_count 闸的取值面里"
+
+    # ②'（WD-2 第 2 轮返工，G9 严重项）三行赋值必须逐字钉现树**无默认参**形态。
+    # 只排子串 `or 0` 封不住 `report.get("errors", 0)` 这种**默认参数**写回——它不含
+    # `or 0`，四条合取全部原样通过，而缺失已被默认参静默成 0，判据照样失效。
+    for assign in (
+        'errors = report.get("errors")',
+        'success = report.get("success")',
+        'requests_total = report.get("requests")',
+    ):
+        assert assign in compare_block, (
+            f"赋值行 {assign!r} 不在场——取值行被改写（含加默认参兜底）即红，G9 回归面"
+        )
+
+    # ③ `or 0` 兜底不回写执行面（:281 的警示注释不计，见 docstring）。
+    fallback_lines = [
+        line
+        for line in compare_block.splitlines()
+        if "or 0" in line and not line.lstrip().startswith("#")
+    ]
+    assert not fallback_lines, (
+        f"`or 0` 兜底被写回执行面（G9 点名的回归形态），判据将静默失效：{fallback_lines}"
+    )
+
+    # ④ 两种红分得开：契约破有自己的文案与失败行标记，不与样本失败共文案。
+    assert "报告契约破了" in compare_block, (
+        "契约破分支必须显式写明「报告契约破了」，否则与「真有失败样本」那种红不可分辨"
+    )
+    assert '_failed_row(slug, "报告字段缺失：' in compare_block, (
+        "契约破分支必须产出专属失败行（_failed_row(slug, \"报告字段缺失：…））"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 6. 门禁的两个输入文件必须是"真武装"状态（2026-10-26 基线录制后收紧）
 # ---------------------------------------------------------------------------

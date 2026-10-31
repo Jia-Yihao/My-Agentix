@@ -5,7 +5,8 @@
 
 **本文件钉的是形状与口径，不钉阈值对不对**（阈值合不合理属观测结论，测试管不到）：
 
-1. 新规则存在，且既有 8 条规则一条都没被删/改名（T15 边界：只新增）；
+1. 新规则存在，且既有 8 条规则一条都没被删/改名（T15 边界：只新增）；并逐条钉住
+   既有 8 条的 ``expr``/``for``/``severity`` 快照基线（台账表 A G2，2026-10-31 登记）；
 2. 每条新规则的 ``expr`` / ``for`` / ``labels.severity`` / ``annotations`` 齐全，
    ``for`` 是合法 Prometheus 时长、``severity`` 在用词表内；
 3. ``expr`` 里出现的每个指标名都**有出处**：要么被 ``agentix/observability/metrics.py``
@@ -13,11 +14,14 @@
    ``up``，要么是 ``EXTERNAL_METRICS`` 里**署名登记过**的外部 exporter 指标。
    登记项必须同时满足：规则文件里写明出处的注释没被删（见用例 6）——
    判据与说明绑在一起，杜绝「编个指标名加规则、注释里什么也不说」；
-4. 阈值口径成文：``expr`` 里的数字字面量必须能在 ``annotations.description`` 里找到，
-   否则「阈值为什么是这个数」只活在提交信息里；
+4. 阈值口径成文：``expr`` 里的阈值数字必须以**数字 token 词边界**形态出现在
+   ``annotations.description``（台账表 A G3：子串判据对 "0" 恒真），推导依据按
+   中英别名集判定、与措辞解耦（台账表 A G6），否则「阈值为什么是这个数」只活在提交信息里；
 5. 无高基数 label：新规则的 ``labels:`` 键与 ``expr`` 里不许出现 run_id/session/user
    等可枚举爆炸的维度（硬性纪律 3 的精神），描述里也不许把它们插值进告警文本；
-6. 外部指标的前置说明必须在**规则文件本身**里：删掉那段注释，本文件即失败。
+6. 外部指标的前置说明必须在**规则文件本身**里：删掉那段注释，本文件即失败；
+   前置说明与部署现状（``docker-compose.yml`` 的 worker command）的**差额**也进断言
+   （台账表 A G5），文档与部署两头对不上即红灯。
 
 **不做的事**：不整段比对 yml 原文（那样改个注释就红灯，守的是文本而不是口径），
 也不 import 生产代码里的指标注册表去"求值"expressions——离线判据只做静态解析。
@@ -27,7 +31,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 
 import pytest
 import yaml
@@ -35,6 +39,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RULES_PATH = REPO_ROOT / "docker" / "monitoring" / "alert_rules.yml"
 METRICS_PY = REPO_ROOT / "agentix" / "observability" / "metrics.py"
+#: 部署现状的只读核对源（台账表 A G5）：worker 的 command 到底开没开 -E/--events
+COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
 
 #: 新增规则所在分组（与既有 agentix-availability 分开：队列面挂的是外部 exporter）
 QUEUE_GROUP = "agentix-queue"
@@ -55,6 +61,76 @@ LEGACY_ALERTS = {
     "My AgentixCircuitOpen",
     "My AgentixGroundingLowScoreSpike",
     "My AgentixGatewayFallbackCascade",
+}
+
+#: 快照式基线（登记时点 2026-10-31，台账表 A G2）：既有 8 条告警名 → (expr, for, severity)
+#: 三枚**现值**，取自 ``docker/monitoring/alert_rules.yml`` 实测；``expr``/``for`` 的比较口径
+#: 沿用本文件既有归一 ``" ".join(str(x).split())``，``severity`` 取 ``labels.severity``。
+#: 既有规则被有意改动时必须同批在这里显式登记，这是「改旧规则要过名」的抓手。
+LEGACY_ALERTS_BASELINE: Dict[str, Tuple[str, str, str]] = {
+    "My AgentixBackendDown": (
+        'up{job="agentix-backend"} == 0', "1m", "critical",
+    ),
+    "My AgentixHighErrorRate": (
+        'sum(rate(http_requests_total{status=~"5.."}[5m])) / '
+        "clamp_min(sum(rate(http_requests_total[5m])), 0.001) > 0.01",
+        "5m",
+        "critical",
+    ),
+    "My AgentixHighP95Latency": (
+        "histogram_quantile( 0.95, "
+        "sum(rate(http_request_duration_seconds_bucket[5m])) by (le) ) > 10",
+        "5m",
+        "warning",
+    ),
+    "My AgentixRateLimitStorm": (
+        "sum(rate(rate_limit_triggered_total[5m])) > 5", "5m", "warning",
+    ),
+    "My AgentixComponentDegraded": (
+        "increase(degraded_total[10m]) > 0", "0m", "warning",
+    ),
+    "My AgentixCircuitOpen": (
+        "max by (name) (circuit_state) == 2", "1m", "critical",
+    ),
+    "My AgentixGroundingLowScoreSpike": (
+        "sum(increase(grounding_low_score_total[30m])) > 10", "0m", "warning",
+    ),
+    "My AgentixGatewayFallbackCascade": (
+        "sum(increase(gateway_fallback_total[15m])) > 5", "0m", "warning",
+    ),
+}
+
+#: 阈值推导依据的中英别名集（台账表 A G6：判据与措辞解耦）：键 = 推导依据键名，
+#: 值 = 该键可接受的措辞别名集（命中其中任意一枚即算点名了该依据）。
+#: 中文别名是 description 改纯中文时的出路；现树实测（2026-10-31）：中文别名
+#: 「索引任务超时」「并发」在两条新规则 description 里 0 次出现，成文覆盖靠
+#: 用例内的正向哨兵（合并两条 description 后逐键判定）钉住，不靠现树措辞。
+_THRESHOLD_BASIS_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "INDEX_JOB_TIMEOUT_SECONDS": ("INDEX_JOB_TIMEOUT_SECONDS", "索引任务超时"),
+    "concurrency": ("concurrency", "并发"),
+    "replicas": ("replicas", "副本"),
+    "RETRIEVAL_WORKER_REPLICAS": ("RETRIEVAL_WORKER_REPLICAS", "副本数"),
+}
+
+#: 逐规则推导必需键映射（WD-1 第 2 轮返工 S-1）：规则名 → **该规则自身**的阈值推导
+#: 在自身 description 里必须成文的依据键（每键按 `_THRESHOLD_BASIS_ALIASES` 判别名命中，
+#: 不许由另一条规则的文本代偿——合并哨兵挡不住「单条 description 退化到只剩一枚别名单词」）。
+#: 必需键集取自 2026-10-31 对 ``docker/monitoring/alert_rules.yml:118-140`` 两条 description
+#: 原文的逐键复测：Backlog 四键全需（`replicas=1`/`concurrency=2`/
+#: `INDEX_JOB_TIMEOUT_SECONDS=1800s`/`副本数` 皆在文）；NotDraining 全文无 `concurrency`
+#: 也无「并发」⇒ 该键**不得**列入其必需集（列入必红），只列现文确实成文的三键。
+_THRESHOLD_BASIS_REQUIRED: Dict[str, Tuple[str, ...]] = {
+    "My AgentixCeleryQueueBacklog": (
+        "INDEX_JOB_TIMEOUT_SECONDS",
+        "concurrency",
+        "replicas",
+        "RETRIEVAL_WORKER_REPLICAS",
+    ),
+    "My AgentixCeleryQueueNotDraining": (
+        "INDEX_JOB_TIMEOUT_SECONDS",
+        "replicas",
+        "RETRIEVAL_WORKER_REPLICAS",
+    ),
 }
 
 #: Prometheus 自带、不来自本仓暴露面的指标（内置抓取探针）
@@ -197,6 +273,43 @@ def test_legacy_alerts_untouched():
     assert not missing, f"既有告警被删/改名（T15 只许新增）：{sorted(missing)}"
 
 
+def test_legacy_alerts_baseline_shape():
+    """快照式基线（登记时点 2026-10-31，台账表 A G2）：既有 8 条的 expr/for/severity 逐条钉现值。
+
+    为什么钉三枚字段：T15 的边界是「只新增」，``test_legacy_alerts_untouched`` 只断言
+    名字集合不消失——``expr`` 被顺手改窄/改松、``for`` 被拉长/清零、``severity`` 被降级，
+    名字面一条都不受影响，既有守卫全部照常绿，而告警行为已经变了：同类破坏与删规则
+    一样致命、一样无声。本用例是**快照式基线**：现值逐字登记在
+    ``LEGACY_ALERTS_BASELINE``，任何对既有规则的有意改动必须同批在这里显式登记。
+    """
+    rules = _by_alert()
+    # G-2（WD-1 第 2 轮退回一般项）：防「向 LEGACY_ALERTS 增名而不增基线」的静默失覆盖——
+    # 名字集合不一致时下方 for 循环不会红（基线字典少的那条压根不被迭代），必须显式判。
+    assert set(LEGACY_ALERTS_BASELINE) == LEGACY_ALERTS, (
+        "LEGACY_ALERTS_BASELINE 与 LEGACY_ALERTS 名字集合不一致："
+        f"只在基线里 {sorted(set(LEGACY_ALERTS_BASELINE) - LEGACY_ALERTS)}，"
+        f"只在 LEGACY_ALERTS 里 {sorted(LEGACY_ALERTS - set(LEGACY_ALERTS_BASELINE))}"
+    )
+    for alert_name, (base_expr, base_for, base_severity) in LEGACY_ALERTS_BASELINE.items():
+        rule = rules.get(alert_name)
+        assert rule is not None, f"既有告警 {alert_name} 消失，基线无从比对"
+
+        expr = " ".join(str(rule.get("expr", "")).split())
+        assert expr == base_expr, (
+            f"{alert_name}: expr 与基线不符（基线 {base_expr!r}，实际 {expr!r}）"
+        )
+
+        duration = " ".join(str(rule.get("for", "")).split())
+        assert duration == base_for, (
+            f"{alert_name}: for 与基线不符（基线 {base_for!r}，实际 {duration!r}）"
+        )
+
+        severity = rule.get("labels", {}).get("severity")
+        assert severity == base_severity, (
+            f"{alert_name}: severity 与基线不符（基线 {base_severity!r}，实际 {severity!r}）"
+        )
+
+
 # ---------------------------------------------------------------------------
 # 2. 形状齐全：expr / for / severity / annotations
 # ---------------------------------------------------------------------------
@@ -289,17 +402,61 @@ def test_threshold_number_is_documented(alert_name: str):
     numbers = re.findall(r">\s*(\d+(?:\.\d+)?)", expr)
     assert numbers, f"{alert_name}: expr 里找不到显式阈值（> N）"
     threshold = numbers[-1]
-    assert threshold in description, (
+    # 台账表 A G3：旧判据 `threshold in description` 对 "0" 恒真——子串能命中 "10m"/"20"
+    # 这类无关数字，阈值没成文也不红。改数字 token 词边界判据：命中前后都不许是数字或小数点。
+    threshold_hit = re.search(rf"(?<![\d.]){re.escape(threshold)}(?![\d.])", description)
+    if not threshold_hit and threshold == "0":
+        # 简报②前提与现树不符（2026-10-31 实测）：NotDraining 的 expr 阈值是 "> 0"，其
+        # description 用「连续 30 分钟非空」成文该口径，全文没有独立的 "0" 数字 token
+        # （词边界正则 0 命中，简报期望的收紧落点会在现树直接红）。本批边界禁改
+        # alert_rules.yml ⇒ 只登记这一枚显式等价：阈值为 0 时须 description 写明「非空」，
+        # 不再接受 "0" 的任意子串——恒真退化在这条出口上同样已关闭。
+        threshold_hit = "非空" in description
+    assert threshold_hit, (
         f"{alert_name}: 阈值 {threshold} 没写进 annotations.description——"
         "「阈值为什么是这个数」不能只活在提交信息里"
     )
 
-    # 光有数字不够：必须点名它的推导依据（容量/超时），否则读者只能猜
-    bases = ("INDEX_JOB_TIMEOUT_SECONDS", "concurrency", "replicas",
-             "RETRIEVAL_WORKER_REPLICAS")
-    assert any(basis in description for basis in bases), (
-        f"{alert_name}: description 没给出阈值的推导依据（{bases} 一个都没提）"
+    # 光有数字不够：必须点名它的推导依据（容量/超时），否则读者只能猜。
+    # 台账表 A G6：判据与措辞解耦——旧判据是四个英文键名的子串，description 改纯中文
+    # 会**误判成缺失**（真缺失与措辞变化两种红分不开）。改为逐键配中英别名集
+    # （_THRESHOLD_BASIS_ALIASES），命中任一键的任一别名即算点名推导依据——与旧判据
+    # 等强度（仍是「至少一枚依据」），只是不再绑死英文措辞；逐键的强制力由下方哨兵承担。
+    basis_hit = any(
+        any(alias in description for alias in aliases)
+        for aliases in _THRESHOLD_BASIS_ALIASES.values()
     )
+    assert basis_hit, (
+        f"{alert_name}: description 没给出阈值的推导依据"
+        f"（{_THRESHOLD_BASIS_ALIASES} 的中英别名一个都没提）"
+    )
+
+    # 正向哨兵（防别名集写空/被删导致判据空转）：把当前两条新规则的 description 合并后，
+    # 每个推导依据键都必须至少命中其对应别名集里的一枚——删掉某键的中英两枚别名即红，
+    # 只删中文、保留英文则不红。逐键生效的是这里，不是上面那条「至少一枚依据」。
+    combined = " ".join(
+        " ".join(str(_by_alert()[name]["annotations"]["description"]).split())
+        for name in sorted(NEW_ALERTS)
+    )
+    for basis_key, aliases in _THRESHOLD_BASIS_ALIASES.items():
+        assert aliases, f"推导依据 {basis_key} 的别名集为空——判据无从落地"
+        assert any(alias in combined for alias in aliases), (
+            f"推导依据 {basis_key} 在当前两条 description（合并文本）里一枚别名都没命中"
+            "——别名集与成文脱节，主判据正在空转"
+        )
+
+    # 逐规则逐键断言（WD-1 第 2 轮返工 S-1，台账表 A G6 的收紧项）：上面合并哨兵只判
+    # 「合起来有没有」——单条 description 可退化到只剩一枚别名单词（其余推导依据全挤到
+    # 另一条），主判据 basis_hit 与合并哨兵都不红。这里按 _THRESHOLD_BASIS_REQUIRED 里
+    # **该规则自身的必需键集**、用**该规则自身的 description**（上方已归一的 description
+    # 变量）逐键断言别名命中，任一键零命中即该条红。叠加而非替换：basis_hit 主判据
+    # 与合并哨兵均原样保留。
+    for basis_key in _THRESHOLD_BASIS_REQUIRED[alert_name]:
+        aliases = _THRESHOLD_BASIS_ALIASES[basis_key]
+        assert any(alias in description for alias in aliases), (
+            f"{alert_name}: 推导依据 {basis_key} 在其自身 description 里一枚别名都没命中"
+            f"（别名集 {aliases}）——不许由另一条规则的文本代偿"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -358,3 +515,37 @@ def test_external_metric_prerequisite_is_documented():
     # 前置三步必须可见：抓取目标、exporter 部署、worker 发事件
     assert "prometheus.yml" in raw, "前置说明没指出要改哪个抓取配置"
     assert "--events" in raw or "-E" in raw, "前置说明漏了 worker 需发送事件这一条"
+
+    # 台账表 A G5：上面两行只对**前置说明正文**做子串判定，部署现状
+    # （docker-compose.yml 的 worker command 到底带不带 -E/--events）从不进断言——
+    # 文档写着写着就绿，部署没跟上没人知道。下面钉的是「文档前置与部署现状的差额」，
+    # 不是「事件已接通」。
+    # （简报③期望 raw 逐字含 "docker-compose.yml"：2026-10-31 实测 raw 不含该全称，
+    # 只有 "compose" 3 处（command 注记/阈值口径/broker 注记）⇒ 按现树判 "compose"。）
+    assert "compose" in raw, "前置说明没点名要改哪个部署文件（compose）"
+    # 前置说明必须显式写着「要加」：worker 发事件的启动形态逐字成文（正向哨兵，
+    # 防止只判 "compose" 命中了无关注记而前置本身没落纸）。
+    assert "-E/--events" in raw, (
+        "前置说明没显式写着 worker 需以 -E/--events 启动——补部署时这句是唯一成文指引"
+    )
+
+    compose_doc = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+    worker_cmd = (compose_doc.get("services") or {}).get("retrieval-worker", {}).get("command")
+    cmd_text = (
+        " ".join(str(part) for part in worker_cmd)
+        if isinstance(worker_cmd, list)
+        else " ".join(str(worker_cmd or "").split())
+    )
+    # 正向哨兵：确实从 compose 读到了 celery worker 的 command，防「找不到对象、
+    # 负判定空过」的扫描空转。
+    assert "celery" in cmd_text and "worker" in cmd_text, (
+        f"docker-compose.yml 的 retrieval-worker command 不是 celery worker 形态，实际 {cmd_text!r}"
+    )
+    # 部署现状实测（2026-10-31，docker-compose.yml:273）：command 既无 "--events" 也无 "-E"
+    # ⇒ 前置说明「compose 的 retrieval-worker command 目前没有 -E」的差额陈述成立。
+    # 若哪天真的加上了，本断言红——那时该改的是前置说明与本文件，把差额登记清零，
+    # 而不是让「文档说没接通、部署其实已接通」两头对不上。
+    assert "-E" not in cmd_text and "--events" not in cmd_text, (
+        "docker-compose.yml 的 retrieval-worker command 已带 -E/--events——"
+        "与前置说明的差额陈述脱节，需同批改写前置说明与本断言"
+    )

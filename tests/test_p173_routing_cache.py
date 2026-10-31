@@ -654,6 +654,48 @@ class TestFailOpen:
         assert result["router"].type == "kb-query"
         assert len(_cache_mod().get_routing_cache()) == 0
 
+    @pytest.mark.asyncio
+    async def test_invalid_type_fallback_is_not_cached(self, monkeypatch):
+        """白名单外 type 走兜底 ⇒ **不写缓存**。
+
+        与 ``test_fallback_results_are_not_cached`` 的分工：那条钉「异常出口」
+        （LLM 抛错，`router.py` 的 `return {"router": fallback_router}` 一路）；
+        本条钉「白名单外出口」（`if not router_type or router_type not in
+        allowed_types` 之后的 kb-query 兜底 `return` 一路）。两处兜底共用
+        「不写缓存」这条承诺（写缓存只在成功路径上，靠语句顺序保证），
+        但走的是 router.py 里两个不同的 `return`，故各钉各的。
+
+        构造越域实例的唯一可行形态：``Router.type`` 是 ``Literal[7 枚]``
+        （lg_states.py），``model_validate({"type": "not-a-type", ...})`` 会先抛
+        ValidationError（fail-closed 口径，router.py 校验点就近注释），根本走不到
+        白名单判据行；所以必须用**跳过校验的实例** ``Router.model_construct(...)``
+        ——router.py 的 ``isinstance(raw_response, Router)`` 三目会让它免过校验
+        直接进取值。这条理由是本用例"能不能红"的全部依据。
+        """
+        monkeypatch.setattr(app_settings, "ROUTING_FASTPATH_ENABLED", False)
+        monkeypatch.setattr(app_settings, "ROUTING_CACHE_ENABLED", True)
+        # 问句刻意取「今天天气怎么样」：实测不命中 _heuristic_router 的关键词表，
+        # 兜底臂因此落到 kb-query 那一支（若命中启发式，钉的就不是这一条出口）。
+        out_of_domain = Router.model_construct(
+            type="not-a-router-type",
+            logic="model: 越域理由必须原文透出",
+            question="今天天气怎么样",
+        )
+        monkeypatch.setattr(
+            router_mod,
+            "get_llm_client",
+            lambda **kwargs: _StubStructuredModel(out_of_domain),
+        )
+
+        result = await analyze_and_route_query(_state("今天天气怎么样"), config={})
+
+        assert result["router"].type == "kb-query"
+        # 钉 logic 取源（response.logic → 兜底构造的 `logic or` 前项）：非空时透出的
+        # 必须是模型给的理由原文，而不是 "fallback: invalid router output" 兜底文案
+        # ——否则"把兜底文案改成伪造的理由"没人管。
+        assert result["router"].logic == "model: 越域理由必须原文透出"
+        assert len(_cache_mod().get_routing_cache()) == 0
+
 
 # ===========================================================================
 # 7) 可观测性：指标封闭枚举 + 轨迹 cached 标记

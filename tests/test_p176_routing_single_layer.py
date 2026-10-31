@@ -32,7 +32,7 @@ A2/A4a/A4b/A5/A7 保留原样，A6 未接线）。
    ``KBInputState`` 过滤——若该 TypedDict 没有这两个键，转发的参数会被框架
    **悄悄丢掉**，A3 照样调模型、测试还全绿。故用**真实的两个 schema** 起一张
    单节点图，钉住"转发的键能到达节点"。
-6. ``TestCreateKbQueryForwarding``——``create_kb_query`` 只在 L1 给出参数时
+6. 第 6 节模块级用例 ``test_create_kb_query_*``——``create_kb_query`` 只在 L1 给出参数时
    才并入 ``route``/``kb_tools`` 两个输入键；**取不到时连键都不加**
    （断言键不存在，而不是断言值为 None）。
 7. ``TestKnownCapabilityGap``——缓存字段集合不含 kb 参数（**本批刻意不扩**，
@@ -618,6 +618,36 @@ async def test_create_kb_query_adds_no_keys_when_router_has_no_params(
     state = AgentState(
         messages=[HumanMessage(content="什么是示例分类 A")],
         router=Router(type="kb-query", logic="fallback", question="什么是示例分类 A"),
+    )
+
+    await general_handler_mod.create_kb_query(state, config={})
+
+    payload = _kb_workflow_probe.inputs[0]
+    assert "route" not in payload
+    assert "kb_tools" not in payload
+    assert set(payload) == {"question", "history"}
+
+
+@pytest.mark.asyncio
+async def test_create_kb_query_adds_no_keys_when_single_layer_declared_null_params(
+    monkeypatch, _kb_workflow_probe
+):
+    """G-4 直接用例：不是 ``test_create_kb_query_adds_no_keys_when_router_has_no_params``
+    的重复——那条走「基类没声明 ``kb_route`` ⇒ 外层条件假」，本条走「单层变体声明了
+    但值为 ``None`` ⇒ 外层真、内层假」；生产判据是两层，缺口在第二层。
+    钉住的回归形态：``general_handler`` 内层 ``kb_route_param is not None`` 判据被去掉
+    （无条件加键）时本条必须红——空通道会让 A3 把"没决策"当成"已决策"，危害见上一条
+    用例 docstring，此处不重抄。"""
+    monkeypatch.setattr(settings, "ROUTING_SINGLE_LAYER_ENABLED", True)
+    state = AgentState(
+        messages=[HumanMessage(content="什么是示例分类 A")],
+        router=SingleLayerRouter(
+            type="kb-query",
+            logic="llm",
+            question="什么是示例分类 A",
+            kb_route=None,
+            kb_tools=[],
+        ),
     )
 
     await general_handler_mod.create_kb_query(state, config={})

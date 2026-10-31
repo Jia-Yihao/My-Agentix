@@ -159,6 +159,50 @@ class TestClaimNormalization:
         assert _normalize_xautoclaim_response({"oops": 1}) == ("0-0", [])
         assert any("Unexpected XAUTOCLAIM response shape" in r for r in warning_logs)
 
+    def test_each_unexpected_shape_hits_the_guard(self, warning_logs):
+        """G1：异常出口是**三臂共用一个降级出口**，判据按臂逐一生效——把 ``except``
+        元组删窄（哪怕只留 ``KeyError`` 一臂）本用例必须红。三枚输入各自命中一臂：
+
+        - ``("7-0",)`` 只有 1 段，``raw[1]`` 抛 **IndexError**；
+        - ``7`` 是真整数（truthy，过得了 ``not raw`` 入口闸），``raw[0]`` 抛 **TypeError**；
+        - ``{"oops": 1}`` 下标取 0 而键只有 ``"oops"``，``raw[0]`` 抛 **KeyError**
+          （与 ``test_empty_and_unexpected_shapes_degrade_to_no_entries`` 同形、刻意保留：
+          那条钉「降级到无条目」这个结果，本条钉「按臂命中守卫」这个判据）。
+
+        三枚输入分三次调用、逐次核对 WARNING **增量计数**而非只看总数——只看总数时
+        "某一臂不再记日志"会糊过去（留痕是这条降级支路唯一的可观测面，纪律 2）。
+        """
+        cases = (
+            ("IndexError", ("7-0",)),
+            ("TypeError", 7),
+            ("KeyError", {"oops": 1}),
+        )
+        for arm, raw in cases:
+            before = len(warning_logs)
+            assert _normalize_xautoclaim_response(raw) == ("0-0", []), arm
+            assert len(warning_logs) == before + 1, f"{arm} 臂必须各记一次 WARNING"
+
+    def test_list_shapes_normalize_like_tuples(self):
+        """G8：redis-py 在不同版本/解析路径下透传服务端原始响应的容器**可能是 list 而非
+        tuple**；归一化只在 ``_normalize_xautoclaim_response`` 一处（模块 docstring 已声明），
+        形态假设不该只钉 tuple 一半。同一批数据分别喂 tuple 与 list 形态（2 段与 3 段两种
+        长度，3 段那份带 ``["8-0"]`` 删除位，与 ``test_three_element_shape`` 同源），
+        断言两种容器形态结果**逐字相等**。
+
+        末两行 sanity 断言是刻意的：等式两侧若**同时**退化成 ``("0-0", [])``，相等仍成立，
+        用例就会假绿——钉住 tuple 侧非空，等价断言才有判别力。
+        """
+        tuple_2 = ("5-0", _entries(2))
+        list_2 = ["5-0", _entries(2)]
+        assert _normalize_xautoclaim_response(list_2) == _normalize_xautoclaim_response(tuple_2)
+
+        tuple_3 = ("9-0", _entries(1), ["8-0"])
+        list_3 = ["9-0", _entries(1), ["8-0"]]
+        assert _normalize_xautoclaim_response(list_3) == _normalize_xautoclaim_response(tuple_3)
+
+        assert _normalize_xautoclaim_response(tuple_2)[1] != [], "sanity：2 段侧不该本来就为空"
+        assert _normalize_xautoclaim_response(tuple_3)[0] == "9-0", "sanity：游标侧不该本来就退化"
+
 
 class TestClaimRound:
     @pytest.mark.parametrize("three_elements", [False, True])

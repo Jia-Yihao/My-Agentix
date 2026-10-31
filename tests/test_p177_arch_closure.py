@@ -771,6 +771,9 @@ DOC_CLAIMS: dict[str, object] = {
 ARCH_DOC = REPO / "docs" / "architecture" / "分层架构与依赖规则.md"
 
 #: 快照块定位：标题含「实测快照」的四级标题起、到下一个三级标题止。
+#: 消费侧用 findall 计数判「恰一处」——`search` 只取第一个匹配是登记时点 reviewer 点名的
+#: 漂移面（§8.2 表 Q `G-2`）：正文植入同形块会让抽取目标漂移到最先匹配那一块；
+#: 收紧为「恰一处」之后，跨三级标题植入被计数判据堵死；同一三级标题内相邻植入会合并为一处匹配，该残余形态＝§8.2 表 Q `G-2` 行已登记的接受面（不阻断）。
 _SNAPSHOT_BLOCK_RE = re.compile(r"^####[^\n]*实测快照[^\n]*\n(.*?)(?=^### |\Z)", re.M | re.S)
 
 #: 三行的字面形态（前缀 + 加粗数字），与 §7.1 改文**同批逐字对齐**（M1 后续批）。
@@ -798,12 +801,18 @@ def _doc_snapshot_counts() -> tuple[dict[str, int], list[str]]:
 
     fail-closed 是本次升级的全部意义：快照块整体缺失、或三行任一定位不到，都进未定位清单，
     由调用方以「判据与正文已脱钩」断红——**绝不允许**抽不到就跳过。
+    2026-10-31 丁波把「多处」也归入不跳过面：抽到多处同样不解析。
     """
     text = ARCH_DOC.read_text(encoding="utf-8")
-    m = _SNAPSHOT_BLOCK_RE.search(text)
-    if m is None:
+    blocks = _SNAPSHOT_BLOCK_RE.findall(text)
+    if len(blocks) == 0:
         return {}, ["快照块（标题含「实测快照」的四级标题）整体未定位"]
-    block = m.group(1)
+    if len(blocks) > 1:
+        return {}, [
+            f"快照块出现 {len(blocks)} 处（必须恰为 1 处）：抽取目标会漂移到最先匹配的那一块，"
+            "正文里第二份同形块会让计数侧同源失效"
+        ]
+    block = blocks[0]
     counts: dict[str, int] = {}
     missing: list[str] = []
     for key, label, pat in _SNAPSHOT_LINES:
