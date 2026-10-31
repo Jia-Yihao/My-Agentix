@@ -23,7 +23,8 @@
   - **不存 ``question``**：命中时用**当前这次请求的原文**回填，缓存里因此不含
     任何用户输入；
   - **保留 ``logic``**：它与 ``reasoning`` 同为模型自由文本，留着是因为下游把它
-    拼进 system prompt（``general_handler.py:86`` / ``guardrails.py:101``）有消费点；
+    拼进 system prompt（``general_handler`` 里 ``GENERAL_QUERY_SYSTEM_PROMPT.format(logic=router.logic)`` 那句 /
+    ``agentix/application/agents/guardrails.py`` 里 ``GET_ADDITIONAL_LOGIC_PROMPT.format(logic=router.logic)`` 那句）有消费点；
     本缓存承诺的是「不含问句原文」，**不**承诺「不含模型文本」。
   - **不存 ``reasoning``**：它是模型的叙述性文本，可能整段复述问句（等于又把
     原文存了一份）；而且生产侧**没有任何消费点读它**——全仓只有

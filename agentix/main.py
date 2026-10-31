@@ -803,6 +803,35 @@ _task_queue_worker_task: Optional[asyncio.Task] = None
 _task_queue_worker: Any = None
 
 
+def _on_task_queue_worker_done(task: asyncio.Task) -> None:
+    """队列 worker 的结束观察回调（台账表 E G5：异步任务内异常必须可见）。
+
+    「任务创建成功」只证明同步侧走通；真正在跑的是 ``start_worker`` 协程，它后续
+    炸掉时若无本回调，异常没有任何消费者——只剩 asyncio 的 "Task exception was
+    never retrieved" 栈，不算可观测。取回异常这件事本身也消掉那条提示。
+    被取消（``_shutdown`` 走的正是取消路径）与正常结束都不记 ERROR：前者是预期
+    关停、后者不是失败。回调自身 fail-open（纪律 2）：观测设施的失败绝不外抛，
+    免得搅乱事件循环上正在跑的其它任务。
+    """
+    try:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is None:
+            return
+        logger.error(
+            "task queue worker crashed: err_type={} err={}",
+            type(exc).__name__,
+            exc,
+        )
+    except Exception as cb_exc:  # noqa: BLE001 - 回调自身失败只降级为一条 WARNING 留痕，不外抛（纪律 2）
+        logger.warning(
+            "task queue worker done-callback failed: err_type={} err={}",
+            type(cb_exc).__name__,
+            cb_exc,
+        )
+
+
 def _start_task_queue_worker() -> bool:
     """起 Redis Stream 队列消费 worker；返回是否真的起了任务（``False`` = 无任务可取消）。
 
@@ -838,6 +867,18 @@ def _start_task_queue_worker() -> bool:
         task = asyncio.get_running_loop().create_task(
             queue.start_worker(), name="task-queue-worker"
         )
+        task.add_done_callback(_on_task_queue_worker_done)
+        # 台账表 E G5：句柄赋值与启动日志挪进 try——挪出保护块时"半启动"状态
+        # （任务已建但句柄/日志未落）无人收口，挪进后任何一步失败都走同一条
+        # fail-open 出口，返回 False 让关停路径看得见"其实没有任务"。
+        _task_queue_worker = queue
+        _task_queue_worker_task = task
+        logger.info(
+            "task queue worker started (stream={} group={} consumer={})",
+            queue.stream_name,
+            queue.consumer_group,
+            queue.consumer_name,
+        )
     except Exception as exc:  # noqa: BLE001 - 后台消费起不来不阻断启动：ERROR 留痕后降级为"不消费"（纪律 2）
         logger.error(
             "task queue worker start failed (queue consumption disabled): err_type={} err={}",
@@ -845,15 +886,6 @@ def _start_task_queue_worker() -> bool:
             exc,
         )
         return False
-
-    _task_queue_worker = queue
-    _task_queue_worker_task = task
-    logger.info(
-        "task queue worker started (stream={} group={} consumer={})",
-        queue.stream_name,
-        queue.consumer_group,
-        queue.consumer_name,
-    )
     return True
 
 

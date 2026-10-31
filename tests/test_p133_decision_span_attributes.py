@@ -12,7 +12,7 @@
   tracing.py 常量表，spans.py 必须经常量引用。
 
 追加（PhaseK 任务 4/5/6，消费点接线）：
-- 任务 4：``analyze_and_route_query`` 成功路径唯一落点写最终 route，值 ∈ 7 类词表；
+- 任务 4：``analyze_and_route_query`` 成功路径的落点（与缓存命中路径同走 ``record_route_decision`` 单源 helper）写最终 route，值 ∈ 7 类词表；
 - 任务 5：``query_knowledge_base`` 两处 ``gw_result`` 分支写实际服务方，
   主模型名同源 ``ctx.model_name``；
 - 任务 6：进环 ``resume_in_loop`` 与断点 ``resume_thread`` 两条恢复路径按
@@ -164,7 +164,7 @@ def test_response_model_literal_single_source():
 
 
 # ---------------------------------------------------------------------------
-# 任务 4 消费点：路由决策值上 span（analyze_and_route_query 唯一落点）
+# 任务 4 消费点：路由决策值上 span（analyze_and_route_query 成功路径的落点，与缓存命中路径同走 record_route_decision 单源）
 # ---------------------------------------------------------------------------
 
 
@@ -174,7 +174,7 @@ async def test_router_records_route_decision_attr(fake_span, monkeypatch):
 
     假模型桩沿用 p118 既有范式（``get_llm_client`` → ``with_structured_output``
     → 固定结果），不新造桩形态；flag 显式钉到基线组合（fastpath/task/code 全关），
-    保证走的就是"白名单校验通过"的唯一落点，且词表就是 7 类。
+    保证走的就是"白名单校验通过"的成功路径落点（与缓存命中路径同走 ``record_route_decision`` 单源 helper），且词表就是 7 类。
     """
     from langchain_core.messages import HumanMessage
 
