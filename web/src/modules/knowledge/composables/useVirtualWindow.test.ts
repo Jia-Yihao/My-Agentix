@@ -5,7 +5,8 @@
 // - 滚到中部 ⇒ start/end 与 overscan 的折算正确，占位高度 = 窗口外条数 × 估算行高；
 // - 滚到底 / scrollTop 超出内容高度 ⇒ end 钳到 total、底部占位归 0；
 // - 非法参数（total=0/负数/NaN、行高 0、scrollTop 为负、viewport 非数）⇒ 不抛异常；
-// - viewportHeight=0 的退化契约（G7）⇒ 窗口退化为仅 overscan 条，**不是空窗口**。
+// - viewportHeight=0 的退化契约（G7）⇒ 分两支：overscan>0 时窗口退化为仅 first±overscan 那几条（**非空**）；
+//   overscan=0（双 0）时窗口区间为空（零条渲染），但占位不归零，与 EMPTY_WINDOW 字面不同。
 //
 // 刻意不在这里断言滚动平滑度：可变高度是固定估算，平滑性需要真实布局，happy-dom 下无法验证。
 import { describe, expect, it } from 'vitest'
@@ -113,9 +114,11 @@ describe('computeVirtualWindow（T14 窗口推导）', () => {
     expect(badViewport).toEqual({ start: 0, end: 2, topPad: 0, bottomPad: 48 * 100 })
   })
 
-  it('viewportHeight=0 ⇒ 窗口退化为仅 overscan 条，不是空窗口（G7 退化契约）', () => {
-    // G7（按简报实测改判）：台账"当前实现返回空窗口"不确——viewportHeight sanitize 到 0 只让
-    // visibleRows=0，窗口仍按 first ± overscan 取值 ⇒ 退化为仅 overscan 那几条，**不是空窗口**。
+  it('viewportHeight=0 的两支退化：overscan>0 ⇒ 仅 overscan 条，双 0 ⇒ 区间为空但占位不归零（G7 退化契约）', () => {
+    // G7（按简报实测改判）：台账 G7 行括注"当前实现返回空窗口"不确——但「不是空窗口」只对 **overscan>0** 支成立，
+    // 整条契约要分两支说：viewportHeight sanitize 到 0 只让 visibleRows=0；overscan>0 时窗口仍按 first ± overscan
+    // 取值 ⇒ 退化为仅 overscan 那几条，**不是空窗口**；overscan=0（双 0）时窗口区间确实为空（零条渲染），
+    // 只是占位不按空窗口归零，与 total<=0 早退的 EMPTY_WINDOW 字面不同。
     // 上一条用例钉的是"非数视口"（NaN），本条单独钉显式 0 这一 sanitize 来源；
     // 既有「overscan=0 ⇒ 窗口恰好覆盖可见行」（`:41`）的视口是 500，双 0 组合此前未钉，由本条下方追加的 expect 补上。
     // 参数与上一条同形（total 50 / rowHeight 100 / overscan 2），断言测到的精确值。
