@@ -121,8 +121,8 @@ describe('ChatMessageList 虚拟滚动（T14，默认关）', () => {
 
   it('virtual=true 点击折叠条 ⇒ 展开：折叠条消失、中段进窗口（G2）', async () => {
     // G2（表 C）：既有 4 条里折叠条点击只在关闭态被覆盖，虚拟态下"点了不展开"这种缺陷当时测不出，本条补上。
-    // 简报建议判据「渲染消息数升到全量」字面在本组件实测不确（台账 `:1350` 原文实测只写「收口批补一条」，
-    // 不含「全量」）：窗口行数由 scrollTop 与视口高度决定，
+    // 简报建议判据「渲染消息数升到全量」字面在本组件实测不确（台账表 C G2 行（处置列）原文 2026-10-31
+    // 实测只写「收口批补一条」，不含「全量」）：窗口行数由 scrollTop 与视口高度决定，
     // 展开前后都落在窗口 [46, 63) ⇒ 行数不变；展开的可观测形态＝中段消息进窗口 + 底部占位随数据源 200→250 变高。
     const wrapper = mountList(makeMessages(250), true)
 
@@ -146,7 +146,9 @@ describe('ChatMessageList 虚拟滚动（T14，默认关）', () => {
 
   it('virtual=true 量到 clientHeight=0 ⇒ 视口回落 FALLBACK_VIEWPORT_HEIGHT，精确钉住（G3）', async () => {
     // G3 实际缺口（按实测改判，两段式）：前半面——台账点名的 `>=`/`<=` 形态（toBeGreaterThanOrEqual/
-    // toBeLessThanOrEqual）实测 web/src 全量 grep 0 命中，但严格不等式 toBeGreaterThan(/toBeLessThan( 仍有
+    // toBeLessThanOrEqual）实测在 web/src 的**断言面** 0 命中；对该词做全量 grep 只命中本注释自身的这几行
+    // （2026-10-31 实测：web/src 下命中全在本文件此处，无一处是断言）——**除本注释自指外**断言面才是 0 命中。
+    // 但严格不等式 toBeGreaterThan(/toBeLessThan( 仍有
     // 8 处（:81 :82 :84 :90 :91 :92 :93 :109，均属本文件 HEAD 既有旧用例）⇒ 按「形态已迁移、未全闭合」登记，
     // 那 8 处本批不改（判据只紧不松）；本条钉的是 G3 后半面「回落分支未被钉住」。
     // happy-dom 里 clientHeight 恒 0，

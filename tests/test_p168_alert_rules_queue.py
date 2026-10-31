@@ -459,6 +459,33 @@ def test_threshold_number_is_documented(alert_name: str):
         )
 
 
+def test_required_basis_keys_cover_every_declared_basis():
+    # 防弱化断言（D30b Y-1）：上面三条判据（basis_hit / 合并哨兵 / 逐规则逐键）读的都是
+    # description 文本，**不读 _THRESHOLD_BASIS_REQUIRED 这张映射表本身**——把某枚依据键从
+    # 必需集里悄悄删掉，表变小了而文本判据照旧，不会红。本条补的是对**表自身**的结构断言：
+    # ① 每枚在 _THRESHOLD_BASIS_ALIASES 里声明过的依据键，必须至少被一条新规则列为必需；
+    # ② 每枚必需键必须存在于别名集里——否则 test_threshold_number_is_documented 里的
+    #    `_THRESHOLD_BASIS_ALIASES[basis_key]` 会直接 KeyError，红点落在错处、看不出是表写歪了。
+    # 本条**堵不住的那一半**（如实登记，不声称封死了整个删键面）：单条规则内部把某键从
+    # **它自己的**必需集里删掉，而另一条规则仍列着该键 ⇒ 并集照旧、本条不红。该残余面靠
+    # `_THRESHOLD_BASIS_REQUIRED` 上方「取自实测 / 不得列入」的署名注释维持（改必需集要署名）。
+    declared = set(_THRESHOLD_BASIS_ALIASES)
+    required_union = set().union(*_THRESHOLD_BASIS_REQUIRED.values())
+    assert required_union == declared, (
+        "逐规则必需键并集与别名集脱节："
+        f"别名集独有 {sorted(declared - required_union)}（这枚依据已被**所有**新规则从必需集"
+        "删除，逐键强制力消失——要撤依据请连别名集与署名注释一起撤，不许只删必需集）；"
+        f"必需集独有 {sorted(required_union - declared)}（必需键不在别名集里，无别名可命中）"
+    )
+
+    for rule_name, required_keys in _THRESHOLD_BASIS_REQUIRED.items():
+        unknown = set(required_keys) - declared
+        assert not unknown, (
+            f"{rule_name}: 必需键 {sorted(unknown)} 不在 _THRESHOLD_BASIS_ALIASES 里"
+            "——逐规则断言会先在那里 KeyError，红点落在错处；要么补别名，要么改键名"
+        )
+
+
 # ---------------------------------------------------------------------------
 # 5. 无高基数 label
 # ---------------------------------------------------------------------------
