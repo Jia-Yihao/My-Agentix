@@ -71,6 +71,9 @@ function sanitizeOverscan(overscan: number | undefined): number {
  * - 总数小于窗口容量 ⇒ `start = 0`、`end = total`、两个占位均为 0（全渲染）；
  * - 滚到中部 ⇒ `start = 首个可见行 - overscan`、`end = 首个可见行 + 可见行数 + overscan`；
  * - 滚到底（或 scrollTop 超出内容高度）⇒ `end` 钳到 `total`，`bottomPad` 归 0。
+ * - `viewportHeight` 为 0／负数／非数 ⇒ sanitize 到 0（G7 退化契约），按 `overscan` 分两支，由用例分别钉住：
+ *   `overscan > 0` ⇒ 窗口退化为仅 `first ± overscan` 那几条（非空）；`overscan` 同为 0 ⇒ 窗口区间为空（`start == end`，零条渲染），
+ *   但占位**不按空窗口归零**——`bottomPad` 仍按 `(total - end) × rowHeight` 折算，故与 `total <= 0` 早退返回的 `EMPTY_WINDOW` 字面不同。
  */
 export function computeVirtualWindow(params: VirtualWindowParams): VirtualWindow {
   const total = Math.floor(Number(params.total))
