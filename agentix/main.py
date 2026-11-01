@@ -676,11 +676,12 @@ def _wire_graph_checkpointer(ckpt: Any) -> None:
     lg_builder.graph = graph
     lg_builder.supervisor_graph = supervisor_graph
     logger.info(
-        # 升级重试时本函数在提交新 saver **之前**调用（装配是成功判定的一环），
-        # 此刻 `_degraded_reason` 还是旧的降级原因，因此这里如实打印「装配时刻」的状态。
+        # 后缀报的是「模块级 `_degraded_reason` 在装配时刻仍未清除」，不是刚编好的这只
+        # saver 的状态：升级重接线走到这里时 `retry_upgrade_checkpointer` 还没执行
+        # `_degraded_reason = None`（现读 checkpointer.py:387），成功重接线的一轮也带此后缀，提交后不再出现。
         "graph compiled with checkpointer: {}{}",
         type(ckpt).__name__,
-        "" if get_degraded_reason() is None else " (degraded)",
+        "" if get_degraded_reason() is None else " (degraded reason still set)",
     )
 
 
@@ -1239,7 +1240,8 @@ async def _startup() -> None:
         try:
             from agentix.policies.hitl.hitl_bridge import install_executor_hook
 
-            bridge = install_executor_hook()
+            # install_executor_hook 内含 restore_pending 的同步 SQLAlchemy 读库，经 to_thread 下放线程，不在事件循环里跑（纪律 6 ②，与 RUN_STATE_PERSIST_ENABLED 口径一致）。
+            bridge = await asyncio.to_thread(install_executor_hook)
             logger.info("HITL bridge hook installed (HUMAN_REVIEW_ENABLED=true)")
         except Exception as exc:  # noqa: BLE001 - 接线失败不影响启动（闸门仍 fail-closed）
             logger.error("HITL bridge hook install failed: {}", exc)

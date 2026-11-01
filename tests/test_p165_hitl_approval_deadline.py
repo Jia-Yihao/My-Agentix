@@ -1284,11 +1284,11 @@ class TestSweeperWiring:
         assert any("unavailable" in r for r in warning_logs), "桥缺失必须显式可见"
 
     def test_startup_wires_the_sweeper_to_the_installed_bridge(self):
-        """接线守卫：`_startup` 接住 install_executor_hook 的返回值并起扫描任务。"""
+        """接线守卫：`_startup` 接住 install_executor_hook 的返回值并起扫描任务；接线经 `asyncio.to_thread` 下放到线程，同步读库不进事件循环。"""
         from agentix import main
 
         source = inspect.getsource(main._startup)
-        assert "bridge = install_executor_hook()" in source
+        assert "bridge = await asyncio.to_thread(install_executor_hook)" in source
         assert "_start_hitl_deadline_sweeper(bridge)" in source
 
 
