@@ -355,11 +355,14 @@ def _router_prompt_text(task_exec_on: bool, code_exec_on: bool, single_layer_on:
     return prompt
 
 
-async def _lookup_routing_cache(question_text: str) -> Optional[Router]:
+async def _lookup_routing_cache(question_text: str) -> Tuple[Optional[Router], Optional[str]]:
     """查路由结果缓存（T8，``ROUTING_CACHE_ENABLED`` 判真后才会被调用）。
 
-    命中返回**用当前请求原文重建**的 ``Router``；未命中或任何异常返回 ``None``
-    （让主链路照常走 LLM 分类）。
+    返回 ``(router, generation)`` 二元组：第一枚是命中并用**当前请求原文重建**的
+    ``Router``（未命中或任何异常为 ``None``，让主链路照常走 LLM 分类）；第二枚是
+    **本次算出的换代令牌**——查侧在 ``try`` 里算出后传给写侧 ``_store_routing_cache``
+    复用，一次请求只算一枚令牌（庚-3 卡 β1，台账表 G G6）。``except`` 臂带 ``None``
+    （没算出来就别让人复用），miss 臂与重建失败臂都带上已算出的那枚。
 
     fail-open（纪律 2）：令牌计算、读缓存、重建三处任一抛异常都只 ``warning``
     留痕并落 ``routing_cache_total{result="error"}``，绝不让一次问答失败——缓存
@@ -388,11 +391,11 @@ async def _lookup_routing_cache(question_text: str) -> Optional[Router]:
     except Exception as exc:  # noqa: BLE001 - 缓存降级：当作未命中，主链路照走 LLM
         logger.warning("routing cache lookup failed (degraded to miss): {}", exc)
         record_routing_cache("error")
-        return None
+        return None, None
 
     if cached_value is None:
         record_routing_cache("miss")
-        return None
+        return None, generation
 
     try:
         router_cls = _router_class(*_exec_flags())
@@ -406,7 +409,7 @@ async def _lookup_routing_cache(question_text: str) -> Optional[Router]:
     except Exception as exc:  # noqa: BLE001 - 重建失败同样降级为未命中
         logger.warning("routing cache entry rebuild failed (degraded to miss): {}", exc)
         record_routing_cache("error")
-        return None
+        return None, generation
 
     record_routing_cache("hit")
     async with span("route.cache_hit", cached=True, route_type=cached_router.type):
@@ -414,15 +417,21 @@ async def _lookup_routing_cache(question_text: str) -> Optional[Router]:
     logger.info(
         "routing cache hit: skip LLM intent classifier -> {}", cached_router.type
     )
-    return cached_router
+    return cached_router, generation
 
 
-def _store_routing_cache(question_text: str, router_obj: Router) -> None:
+def _store_routing_cache(
+    question_text: str, router_obj: Router, generation: Optional[str] = None
+) -> None:
     """把**成功**分类结果写进缓存（T8）；写失败只留痕，不影响本次路由结果。
 
     只在 LLM 分类链路拿到白名单内的最终结果后调用：兜底出口（LLM 抛错 /
     非法类型）刻意不写——把"这一次没算出来"缓存下来，只会把同一失败复制给
     后续同问句。
+
+    ``generation`` 允许由调用方（同一请求的查侧）传进来复用：一次请求只该算
+    一枚换代令牌（庚-3 卡 β1，台账表 G G6）。默认 ``None`` 保住"独立调用"
+    这一形态——拿不到时才自算兜底。
     """
     from agentix.application.agents import routing_cache
 
@@ -430,7 +439,9 @@ def _store_routing_cache(question_text: str, router_obj: Router) -> None:
         routing_cache.get_routing_cache().put(
             question_text,
             router_obj,
-            generation=routing_cache.generation_token(),
+            generation=(
+                generation if generation is not None else routing_cache.generation_token()
+            ),
         )
     except Exception as exc:  # noqa: BLE001 - 写缓存失败：降级为不缓存，主链路不受影响
         logger.warning("routing cache store failed (skip caching this round): {}", exc)
@@ -481,8 +492,11 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
     # ``logic`` 拼进这一轮的 system prompt。历史窗口 >1 条时既不查也不写
     # （只加查不加写，多轮请求仍会把缓存写脏，后面的单轮请求照样命中它）。
     # flag-off ⇒ 不 import 缓存模块、不读不写、不打日志、不记指标（逐位等价）。
+    # cache_generation 先声明：flag-off 与多轮路径都碰不到缓存，但写侧那一跳
+    # 引用它，缺了声明就是 NameError（None 形态 = 写侧自算兜底）。
+    cache_generation: Optional[str] = None
     if len(state.messages) == 1 and bool(getattr(settings, "ROUTING_CACHE_ENABLED", False)):
-        cached_router = await _lookup_routing_cache(question_text)
+        cached_router, cache_generation = await _lookup_routing_cache(question_text)
         if cached_router is not None:
             return {"router": cached_router}
 
@@ -578,7 +592,8 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
     # 与查缓存同一判据（单轮才写）：多轮请求写进来的是「按末句算出的结论」，
     # 后面的单轮同问句会命中它——写侧漏判等于把脏条目留给下一个请求。
     if len(state.messages) == 1 and bool(getattr(settings, "ROUTING_CACHE_ENABLED", False)):
-        _store_routing_cache(question_text, sanitized_router)
+        # 复用查侧令牌⇒一次请求只算一枚,写侧拿不到(None)才自算;不会落错代:generation是四项输入的CRC32,同一请求内查与写本就同代,即便配置中途变了,写进的条目只会被"算出同一枚令牌"的查侧读到,读不到就是普通未命中,不会返回错答案。
+        _store_routing_cache(question_text, sanitized_router, cache_generation)
 
     logger.info("Analyze user query type completed, result: {}", sanitized_router)
     return {"router": sanitized_router}
