@@ -18,7 +18,9 @@
 - flag 关（默认）⇒ ``_start_task_queue_worker()`` 返回 False、句柄 ``None``、
   **零日志、零 import、零 ``get_task_queue()`` 调用**（纪律 1）；
 - 指标 ``result`` 是封闭枚举 ``{"ok","empty","error"}``，且 prometheus 不可用时的
-  ``_NoopMetric`` 兜底表里有这一行（漏了会让指标在降级环境静默消失）。
+  ``_NoopMetric`` 兜底表里有这一行（漏了会让指标在降级环境静默消失）；
+- 词表在生产侧的判据点（G3，台账 :1375）：越界 ``result`` **按原值**进 label 并留
+  一条 ``logger.warning``——指标层不改口、不抛异常。
 
 **不连真 Redis**：``redis.asyncio.Redis`` 一律用本文件的 ``_FakeRedis`` 顶替；
 **不 sleep 真实长时间**：需要等循环转圈的地方把 ``_CLAIM_INTERVAL_S`` 临时压到毫秒级。
@@ -28,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
@@ -324,6 +327,33 @@ class TestMetricVocabulary:
         """prometheus 不可用时 metric 由 ``_NoopMetric`` 兜底；漏一行 ⇒ 指标静默消失。"""
         source = inspect.getsource(metrics)
         assert "TASK_QUEUE_CLAIMED = _NoopMetric()" in source
+
+    def test_out_of_vocabulary_result_warns_but_records_verbatim(self, caplog):
+        """G3（台账 :1375）：词表在生产侧第一次成为判据——越界值**按原值**进 label
+        并有一条 warning 留痕；词表内取值不产生任何 warning（逐字等价于现树行为）。
+        指标层不改口（不落成 ``"other"``）的理由见 ``metrics.py`` 中
+        ``TASK_QUEUE_CLAIM_RESULT_VALUES`` 之上的注释。"""
+
+        def _count(result: str) -> float:
+            from prometheus_client import REGISTRY
+
+            return REGISTRY.get_sample_value("task_queue_claimed_total", {"result": result}) or 0.0
+
+        with caplog.at_level(logging.WARNING, logger="agentix.observability.metrics"):
+            before = _count("ok")
+            metrics.record_task_queue_claimed("ok")
+            assert _count("ok") == before + 1
+            assert not [r for r in caplog.records if r.levelno >= logging.WARNING], (
+                "词表内取值不得新增日志（flag 语义外的噪声，纪律 1）"
+            )
+
+            before = _count("bogus")
+            metrics.record_task_queue_claimed("bogus")
+            assert _count("bogus") == before + 1, "越界必须按原值进 label，不许改口成 other"
+
+        warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert len(warnings) == 1, "越界只留一条 warning，不抛异常也不静默（纪律 2）"
+        assert "bogus" in warnings[0].getMessage()
 
 
 # ---------------------------------------------------------------------------
