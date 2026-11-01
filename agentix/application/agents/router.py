@@ -597,12 +597,13 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
     if len(state.messages) == 1 and bool(getattr(settings, "ROUTING_CACHE_ENABLED", False)):
         # 复用查侧令牌⇒一次请求只算一枚换代令牌；写侧拿不到（None）时才自算兜底。
         # 落代语义相对改前变了：改前按「写的那一刻」的代落键，本行按「本次请求查的那一刻」的代落键。
-        # 只有请求窗口内四项输入被改写时两者才不同——那种情况下本行写法可能把「按中途新代配置算出的
+        # 只有请求窗口内令牌的某枚输入项被改写时两者才不同——那种情况下本行写法可能把「按中途新代配置算出的
         # 结论」挂到查侧那一代的键上，代别若在 TTL 内翻回该代，就可能产生一次错代命中
         # （改前写法在该场景只吃一次普通未命中，严格更安全）。
-        # 成立前提：当前生产形态下代别在请求内不可变——令牌四项输入里三枚是 settings 读取、一枚是
+        # 成立前提：当前生产形态下代别在请求内不可变——令牌的全部输入项取自 settings 直读、既有路由判定（提示词文本与 router 类名，经 `_exec_flags` / `_router_prompt_text` / `_router_class` 取，不另立源）与
         # ablation（其设计前提是进程环境不变），仓内无运行期改写点；故该反例今天不可达，属已知前提
-        # 而非已被证明的性质。若将来引入运行期热改配置或把更多维度并入令牌，本行写法需重新评估。
+        # 而非已被证明的性质。庚-3 卡 γ 已把档位路由的输入值并入令牌（段数增加，前提不变：仍是 settings 直读 + 既有判定 + ablation）；
+        # 若将来引入运行期热改配置，本行写法需重新评估。
         _store_routing_cache(question_text, sanitized_router, cache_generation)
 
     logger.info("Analyze user query type completed, result: {}", sanitized_router)

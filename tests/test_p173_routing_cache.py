@@ -29,6 +29,10 @@
 9. ``TestGenerationTokenSingleComputation``——换代令牌单点计算（庚-3 卡 β1，
    台账表 G G6）：一次请求只算一枚令牌（查侧算、传写侧复用；查侧算不出时
    写侧自算兜底），B1–B4 逐条钉计数、兜底与写入条目代前缀同源。
+10. ``TestTierRoutingGeneration``——档位路由输入并入换代令牌（庚-3 卡 γ，台账表
+    G G7）：档位模型名 / 角色档位表 / 档位 flag 任一改动 ⇒ 令牌换代（C1/C2/C4），
+    端到端换档强制重新分类（C3，主症状的行为面），并同源守卫——指纹侧列出的
+    档位键必须覆盖 ``model_gateway._TIER_SETTINGS_KEY`` 的全部键（C5，允许多列、禁止少列）。
 
 全部用例离线可跑：无真实 LLM（一律 ``get_llm_client`` 桩），无 Redis/Postgres/Milvus。
 复验：``.venv/Scripts/python.exe -m pytest tests/test_p173_routing_cache.py -q``
@@ -412,7 +416,7 @@ class TestCacheStoresNoOriginalText:
 
     @pytest.mark.asyncio
     async def test_generation_change_invalidates_previous_entries(self, monkeypatch):
-        """换 ``LLM_MODEL``（换代四项之一）⇒ 同问句不再命中旧条目。"""
+        """换 ``LLM_MODEL``（换代令牌的输入之一）⇒ 同问句不再命中旧条目。"""
         monkeypatch.setattr(app_settings, "ROUTING_FASTPATH_ENABLED", False)
         monkeypatch.setattr(app_settings, "ROUTING_CACHE_ENABLED", True)
         monkeypatch.setattr(app_settings, "LLM_MODEL", "model-generation-a")
@@ -709,6 +713,124 @@ class TestGenerationTokenSingleComputation:
         assert tokens, "本次请求至少算出过一枚令牌"
         assert set(tokens) == {prefix}, (
             f"写入条目代前缀 {prefix} 与本次算出的令牌 {tokens} 不同源"
+        )
+
+
+# ===========================================================================
+# 档位路由输入并入换代令牌（庚-3 卡 γ，台账表 G G7）
+# ===========================================================================
+
+
+class TestTierRoutingGeneration:
+    """C1–C5：档位模型名 / 角色档位表 / 档位 flag 任一改动 ⇒ 令牌换代，且端到端重新分类。
+
+    并入令牌的是档位路由的**输入值**（配置值指纹），不是复刻档位判定——所以
+    flag 关（默认态）下改档位值同样换代（C4 钉这条声明的口径）。
+    """
+
+    def _generation(self):
+        return _cache_mod().generation_token()
+
+    def test_c1_tier_model_change_bumps_generation(self, monkeypatch):
+        """C1：档位路由开、router 指到 fast 档，改 ``LLM_MODEL_FAST`` ⇒ 令牌必须换代。
+
+        改前必红：现树令牌只读 ``LLM_MODEL``（第 ③ 段），改档位名令牌不变
+        ——台账 G7 行的「该配置下换模型不换代」正是这个形态。
+        """
+        monkeypatch.setattr(app_settings, "LLM_TIER_ROUTING_ENABLED", True)
+        monkeypatch.setattr(app_settings, "LLM_ROLE_TIER_MAP", "router=fast")
+        monkeypatch.setattr(app_settings, "LLM_MODEL_FAST", "model-tier-a")
+        before = self._generation()
+
+        monkeypatch.setattr(app_settings, "LLM_MODEL_FAST", "model-tier-b")
+        after = self._generation()
+
+        assert after != before, "档位模型名变了但换代令牌未变：旧模型的缓存条目会继续命中"
+
+    def test_c2_role_tier_map_change_bumps_generation(self, monkeypatch):
+        """C2：flag 开，``router=fast`` → ``router=reasoning`` ⇒ 令牌换代。"""
+        monkeypatch.setattr(app_settings, "LLM_TIER_ROUTING_ENABLED", True)
+        monkeypatch.setattr(app_settings, "LLM_MODEL_REASONING", "model-tier-r")
+        monkeypatch.setattr(app_settings, "LLM_ROLE_TIER_MAP", "router=fast")
+        before = self._generation()
+
+        monkeypatch.setattr(app_settings, "LLM_ROLE_TIER_MAP", "router=reasoning")
+        after = self._generation()
+
+        assert after != before, "角色→档位映射变了但换代令牌未变：换档后旧条目会继续命中"
+
+    @pytest.mark.asyncio
+    async def test_c3_tier_model_change_forces_reclassification(self, monkeypatch):
+        """C3（主症状的**行为面**）：改档位模型值后，第二次同问句请求必须重新问模型。
+
+        改前必红：令牌不含档位值 ⇒ 第二次仍命中旧条目（stub 计数停在 1、缓存
+        只有一条）。光断"令牌变了"不算闭合——本条钉的是缓存端到端行为：
+        新代写入第二条、两条代前缀不同、日志出口没有新增行。
+        """
+        monkeypatch.setattr(app_settings, "ROUTING_FASTPATH_ENABLED", False)
+        monkeypatch.setattr(app_settings, "ROUTING_CACHE_ENABLED", True)
+        monkeypatch.setattr(app_settings, "LLM_TIER_ROUTING_ENABLED", True)
+        monkeypatch.setattr(app_settings, "LLM_ROLE_TIER_MAP", "router=fast")
+        monkeypatch.setattr(app_settings, "LLM_MODEL_FAST", "model-tier-a")
+        model = _StubStructuredModel(Router(type="kb-query", logic="llm: tier-a"))
+        monkeypatch.setattr(router_mod, "get_llm_client", lambda **kwargs: model)
+        recorder = _RecordingLogger()
+        monkeypatch.setattr(router_mod, "logger", recorder)
+        question = "今天天气怎么样"
+
+        first = await analyze_and_route_query(_state(question), config={})
+        assert first["router"].logic == "llm: tier-a"
+        assert model.calls == 1
+        cache = _cache_mod().get_routing_cache()
+        assert len(cache) == 1
+        first_key = next(iter(cache.entries))
+        first_logs = recorder.templates()
+
+        monkeypatch.setattr(app_settings, "LLM_MODEL_FAST", "model-tier-b")
+
+        second = await analyze_and_route_query(_state(question), config={})
+
+        assert second["router"].logic == "llm: tier-a"
+        assert model.calls == 2, "档位模型变了第二次仍命中旧条目：主症状闭合要求重新问模型"
+        assert len(cache) == 2, "换代后同问句应写入第二条新代条目（旧代条目由 LRU/TTL 回收）"
+        second_key = next(k for k in cache.entries if k != first_key)
+        assert first_key.split(":")[0] != second_key.split(":")[0], (
+            "两条条目的代前缀相同：换代没有落到键上"
+        )
+        # 日志出口没增多：第二次请求的模板序列与第一次逐行相等
+        assert recorder.templates()[len(first_logs):] == first_logs
+
+    def test_c4_tier_inputs_merged_even_when_flag_off(self, monkeypatch):
+        """C4：档位 flag 关（默认态），改 ``LLM_MODEL_STANDARD`` ⇒ 令牌仍换代。
+
+        钉住「并入的是输入指纹、与是否接线无关」这条**声明的口径**，防后来者
+        改成条件性并入（只在 flag 开时才并档位值）——那是另一种"换模型不换代"：
+        flag 一开的那一瞬间旧档位值的条目还挂着旧代前缀。
+        """
+        monkeypatch.setattr(app_settings, "LLM_TIER_ROUTING_ENABLED", False)
+        monkeypatch.setattr(app_settings, "LLM_MODEL_STANDARD", "model-std-a")
+        before = self._generation()
+
+        monkeypatch.setattr(app_settings, "LLM_MODEL_STANDARD", "model-std-b")
+        after = self._generation()
+
+        assert after != before, "flag 关时档位输入不并进令牌：条件性并入会重新打开 G7 的漂移窗口"
+
+    def test_c5_tier_keys_cover_gateway_registry(self):
+        """C5（同源守卫）：指纹侧档位键名表必须**覆盖** ``model_gateway._TIER_SETTINGS_KEY`` 的全部值。
+
+        允许多列（指纹侧多并一枚键只是保守多换代），禁止少列（网关表新增档键
+        没并进令牌 ⇒ 又出现"换模型不换代"，且这次是**静默**的新档漂移）。
+        """
+        keys = getattr(_cache_mod(), "_TIER_MODEL_SETTINGS_KEYS", None)
+        assert keys is not None, (
+            "routing_cache 未暴露 _TIER_MODEL_SETTINGS_KEYS——守卫需要具名键表才能与网关表对账"
+        )
+        from agentix.infrastructure.llm.model_gateway import _TIER_SETTINGS_KEY
+
+        registry_values = set(_TIER_SETTINGS_KEY.values())
+        assert registry_values <= set(keys), (
+            f"网关档位表存在未并入换代令牌的档键（少列即静默漂移）：{sorted(registry_values - set(keys))}"
         )
 
 
