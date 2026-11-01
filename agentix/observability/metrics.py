@@ -471,13 +471,15 @@ try:
         ["kind"],  # kind: startup / ops / retry_task / hitl_in_loop（有界枚举）
     )
 
-    # T26：Redis Stream 任务队列的 PEL 认领轮次（`result` 封闭 ok|empty|error，有界；
-    # 标签名 `result` 已在 p100 ALLOWED_METRIC_LABELS 白名单）。与消费计数分开的理由：
+    # T26：Redis Stream 任务队列的 PEL 认领结果（`result` 封闭 ok|empty|error，有界；
+    # 标签名 `result` 已在 p100 ALLOWED_METRIC_LABELS 白名单）。档位口径：`ok` 逐条
+    # （每条成功交接记一次），`empty`/`error` 轮级。与消费计数分开的理由：
     # 「正常消费」和「接手死消费者遗留消息」是两条不同的健康信号——只有后者能回答
     # 「有没有 worker 死在 PEL 里、现在有人在接手吗」。
     TASK_QUEUE_CLAIMED = Counter(
         "task_queue_claimed_total",
-        "Redis Stream PEL claim rounds via XAUTOCLAIM (result=ok|empty|error)",
+        "Redis Stream PEL claim results via XAUTOCLAIM "
+        "(result=ok|empty|error; ok per message, empty/error per round)",
         ["result"],
     )
 
@@ -710,16 +712,18 @@ def record_graph_resume(kind: str) -> None:
     GRAPH_RESUME.labels(kind=_bounded_label(kind, GRAPH_RESUME_KIND_VALUES)).inc()
 
 
-#: T26：PEL 认领轮次结果的封闭枚举。调用点只有
+#: T26：PEL 认领结果的封闭枚举。调用点只有
 #: ``agentix/application/services/task_queue.py::TaskQueue._claim_stale_pending``，
 #: 且只传这三个字面量——词表外取值不可达，故这里不另设 ``"other"`` 兜底
-#: （在指标层改口会把"调用点传错了"这件事一起吞掉）。
+#: （在指标层改口会把"调用点传错了"这件事一起吞掉）。计数口径：``ok`` 逐条
+#: （每条成功交接记一次），``empty``/``error`` 轮级（每轮至多一枚）。
 TASK_QUEUE_CLAIM_RESULT_VALUES = frozenset({"ok", "empty", "error"})
 
 
 def record_task_queue_claimed(result: str) -> None:
-    """T26：记一轮 PEL 认领的结果（``ok``=认领到并已交给处理器 / ``empty``=没有
-    到期消息 / ``error``=XAUTOCLAIM 失败，异常已由调用点 warning 留痕）。"""
+    """T26：记一次 PEL 认领的结果（``ok``=逐条计数，一条消息已交给处理器即记一次 /
+    ``empty``=轮级，本轮没有到期消息 / ``error``=轮级，XAUTOCLAIM 失败，异常已由
+    调用点 warning 留痕）。"""
     # G3（台账 :1375）：词表在此第一次成为生产侧判据。越界只留痕不改口——理由见
     # 本模块 ``TASK_QUEUE_CLAIM_RESULT_VALUES`` 之上的注释（指标层改口会把"调用点
     # 传错了"这件事一起吞掉）；留痕本身不抛异常（纪律 2，指标不影响主链路）。

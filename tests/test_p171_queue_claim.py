@@ -230,13 +230,76 @@ class TestClaimRound:
 
         assert claimed == 3
         assert [mid for mid, _ in processed] == ["1-0", "2-0", "3-0"]
-        assert claim_results == ["ok"]
+        # Z2（庚-3 ζ，台账 :1374 收口）：`ok` 由轮级一枚改为**逐条**计数——
+        # 这条原本钉住旧形态 `["ok"]`（三条消息只记一次），行为变更 ⇒ 断言
+        # 同步更新到新形态，其余断言一字不动。
+        assert claim_results == ["ok", "ok", "ok"]
         # 认领参数取自模块常量，且每次只认一轮
         assert len(stub.claim_calls) == 1
         kwargs = stub.claim_calls[0]["kwargs"]
         assert kwargs["min_idle_time"] == _CLAIM_IDLE_MS
         assert kwargs["count"] == _CLAIM_MAX_PER_ROUND
         assert kwargs["start_id"] == "0-0"
+
+    @pytest.mark.asyncio
+    async def test_mid_round_failure_keeps_delivered_messages_counted(
+        self, monkeypatch, claim_results
+    ):
+        """Z1（庚-3 ζ RED 主力，台账 :1374 收口）：`ok` 必须**逐条**计数。
+
+        一轮三条、前两条成功交接、第三条抛：抛之前已成功交接的两条**必须**
+        已入账（`claim_results == ["ok", "ok"]`），且认领路径**不含** `error`
+        ——`error` 仍只属于「XAUTOCLAIM 自身失败」那一枚 except（轮级语义不动）。
+        同时钉住既有语义一字不改：异常仍穿出本函数（由 `start_worker` 外层兜），
+        认领路径不新增 except 臂、不新增 error 记点。现树（`ok` 在整轮之后才记
+        一次）下本用例必红：轮中抛出时循环尾部的记点到不了，已成功消息两头落空
+        （现树实测读数 `[]`）。
+        """
+        entries = _entries(3)
+        stub = _FakeRedis(claim_response=("0-0", entries))
+        queue = _make_queue(stub)
+
+        seen: List[str] = []
+
+        async def spy(message_id: str, data: Dict[str, str]) -> None:
+            seen.append(message_id)
+            if len(seen) == 3:
+                raise RuntimeError("handler exploded mid-round")
+
+        monkeypatch.setattr(queue, "_process_message", spy)
+
+        with pytest.raises(RuntimeError, match="handler exploded mid-round"):
+            await queue._claim_stale_pending()
+
+        assert seen == ["1-0", "2-0", "3-0"], "第三条抛出即穿出，前两条已交接"
+        assert claim_results == ["ok", "ok"], "已成功交接的两条必须逐条入账"
+        assert "error" not in claim_results, "轮中抛出不是认领失败，不得记 error"
+
+    @pytest.mark.asyncio
+    async def test_ok_counts_match_the_per_round_claimed_return(
+        self, monkeypatch, claim_results
+    ):
+        """Z4（口径同源）：指标 `ok` 的逐条计数与 `claimed`（INFO 日志 `count=`
+        取的就是它）在同一轮里必须相等——两处「认领到几条」的判定不许漂移
+        （纪律 6 ④）。用 4 条消息的一轮钉等式：改前形态下 ok 只有一枚、
+        返回值却是 4，等式必红。"""
+        entries = _entries(4)
+        stub = _FakeRedis(claim_response=("0-0", entries))
+        queue = _make_queue(stub)
+
+        processed: List[str] = []
+
+        async def spy(message_id: str, data: Dict[str, str]) -> None:
+            processed.append(message_id)
+
+        monkeypatch.setattr(queue, "_process_message", spy)
+
+        claimed = await queue._claim_stale_pending()
+
+        assert claimed == 4
+        assert processed == ["1-0", "2-0", "3-0", "4-0"]
+        assert claim_results.count("ok") == claimed, "ok 逐条计数必须与 claimed 同源"
+        assert all(r == "ok" for r in claim_results), "全轮成功时不得混入其他档位"
 
     @pytest.mark.asyncio
     async def test_single_round_is_capped(self, monkeypatch, claim_results):
