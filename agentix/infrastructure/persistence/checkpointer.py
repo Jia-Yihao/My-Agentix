@@ -108,6 +108,42 @@ def _check_checkpoint_db_invariant(redis_client) -> None:
     )
 
 
+#: G2（台账 §8.2 表 D）：关闭被丢弃 client 的唯一动作点——「谁丢弃谁关闭」的关闭
+#: 判据只写这一枚，两个丢弃点（`_connect_redis_saver` 内部失败、
+#: `retry_upgrade_checkpointer` 的 rewire 失败臂）共用（纪律 6 ④：同一个判定
+#: 不许两个源，两处各写一份必然漂移）。
+async def _close_redis_client_quietly(client) -> None:
+    """尽力关闭一只被丢弃的 Redis client（含其新建的连接池）；失败只留痕，不抛。
+
+    fail-open（纪律 2）：关闭自身失败只 `logger.warning`，绝不把异常传出——泄漏
+    一个池是可观测的资源问题，而把关闭失败升格成异常会篡改调用方的原失败语义
+    （降级原因 / 重试判定 / `return False` 都读原异常，关闭动作无论排在哪个位置
+    都不许改写它们）。
+
+    鸭子判据 `getattr(client, "aclose", None)` 而非「直接 await 靠宽 except 兜
+    AttributeError」：判据含**测试桩形态**——仓里多处 `_FakeRedis` 桩只有
+    `from_url`（test_p132 / test_p139 / test_checkpointer_p0），若走 except 兜底，
+    桩缺能力会被伪装成「关闭失败」刷 warning，把「桩没有 aclose」误报成
+    「池没关掉」，与真正的关闭故障混在同一句话里。真客户端恒有 `aclose`
+    （redis-py 5.3.1 `redis/asyncio/client.py:588`），跳过只可能发生在桩上。
+
+    `close_connection_pool=True` 显式传参，不依赖 `auto_close_connection_pool`
+    的推导（redis-py 5.3.1 `client.py:603-606`：`close_connection_pool` 为真直接
+    短路推导分支并 `connection_pool.disconnect()`）——本卡要关的正是这次尝试
+    新建的池，语义必须由调用侧钉死而不是赌构造路径推导出的属性值。
+    """
+    close = getattr(client, "aclose", None)
+    if close is None:
+        return
+    try:
+        await close(close_connection_pool=True)
+    except Exception as exc:  # noqa: BLE001 - 关闭失败降级为一条 warning，不改调用方语义（纪律 2）
+        logger.warning(
+            "checkpointer: closing discarded redis client failed (pool may leak): {}",
+            exc,
+        )
+
+
 def _try_import_async_redis_saver():
     """兼容不同版本的导入路径（aio 子模块 / 包根）。"""
     try:
@@ -125,28 +161,40 @@ def _try_import_async_redis_saver():
 
 
 async def _connect_redis_saver(AsyncRedisSaver):
-    """建连 + db0 不变式校验 + asetup，返回 AsyncRedisSaver 实例；失败**原样抛出**。
+    """建连 + db0 不变式校验 + asetup，返回 `(saver, redis_client)`；失败**原样抛出**。
 
     抽成函数而不是在「启动初始化」与「运行期升级重试」各写一遍：建连参数、不变式
     校验点、asetup 的调用顺序是同一段口径，写两份必然漂移（纪律 6 ④）。
 
     异常在这里刻意不翻译——「降级 / 拒绝启动 / 本轮重试失败」是三种不同处置，
     判定留在两个调用点（它们各自知道自己在哪条语义里）。
+
+    G2（台账 §8.2 表 D）：`from_url` 建池之后的每一步（不变式校验、构造 saver、
+    asetup）都纳入同一个 try——任一步抛即本次 client 被本函数丢弃，先尽力关闭
+    再原样抛出（「失败原样抛出」的既有承诺不变，只补资源收口）。返回带上
+    `redis_client` 而不从 saver 反查内部属性：属性名未经证实，不凭记忆发明；
+    调用点由此**显式**知道成功路径移交给自己的是什么（rewire 失败臂才有关闭对象）。
     """
     from redis.asyncio import Redis  # noqa: PLC0415
 
     # R3.2：checkpoint 落独立分片 db2（RediSearch 索引与 cache db0 隔离）
     redis_client = Redis.from_url(settings.REDIS_CHECKPOINT_URL, decode_responses=False)
-    # T7：db0 不变式运行时校验。判据取自上面这个 client 的池参数（与执行链同源，
-    # 纪律 6 ④），位置必须在建连之后、AsyncRedisSaver 构造之前——失败发生在
-    # asetup（更晚）才暴露，等读到降级日志再追注入源就晚了。只告警不阻断（纪律 2）。
-    _check_checkpoint_db_invariant(redis_client)
-    saver = AsyncRedisSaver(
-        redis_client=redis_client,
-        ttl={"default_ttl": 60 * 24 * 7, "refresh_on_read": True},  # 分钟 → 7 天
-    )
-    await saver.asetup()  # 创建 RediSearch 索引，幂等
-    return saver
+    try:
+        # T7：db0 不变式运行时校验。判据取自上面这个 client 的池参数（与执行链同源，
+        # 纪律 6 ④），位置必须在建连之后、AsyncRedisSaver 构造之前——失败发生在
+        # asetup（更晚）才暴露，等读到降级日志再追注入源就晚了。只告警不阻断（纪律 2）。
+        _check_checkpoint_db_invariant(redis_client)
+        saver = AsyncRedisSaver(
+            redis_client=redis_client,
+            ttl={"default_ttl": 60 * 24 * 7, "refresh_on_read": True},  # 分钟 → 7 天
+        )
+        await saver.asetup()  # 创建 RediSearch 索引，幂等
+    except Exception:  # noqa: BLE001 - 收口本次丢弃的池后原样抛出，不翻译异常类型（G2 / 纪律 2）
+        # 建池即负责：from_url 本身抛时还没有 client，不进这里；此处关闭的
+        # 只会是本函数自己刚建的那一只。只关这一次，调用点不再重复关闭。
+        await _close_redis_client_quietly(redis_client)
+        raise
+    return saver, redis_client
 
 
 async def init_checkpointer():
@@ -188,7 +236,10 @@ async def init_checkpointer():
         return _saver
 
     try:
-        saver = await _connect_redis_saver(AsyncRedisSaver)
+        # G2：成功路径所有权移交 saver（构造时已把这只 client 交出去），本侧不关；
+        # 失败路径中 `_connect_redis_saver` 在抛出点之前已把 client 关闭恰好一次，
+        # 解包赋值不会执行，降级臂（下面 except）没有可再关的对象。
+        saver, _redis_client = await _connect_redis_saver(AsyncRedisSaver)
         _saver = saver
         _degraded_reason = None
         logger.info("Redis checkpointer initialized (langgraph-checkpoint-redis)")
@@ -296,8 +347,10 @@ async def retry_upgrade_checkpointer(rewire: Optional[Callable[[object], None]] 
         )
         return False
     try:
-        saver = await _connect_redis_saver(AsyncRedisSaver)
+        saver, redis_client = await _connect_redis_saver(AsyncRedisSaver)
     except Exception as exc:  # noqa: BLE001 - 本轮失败要能被下一轮再试，绝不打断主链路
+        # G2：该臂的 client 已在 `_connect_redis_saver` 内部关闭（只关一次），
+        # 解包未执行，这里没有可再关的对象。
         _degraded_reason = f"{type(exc).__name__}: {exc}"
         logger.warning(
             "checkpointer upgrade attempt failed, still on MemorySaver: {}",
@@ -314,6 +367,11 @@ async def retry_upgrade_checkpointer(rewire: Optional[Callable[[object], None]] 
         try:
             rewire(saver)
         except Exception as exc:  # noqa: BLE001 - 本轮失败要能被下一轮再试，绝不打断主链路
+            # G2（台账 §8.2 表 D）：此臂里 saver 已建连并 asetup 成功、整只因装配
+            # 失败被丢弃 ⇒ 用解包出来的 redis_client 尽力关闭（saver 未被提交、
+            # 没有任何人继续持有这只 client）。关闭排最前且自身不抛（helper 契约），
+            # 不改变下面 `_degraded_reason` / 日志 / 指标 / `return False` 的取值与时机。
+            await _close_redis_client_quietly(redis_client)
             _degraded_reason = (
                 "redis saver ready (connect + asetup ok) but graph rewire failed: "
                 f"{type(exc).__name__}: {exc}"
