@@ -355,8 +355,8 @@ class TestFailurePathClosesClient:
 
     「建池即负责，谁丢弃谁关闭」——每条把 client 丢弃掉的臂都要有钉：
 
-    - A1 建连/asetup 失败臂（`retry_upgrade_checkpointer`，现树 `:300-:307`）；
-    - A2 rewire 失败臂（`:313-:326`，saver 已建连并 asetup 成功但整只被丢弃）；
+    - A1 `retry_upgrade_checkpointer` 的建连/`asetup` 失败臂；
+    - A2 `retry_upgrade_checkpointer` 的 rewire 失败臂（saver 已建连并 asetup 成功但整只被丢弃）；
     - A3 `init_checkpointer` 降级臂（client 在 `_connect_redis_saver` 内部抛出点已关）；
     - A4 升级成功路径 ⇒ **不**关闭在用 client（所有权移交 saver；防止把
       「关掉在用 client」这种新 bug 当成修复——本条在改前即绿，是防回归钉）；
