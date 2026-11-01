@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -719,12 +720,30 @@ TASK_QUEUE_CLAIM_RESULT_VALUES = frozenset({"ok", "empty", "error"})
 def record_task_queue_claimed(result: str) -> None:
     """T26：记一轮 PEL 认领的结果（``ok``=认领到并已交给处理器 / ``empty``=没有
     到期消息 / ``error``=XAUTOCLAIM 失败，异常已由调用点 warning 留痕）。"""
+    # G3（台账 :1375）：词表在此第一次成为生产侧判据。越界只留痕不改口——理由见
+    # 本模块 ``TASK_QUEUE_CLAIM_RESULT_VALUES`` 之上的注释（指标层改口会把"调用点
+    # 传错了"这件事一起吞掉）；留痕本身不抛异常（纪律 2，指标不影响主链路）。
+    if result not in TASK_QUEUE_CLAIM_RESULT_VALUES:
+        logger.warning("task_queue_claimed_total 收到词表外 result：%r（按原值记录）", result)
     TASK_QUEUE_CLAIMED.labels(result=result).inc()
+
+
+#: 纪律 3 要的是**基数有界**，不是"再抄一份 reason 名单"——reason 的真源是
+#: ``router.FASTPATH_REASONS``（该文件明文不许外抄，本文件 ``LLM_CALLS_SAVED`` 的
+#: 声明注释只做指针），而 observability 的允许出边只有 {domain, config}
+#: （``tests/test_p177_arch_closure.py`` 的允许集），引它就是反向边、守卫判红。
+#: 故台账 :1415 的"统一"取**形状限界**：只接受 ``[A-Za-z0-9_]{1,32}`` 形态的字面值
+#: （真源五个值与 ``"unknown"`` 全部逐字通过），越界形态（含空格/标点/中文的运行时
+#: 串、超长串）落 ``"other"``。``\Z`` 而非 ``$``：尾随换行也算越界形态。
+_BOUNDED_TOKEN_RE = re.compile(r"[A-Za-z0-9_]{1,32}\Z")
 
 
 def record_llm_calls_saved(reason: str) -> None:
     """Phase H·W1：确定性 fast-path 跳过的 LLM 意图分类调用数（reason 有界枚举）。"""
-    LLM_CALLS_SAVED.labels(reason=reason or "unknown").inc()
+    fallback = reason or "unknown"
+    LLM_CALLS_SAVED.labels(
+        reason=fallback if _BOUNDED_TOKEN_RE.match(fallback) else "other"
+    ).inc()
 
 
 #: T8：路由缓存结果的封闭枚举。调用点只有

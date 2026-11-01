@@ -29,6 +29,11 @@
    ``ChatService.stream_events`` 产出：本文件只负责"回放 LangGraph 事件 +
    读帧"，**不另造帧解析器**（沿用 ``tests/test_p65_unified_sse.py`` 的范式）。
 
+收口批另钉第五类指标契约（``TestLlmCallsSavedReasonBound``，台账 :1415）：
+``record_llm_calls_saved`` 的 ``reason`` 按**形状**限界——``[A-Za-z0-9_]{1,32}``
+逐字通过、空串仍落 ``unknown``、越界形态落 ``other``；上面的"四类"编号保持 T13
+原始范围不动。
+
 全部用例离线可跑：无真实 LLM、无 Redis/Postgres/Milvus（全部走桩）。
 复验：``.venv/Scripts/python.exe -m pytest tests/test_p172_contract_regressions.py -q``
 
@@ -859,3 +864,51 @@ class TestSseFrameSequence:
             "done",
         ]
         assert frames[-1]["metadata"]["sources"] == []
+
+
+# ===========================================================================
+# 5) LLM_CALLS_SAVED reason 限界（台账 :1415）
+# ===========================================================================
+
+
+class TestLlmCallsSavedReasonBound:
+    """``record_llm_calls_saved`` 的 reason 形状限界：词表内逐字透传、空串落
+    ``unknown``、越界形态落 ``other``（基数有界，纪律 3）。"""
+
+    @staticmethod
+    def _count(reason: str) -> float:
+        from prometheus_client import REGISTRY
+
+        return REGISTRY.get_sample_value("llm_calls_saved_total", {"reason": reason}) or 0.0
+
+    @classmethod
+    def _delta(cls, recorded: str, expect: str) -> None:
+        before = cls._count(expect)
+        metrics_mod.record_llm_calls_saved(recorded)
+        assert cls._count(expect) == before + 1, (
+            f"reason {recorded!r} 应落 label {expect!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "reason",
+        ["chit_chat", "statute_direct", "capability_meta", "identity_meta", "ack_meta"],
+    )
+    def test_fastpath_reasons_pass_through_verbatim(self, reason):
+        """五个 fast-path reason 逐字透传（现树行为不许被限界截伤）。"""
+        self._delta(reason, reason)
+
+    def test_empty_reason_still_maps_to_unknown(self):
+        """``reason or "unknown"`` 的既有空串行为必须保住（只紧不松）。"""
+        self._delta("", "unknown")
+
+    @pytest.mark.parametrize("reason", ["含中文", "a" * 40, "x y"])
+    def test_out_of_shape_reasons_map_to_other(self, reason):
+        """越界形态（中文/超长/带空格）落 ``other``，不进高基数 label。"""
+        self._delta(reason, "other")
+
+    def test_true_source_vocabulary_survives_the_bound(self):
+        """reason 真源 ``router.FASTPATH_REASONS`` 的每个值经限界后恒等——把"生产侧
+        形状限界不会截伤真源"钉住。测试里 import router 是允许的（测试文件不受分层
+        允许集约束），生产侧 ``metrics.py`` 不能引它（test_p177:241 允许集）。"""
+        for reason in router_mod.FASTPATH_REASONS:
+            self._delta(reason, reason)
