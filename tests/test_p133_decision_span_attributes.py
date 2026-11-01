@@ -20,6 +20,7 @@
 """
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -381,3 +382,186 @@ async def test_resume_paths_mark_checkpoint_attr(fake_span, monkeypatch):
     fake_span.attrs.clear()
     await recovery.resume_thread("", _RecoveryGraphStub())
     assert RESUME_ATTR not in fake_span.attrs
+
+
+# ---------------------------------------------------------------------------
+# 庚-3 卡 β2（台账 §8.2 表 G G2 收口）：路由决策属性落点层级统一
+#
+# B2-1 是结构守卫：fake_span 是单枚替身、不模拟嵌套，任何行为用例都分不清
+# "属性挂在哪一层 span 上"——层级只能钉在 AST 结构上（同 test_p125 /
+# test_p127 的 AST 守卫风格，不自造框架）。
+# ---------------------------------------------------------------------------
+
+ROUTER_PY = Path(__file__).resolve().parents[1] / "agentix" / "application" / "agents" / "router.py"
+
+
+def _lookup_cache_fn() -> ast.AsyncFunctionDef:
+    tree = ast.parse(ROUTER_PY.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_lookup_routing_cache":
+            return node
+    raise AssertionError("router.py 里找不到 async def _lookup_routing_cache()")
+
+
+def _is_direct_call(node: ast.AST, name: str) -> bool:
+    """节点是否为 ``name(...)``（裸名）或 ``<mod>.name(...)``（属性）调用位。
+
+    两种形态都认：判据不许因无害的 import 形态变化误伤（对齐 p127 ``_refs`` 的理由）。
+    """
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    return (isinstance(func, ast.Name) and func.id == name) or (
+        isinstance(func, ast.Attribute) and func.attr == name
+    )
+
+
+def _cache_hit_async_with(fn: ast.AsyncFunctionDef):
+    """在函数体内找 ``async with span("route.cache_hit", ...)`` 的 AsyncWith 节点。"""
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.AsyncWith):
+            continue
+        for item in node.items:
+            ctx = item.context_expr
+            if (
+                _is_direct_call(ctx, "span")
+                and ctx.args
+                and isinstance(ctx.args[0], ast.Constant)
+                and ctx.args[0].value == "route.cache_hit"
+            ):
+                return node
+    return None
+
+
+def test_b2_1_route_decision_recorded_outside_cache_hit_span():
+    """命中腿的 ``record_route_decision`` 必须在 ``route.cache_hit`` 子 span **之外**
+    （函数体顶层、源码顺序先于该 span）——G2 收口：两条腿同落"当前环境 span"层级。"""
+    fn = _lookup_cache_fn()
+    span_block = _cache_hit_async_with(fn)
+    async_with_linenos = [n.lineno for n in ast.walk(fn) if isinstance(n, ast.AsyncWith)]
+    assert span_block is not None, (
+        f"_lookup_routing_cache（def lineno={fn.lineno}）体内找不到 "
+        f'async with span("route.cache_hit", ...)；实际 AsyncWith lineno={async_with_linenos}'
+    )
+
+    # ② span 体内不得含 record_route_decision 调用（改前形态记点在体内 ⇒ 必红）
+    inside_calls = [
+        n for n in ast.walk(span_block) if _is_direct_call(n, "record_route_decision")
+    ]
+    assert not inside_calls, (
+        f"route.cache_hit 的 AsyncWith（lineno={span_block.lineno}）体内仍出现 "
+        f"record_route_decision（lineno={[n.lineno for n in inside_calls]}）——"
+        "决策属性被记进了子 span 层级，G2 未收口"
+    )
+
+    # ③ 函数体顶层（不在任何 with 体内）恰好一枚 record_route_decision，且先于该 span
+    within_bodies: set = set()
+    for node in ast.walk(fn):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            for stmt in node.body:
+                for sub in ast.walk(stmt):
+                    within_bodies.add(id(sub))
+    all_calls = [n for n in ast.walk(fn) if _is_direct_call(n, "record_route_decision")]
+    top_calls = [n for n in all_calls if id(n) not in within_bodies]
+    assert len(top_calls) == 1, (
+        f"_lookup_routing_cache 顶层（非 with 体内）record_route_decision 应恰好一枚，"
+        f"实际顶层={[(n.lineno, n.col_offset) for n in top_calls]}，"
+        f"全部调用={[(n.lineno, n.col_offset) for n in all_calls]}，"
+        f"span_block lineno={span_block.lineno}"
+    )
+    assert top_calls[0].lineno < span_block.lineno, (
+        f"顶层 record_route_decision（lineno={top_calls[0].lineno}）必须**先于** "
+        f"route.cache_hit 的 AsyncWith（lineno={span_block.lineno}）"
+    )
+
+
+@pytest.mark.asyncio
+async def test_b2_2_both_route_legs_record_decision_exactly_once(fake_span, monkeypatch):
+    """缓存命中腿与 LLM 成功腿各**恰好一次**写 ``agentix.route.decision``，
+    且值与返回的 ``router.type`` 同源（庚-3 卡 β2 行为对照）。
+
+    **鉴别力边界（诚实标注）**：``fake_span`` 接缝是单枚 FakeSpan，**不模拟嵌套**
+    ⇒ 本用例分不清"属性挂在哪一层 span 上"——层级统一由 B2-1
+    （``test_b2_1_route_decision_recorded_outside_cache_hit_span``）的结构守卫钉；
+    本用例只钉"每请求恰好记一枚、值与返回同源、无重复写、无静默不写"。
+    """
+    from langchain_core.messages import HumanMessage
+
+    from agentix.application.agents import router as router_module
+    from agentix.application.agents import routing_cache
+    from agentix.config import ablation
+    from agentix.orchestration.langgraph.lg_states import AgentState, Router
+
+    for _name in tuple(ablation.FLAG_DEFAULTS):
+        monkeypatch.delenv(f"{ablation.ENV_PREFIX}{_name.upper()}", raising=False)
+    monkeypatch.setattr(router_module.settings, "ROUTING_FASTPATH_ENABLED", False, raising=False)
+    monkeypatch.setattr(router_module.settings, "TASK_EXEC_ENABLED", False, raising=False)
+    monkeypatch.setattr(router_module.settings, "CODE_EXEC_ENABLED", False, raising=False)
+
+    class _Structured:
+        def __init__(self, result):
+            self._result = result
+
+        async def ainvoke(self, messages):
+            return self._result
+
+    class _Model:
+        def with_structured_output(self, schema, **kwargs):
+            return _Structured(Router(type="general-query", logic="l", question="q"))
+
+    # 模型工厂计数替身：腿①（缓存命中）断言零调用——没有这枚计数，"重建失败降级走
+    # LLM"也会凑出恰好一次写点，腿①就白钉了。
+    model_calls: list = []
+
+    def _counting_get_llm_client(**kw):
+        model_calls.append(kw)
+        return _Model()
+
+    monkeypatch.setattr(router_module, "get_llm_client", _counting_get_llm_client)
+
+    calls: list = []
+    real_record = router_module.record_route_decision
+
+    def _spy(value):
+        calls.append(value)
+        return real_record(value)
+
+    monkeypatch.setattr(router_module, "record_route_decision", _spy)
+
+    class _StubCache:
+        def get(self, key, *, generation=None):
+            return {
+                "type": "general-query",
+                "logic": "l",
+                "decision": "d",
+                "confidence": 0.9,
+            }
+
+    # ---- 腿①：缓存命中（桩缓存必中）----
+    monkeypatch.setattr(routing_cache, "generation_token", lambda: "g-beta2")
+    monkeypatch.setattr(routing_cache, "get_routing_cache", lambda: _StubCache())
+    monkeypatch.setattr(router_module.settings, "ROUTING_CACHE_ENABLED", True, raising=False)
+
+    hit_result = await router_module.analyze_and_route_query(
+        AgentState(messages=[HumanMessage(content="你好")]), config={}
+    )
+    assert model_calls == [], f"缓存命中腿不应构造模型，实际 model_calls={model_calls}"
+    assert calls == [hit_result["router"].type], (
+        f"缓存命中腿应恰好写一次决策属性，实际 calls={calls}"
+    )
+    assert fake_span.attrs[ROUTE_DECISION_ATTR] == hit_result["router"].type
+
+    # ---- 腿②：LLM 成功（缓存显式关，基线成功路径）----
+    calls.clear()
+    model_calls.clear()
+    fake_span.attrs.clear()
+    monkeypatch.setattr(router_module.settings, "ROUTING_CACHE_ENABLED", False, raising=False)
+
+    llm_result = await router_module.analyze_and_route_query(
+        AgentState(messages=[HumanMessage(content="你好")]), config={}
+    )
+    assert len(model_calls) == 1, f"LLM 腿应恰好构造一次模型，实际 model_calls={model_calls}"
+    assert calls == [llm_result["router"].type], (
+        f"LLM 成功腿应恰好写一次决策属性，实际 calls={calls}"
+    )
+    assert fake_span.attrs[ROUTE_DECISION_ATTR] == llm_result["router"].type

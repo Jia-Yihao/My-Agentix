@@ -412,11 +412,11 @@ async def _lookup_routing_cache(question_text: str) -> Tuple[Optional[Router], O
         return None, generation
 
     record_routing_cache("hit")
+    record_route_decision(cached_router.type)
     async with span("route.cache_hit", cached=True, route_type=cached_router.type):
-        record_route_decision(cached_router.type)
-    logger.info(
-        "routing cache hit: skip LLM intent classifier -> {}", cached_router.type
-    )
+        logger.info(
+            "routing cache hit: skip LLM intent classifier -> {}", cached_router.type
+        )
     return cached_router, generation
 
 
@@ -583,7 +583,8 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
     sanitized_router = router_cls(**sanitized_kwargs)
 
     # PhaseK 任务 4：路由决策值上 span 的**两个落点之一**——白名单校验通过后的最终
-    # route（有界枚举，纪律 3；理由文本不落）。缓存命中分支（route.cache_hit span 处）也调本 helper，
+    # route（有界枚举，纪律 3；理由文本不落）。缓存命中分支也调本 helper：同在函数体级、
+    # 先于 route.cache_hit 子 span 打开，两处同层级落在当前环境 span 上。
     # 两处同走 record_route_decision 单源，不另立第二份判据。兜底出口另有
     # _record_router_fallback 指标归因；纯 Python 分派的 route_query() 不调（它不返回
     # route_type）。fail-open 由 helper 自身保证（无 span/异常 ⇒ no-op，纪律 2）。
