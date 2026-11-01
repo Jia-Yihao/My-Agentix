@@ -25,7 +25,11 @@
 5. 关停取消：`_shutdown` 取消重试任务并把句柄置回 `None`；
 6. 单一源守卫：`_startup` 经 `_wire_graph_checkpointer` 装配图（不内联 build_graph），
    并在装配块之外调用 `_start_checkpointer_upgrade()`；「要不要重试」只由
-   `checkpointer.is_upgrade_retryable()` 回答。
+   `checkpointer.is_upgrade_retryable()` 回答；
+7. 失败路径资源收口（台账 §8.2 表 D G2）：三条失败臂各自丢弃的 Redis client 必须
+   被恰好关闭一次且显式断开池（`TestFailurePathClosesClient` A1–A3）；升级成功路径
+   不许关闭在用 client（A4，防回归钉）；关闭动作自身失败只留 warning、不改原失败
+   语义（A5，纪律 2）。
 
 **不连真 Redis、只用毫秒级真实 sleep（不注入时钟，理由已述）**：`redis.asyncio.Redis` 与
 `_try_import_async_redis_saver` 两个既有接缝（`tests/test_p132_checkpointer_fail_closed.py`
@@ -96,18 +100,34 @@ class _SwitchableSaver:
             raise ConnectionError("failed to connect to redis")
 
 
-def _patch_redis(monkeypatch, saver_cls: Any = _SwitchableSaver) -> None:
-    """钉住 Redis 路径的既有接缝：包导入 + `Redis.from_url`（同 p132 范式）。"""
+def _patch_redis(monkeypatch, saver_cls: Any = _SwitchableSaver) -> Any:
+    """钉住 Redis 路径的既有接缝：包导入 + `Redis.from_url`（同 p132 范式）。
+
+    返回 `_FakeRedis` 类本身：`TestFailurePathClosesClient`（台账 §8.2 表 D G2）
+    要断言每次尝试新建 client 的 `aclose` 计数与参数，A5 还要把 `aclose`
+    换成自身抛异常的版本。既有调用点不取返回值，形状只增不改。
+    """
     monkeypatch.setattr(ckpt_module, "_try_import_async_redis_saver", lambda: saver_cls)
 
     import redis.asyncio as aioredis
 
     class _FakeRedis:
+        instances: List["_FakeRedis"] = []
+
+        def __init__(self) -> None:
+            # G2 测试面：逐实例记录 aclose 调用（含 kwargs），断言「恰好一次且显式关池」。
+            self.aclose_calls: List[dict] = []
+            type(self).instances.append(self)
+
         @classmethod
         def from_url(cls, *args: Any, **kwargs: Any) -> "_FakeRedis":
             return cls()
 
+        async def aclose(self, close_connection_pool: Any = None) -> None:
+            self.aclose_calls.append({"close_connection_pool": close_connection_pool})
+
     monkeypatch.setattr(aioredis, "Redis", _FakeRedis)
+    return _FakeRedis
 
 
 def _reset_switchable(fail: bool) -> None:
@@ -328,6 +348,132 @@ class TestRewireIsPartOfSuccess:
         assert len(exhausted) == 1, f"持续装配失败最终要打次数用尽告警：{warning_logs!r}"
         assert "rewire" in exhausted[0], "次数用尽告警必须带上最后一次失败原因"
         assert ckpt_module.is_upgrade_retryable() is False, "次数用尽后复位标记"
+
+
+class TestFailurePathClosesClient:
+    """台账 §8.2 表 D G2：失败路径丢弃的 Redis client 必须被关闭（池断开）恰好一次。
+
+    「建池即负责，谁丢弃谁关闭」——每条把 client 丢弃掉的臂都要有钉：
+
+    - A1 建连/asetup 失败臂（`retry_upgrade_checkpointer`，现树 `:300-:307`）；
+    - A2 rewire 失败臂（`:313-:326`，saver 已建连并 asetup 成功但整只被丢弃）；
+    - A3 `init_checkpointer` 降级臂（client 在 `_connect_redis_saver` 内部抛出点已关）；
+    - A4 升级成功路径 ⇒ **不**关闭在用 client（所有权移交 saver；防止把
+      「关掉在用 client」这种新 bug 当成修复——本条在改前即绿，是防回归钉）；
+    - A5 关闭动作自身抛异常 ⇒ 原失败语义不变（仍降级 / 仍 `return False`），
+      只多一条 warning 留痕（纪律 2：关闭失败不得升格成异常或改写原失败）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_a1_failed_connect_attempt_closes_client_once(self, monkeypatch):
+        """A1：重试的建连/asetup 失败臂 ⇒ 该次尝试新建的 client 被关闭恰好一次。"""
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_TYPE", "redis")
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_FAIL_CLOSED", False)
+        _reset_switchable(fail=True)
+        fake = _patch_redis(monkeypatch)
+
+        await ckpt_module.init_checkpointer()  # 造降级态（init 自身的关闭由 A3 负责钉）
+        assert ckpt_module.is_upgrade_retryable() is True
+
+        assert await ckpt_module.retry_upgrade_checkpointer() is False
+
+        assert len(fake.instances) == 2, "init 一次 + retry 一次建连"
+        retried = fake.instances[-1]
+        assert retried.aclose_calls == [{"close_connection_pool": True}], (
+            f"重试失败臂新建的 client 必须恰好关闭一次且显式关池：{retried.aclose_calls!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a2_rewire_failure_closes_client_once(self, monkeypatch):
+        """A2：rewire 失败臂 ⇒ saver 连同其 client 整只被丢弃，client 必须被关闭恰好一次。"""
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_TYPE", "redis")
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_FAIL_CLOSED", False)
+        _reset_switchable(fail=True)
+        fake = _patch_redis(monkeypatch)
+
+        degraded = await ckpt_module.init_checkpointer()
+        assert ckpt_module.is_upgrade_retryable() is True
+
+        # Redis 侧恢复：建连 + asetup 成功；失败只发生在装配 ⇒ 丢弃点在此臂
+        _SwitchableSaver.fail = False
+
+        def _raise_(_ckpt: Any) -> None:
+            raise RuntimeError("graph recompile exploded")
+
+        assert await ckpt_module.retry_upgrade_checkpointer(_raise_) is False
+        assert ckpt_module.get_checkpointer() is degraded, "前置：失败不提交新 saver"
+
+        assert len(fake.instances) == 2, "init 一次 + retry 一次建连"
+        rewired = fake.instances[-1]
+        assert rewired.aclose_calls == [{"close_connection_pool": True}], (
+            f"rewire 失败臂丢弃的 client 必须恰好关闭一次且显式关池：{rewired.aclose_calls!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a3_init_degradation_closes_client_once(self, monkeypatch):
+        """A3：init 降级臂 ⇒ client 在 `_connect_redis_saver` 内部抛出点已被关闭恰好一次。"""
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_TYPE", "redis")
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_FAIL_CLOSED", False)
+        _reset_switchable(fail=True)
+        fake = _patch_redis(monkeypatch)
+
+        saver = await ckpt_module.init_checkpointer()
+
+        assert isinstance(saver, MemorySaver), "前置：降级语义不变"
+        assert len(fake.instances) == 1
+        assert fake.instances[0].aclose_calls == [{"close_connection_pool": True}], (
+            f"init 降级臂的 client 必须恰好关闭一次且显式关池：{fake.instances[0].aclose_calls!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a4_successful_upgrade_does_not_close_client(self, monkeypatch):
+        """A4：升级成功 ⇒ 在用 client 不许关（所有权移交 saver）。防回归钉，改前即绿。"""
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_TYPE", "redis")
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_FAIL_CLOSED", False)
+        _reset_switchable(fail=True)
+        fake = _patch_redis(monkeypatch)
+
+        await ckpt_module.init_checkpointer()  # 前置降级（其 client 的关闭归 A3 判，不算本条）
+        _SwitchableSaver.fail = False
+        wired: List[Any] = []
+
+        assert await ckpt_module.retry_upgrade_checkpointer(wired.append) is True
+        assert ckpt_module.get_checkpointer() is _SwitchableSaver.instances[-1]
+
+        assert len(fake.instances) == 2, "init 一次 + retry 一次建连"
+        success_client = fake.instances[-1]
+        assert success_client.aclose_calls == [], (
+            f"成功路径所有权已移交 saver，关闭在用 client 是新 bug：{success_client.aclose_calls!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a5_close_failure_keeps_original_semantics(self, monkeypatch, warning_logs):
+        """A5：aclose 自身抛 ⇒ 原失败语义逐位不变，只多一条 warning 留痕（纪律 2）。"""
+
+        async def _boom(*_a: Any, **_k: Any) -> None:
+            raise RuntimeError("aclose exploded")
+
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_TYPE", "redis")
+        monkeypatch.setattr(settings_instance, "CHECKPOINTER_FAIL_CLOSED", False)
+        _reset_switchable(fail=True)
+        fake = _patch_redis(monkeypatch)
+        fake.aclose = _boom  # 在建 client 之前替换：本用例所有 client 的关闭都自身抛
+
+        saver = await ckpt_module.init_checkpointer()
+        assert isinstance(saver, MemorySaver), "关闭失败不得改变降级语义"
+        assert "ConnectionError" in (ckpt_module.get_degraded_reason() or ""), (
+            "降级原因必须仍是原异常，不被关闭失败改写"
+        )
+        assert ckpt_module.is_upgrade_retryable() is True
+        close_warnings = [r for r in warning_logs if "closing discarded redis client" in r]
+        assert len(close_warnings) == 1, f"关闭失败要有恰好一条 warning 留痕：{warning_logs!r}"
+
+        assert await ckpt_module.retry_upgrade_checkpointer() is False, (
+            "关闭失败不得把 False 升格成异常"
+        )
+        assert "ConnectionError" in (ckpt_module.get_degraded_reason() or "")
+        close_warnings = [r for r in warning_logs if "closing discarded redis client" in r]
+        assert len(close_warnings) == 2, "重试臂同样：恰好再多一条，原语义不变"
 
 
 class TestRetryExhaustion:
