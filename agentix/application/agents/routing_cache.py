@@ -31,13 +31,18 @@
     ``code_handler.py:326`` / ``task_handler.py:105`` 把它从上一个 ``Router``
     原样拷进下一个，没有分支按它决策。省空间只是附带收益，主要理由是"不存一个
     没有消费者的原文派生字段"。
-* **换代失效（Q1 未裁决时的保守口径）**：generation token 由四项拼起来取 CRC32
+* **换代失效（Q1 未裁决时的保守口径）**：generation token 由九段拼起来取 CRC32
   ——① router 提示词**实际生效文本**（含 ``TASK_EXEC_ROUTE_BLOCK`` /
   ``CODE_EXEC_ROUTE_BLOCK`` / ``SINGLE_LAYER_ROUTE_BLOCK`` 是否拼入）；② 实际使用的
   router 类名（基线四类 ``Router`` / ``TaskRouter`` / ``CodeRouter`` /
   ``TaskCodeRouter``，或 T30-2 单层闸开时的四个 ``*SingleLayerRouter`` 变体，
   由既有 ``_router_class`` 决定）；③ 主模型标识（``settings.LLM_MODEL``，只读配置，
-  **不为此构造 LLM 客户端**）；④ ``ablation.is_enabled("router_enabled")``。
+  **不为此构造 LLM 客户端**）；④ ``ablation.is_enabled("router_enabled")``；
+  ⑤ 档位路由的**输入值指纹**（``LLM_TIER_ROUTING_ENABLED`` flag 位 + 原样
+  ``LLM_ROLE_TIER_MAP`` + 三档模型名 ``LLM_MODEL_FAST`` / ``LLM_MODEL_STANDARD`` /
+  ``LLM_MODEL_REASONING``）——并的是配置值本身、**不复刻档位判定**（复刻等于在
+  缓存侧另立第二个判定源，纪律 6 ④）；代价是未接线角色改档位值也会多换一次代，
+  方向保守（只多算、不会少算）。
   任一变化 ⇒ 键变了 ⇒ 旧条目再也命中不到（随后被 LRU / TTL 回收）。
   **注意值侧的边界**：缓存里**不存**单层参数（``kb_route`` / ``kb_tools``），
   ``_CACHED_FIELDS`` 仍是四个基线字段——命中请求因此拿不到单层通道，KB 子图内的
@@ -93,6 +98,16 @@ _CACHED_FIELDS: Tuple[str, ...] = ("type", "logic", "decision", "confidence")
 #: 连续空白折叠成单个空格——排版差异不该产生两个缓存条目。
 _WHITESPACE = re.compile(r"\s+")
 
+#: 档位路由各档的 settings 键名。真源是 ``model_gateway.py`` 的 ``_TIER_SETTINGS_KEY``（私有表），
+#: 本模块刻意不 import 它：换代令牌跑在每请求热点上，为并指纹而新增一条到 infrastructure 的
+#: 运行期依赖不划算。两侧漂移由 ``tests/test_p173_routing_cache.py`` 的同源守卫钉住——那张表里
+#: 任何新档键若没并进令牌，守卫就红（允许本表多列，禁止少列）。
+_TIER_MODEL_SETTINGS_KEYS: Tuple[str, ...] = (
+    "LLM_MODEL_FAST",
+    "LLM_MODEL_STANDARD",
+    "LLM_MODEL_REASONING",
+)
+
 
 def normalize_question(question: Optional[str]) -> str:
     """问句归一化：``strip()`` + 连续空白折叠。"""
@@ -105,16 +120,19 @@ def question_digest(question: Optional[str]) -> str:
 
 
 def generation_token() -> str:
-    """当前"路由换代令牌"：四项拼起来取 CRC32，8 位十六进制。
+    """当前"路由换代令牌"：九段拼起来取 CRC32，8 位十六进制。
 
-    为什么每请求现算而不缓存令牌：四项里三项是 ``settings`` 的读取、一项是既有
-    :func:`ablation.is_enabled`；CRC32 在约 2KB 提示词上耗时微秒级，远低于一次
+    为什么每请求现算而不缓存令牌：九段里六段是 ``settings`` 的读取、一段是既有
+    :func:`ablation.is_enabled`、另两段经既有路由判定取值（提示词文本与 router
+    类名，见下）；CRC32 在约 2KB 提示词上耗时微秒级，远低于一次
     LLM 调用。反过来把令牌缓存在进程里，会让"开关/提示词变了但令牌没变"这种
     静默失配变成新的故障模式（纪律 6 ④：判定只有一个源，不要多造一个快照）。
 
-    四项的取值**全部复用既有判定的唯一来源**（``_exec_flags`` /
+    九段的取值**全部复用既有判定的唯一来源**（``_exec_flags`` /
     ``_router_prompt_text`` / ``_router_class`` / ``settings`` / ``ablation``），
-    本模块不另立平台或开关判点。
+    本模块不另立平台或开关判点：提示词文本与 router 类名经 ``_router_prompt_text`` /
+    ``_router_class`` 取（与执行链同源）；档位面并的是**配置值**而非判定结果，
+    不构成第二判定源，键名表与网关档位表的漂移风险由 p173 的同源守卫兜住。
     """
     # 延迟 import：本模块被 router 惰性加载时 router 已就绪；反向 import 放在
     # 函数内可避免模块级循环依赖。
@@ -126,6 +144,14 @@ def generation_token() -> str:
         router_module._router_class(task_exec_on, code_exec_on, single_layer_on).__name__,
         str(getattr(settings, "LLM_MODEL", "") or ""),
         "1" if ablation.is_enabled("router_enabled") else "0",
+        # 庚-3 γ（台账表 G G7）：档位路由的输入值并入令牌——router 实际用的模型可能是
+        # 档位模型（``llm_factory._apply_tier_routing`` 命中时改写 profile），只并 ③ 的
+        # ``LLM_MODEL`` 就会「该配置下换模型不换代」。并的是配置值指纹，不复刻档位判定
+        # （复刻等于在缓存侧另立一个判定源，纪律 6 ④）。代价：未接线角色改档位值也会
+        # 多换一次代，方向保守（只多算、不会少算）。
+        "1" if bool(getattr(settings, "LLM_TIER_ROUTING_ENABLED", False)) else "0",
+        str(getattr(settings, "LLM_ROLE_TIER_MAP", "") or ""),
+        *(str(getattr(settings, key, "") or "") for key in _TIER_MODEL_SETTINGS_KEYS),
     )
     joined = "\x1f".join(parts)
     return format(zlib.crc32(joined.encode("utf-8")) & 0xFFFFFFFF, "08x")
