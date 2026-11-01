@@ -431,7 +431,9 @@ def _store_routing_cache(
 
     ``generation`` 允许由调用方（同一请求的查侧）传进来复用：一次请求只该算
     一枚换代令牌（庚-3 卡 β1，台账表 G G6）。默认 ``None`` 保住"独立调用"
-    这一形态——拿不到时才自算兜底。
+    这一形态——拿不到时才自算兜底。传入的那一枚是**查侧那一刻**算出的令牌，
+    条目因此按查侧那一代落键而非按写的那一刻的代落键；运行期的安全前提见写侧
+    调用点注释（此处不复制论证）。
     """
     from agentix.application.agents import routing_cache
 
@@ -592,7 +594,14 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
     # 与查缓存同一判据（单轮才写）：多轮请求写进来的是「按末句算出的结论」，
     # 后面的单轮同问句会命中它——写侧漏判等于把脏条目留给下一个请求。
     if len(state.messages) == 1 and bool(getattr(settings, "ROUTING_CACHE_ENABLED", False)):
-        # 复用查侧令牌⇒一次请求只算一枚,写侧拿不到(None)才自算;不会落错代:generation是四项输入的CRC32,同一请求内查与写本就同代,即便配置中途变了,写进的条目只会被"算出同一枚令牌"的查侧读到,读不到就是普通未命中,不会返回错答案。
+        # 复用查侧令牌⇒一次请求只算一枚换代令牌；写侧拿不到（None）时才自算兜底。
+        # 落代语义相对改前变了：改前按「写的那一刻」的代落键，本行按「本次请求查的那一刻」的代落键。
+        # 只有请求窗口内四项输入被改写时两者才不同——那种情况下本行写法可能把「按中途新代配置算出的
+        # 结论」挂到查侧那一代的键上，代别若在 TTL 内翻回该代，就可能产生一次错代命中
+        # （改前写法在该场景只吃一次普通未命中，严格更安全）。
+        # 成立前提：当前生产形态下代别在请求内不可变——令牌四项输入里三枚是 settings 读取、一枚是
+        # ablation（其设计前提是进程环境不变），仓内无运行期改写点；故该反例今天不可达，属已知前提
+        # 而非已被证明的性质。若将来引入运行期热改配置或把更多维度并入令牌，本行写法需重新评估。
         _store_routing_cache(question_text, sanitized_router, cache_generation)
 
     logger.info("Analyze user query type completed, result: {}", sanitized_router)

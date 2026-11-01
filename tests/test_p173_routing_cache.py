@@ -641,8 +641,8 @@ class TestGenerationTokenSingleComputation:
         构造取"第一次调用抛 RuntimeError、其后放行"（简报给出的两种候选之一，
         取舍理由见执行报告：本路径一次请求的令牌调用点最多两处——查侧一枚 +
         写侧兜底一枚，"前两次都抛"会把写侧兜底一并打死，与"兜底仍写成功"的
-        预期矛盾）。``cache.get`` 保持真身：查侧在算令牌处抛，降级路径与 :569
-        那条钉的是同一条早退臂。
+        预期矛盾）。``cache.get`` 保持真身：查侧在算令牌处抛，降级路径与
+        ``test_lookup_exception_degrades_to_miss`` 钉的是同一条早退臂。
         """
         if not _prometheus_available():
             pytest.skip("prometheus_client 不可用，指标断言跳过")
