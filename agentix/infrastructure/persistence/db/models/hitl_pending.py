@@ -17,7 +17,13 @@
 **本模块两张表**（同一套建表/回滚口径，都由 store 的 ``ensure_ready()`` 建）：
 
 - ``hitl_pending_approvals``：一行 = 一条审批 pending 的真源生命周期
-  （挂起写入 → 裁决闭合）；
+  （挂起写入 → 裁决闭合）。行型不止这一种：另有 ``nodeerr:*`` **补偿行**，
+  id 由 ``agentix/orchestration/langgraph/policies.py`` 的生成点（现读该文件
+  第 158 行）以 ``nodeerr:`` 前缀命名，**没有挂起阶段**——它跳过 pending，
+  由 store 的 ``close_decision()``（``agentix/infrastructure/persistence/hitl_pending_store.py``，
+  现读该文件第 336 行的定义）直接写闭合。按"每行都经历挂起→闭合"的旧定义
+  写的清理/回滚/扫描逻辑会把补偿行当残留误删，所以任何按行型筛的清理
+  都必须同时考虑这一类；
 - ``hitl_sweep_leases``：一行 = 一把**命名租约**（当前只有
   ``hitl_approval_deadline`` 这一把）。存在的理由是部署形态：
   ``--workers 2`` 意味着两个独立进程各起一个到期扫描任务，而"同一行只被
@@ -47,7 +53,11 @@ __all__ = ["HitlPendingApproval", "HitlSweepLease"]
 
 
 class HitlPendingApproval(Base):
-    """一行 = 一条审批 pending 的真源生命周期（挂起写入 → 裁决闭合）。"""
+    """一行 = 一条审批 pending 的真源生命周期（挂起写入 → 裁决闭合）。
+
+    含 ``nodeerr:*`` 补偿行：无挂起阶段、由 store 的 ``close_decision()``
+    直写闭合（完整口径见模块 docstring 的行型说明）。
+    """
 
     __tablename__ = "hitl_pending_approvals"
 
