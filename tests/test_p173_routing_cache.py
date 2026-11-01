@@ -26,6 +26,9 @@
 8. ``TestFastPathExpansion``——新增的助理元问题规则：命中 reason / 意图名 /
    近似不命中样本；reason 词表由 ``FASTPATH_REASONS`` 单源给出（不另抄名单），
    并钉住「扩面只落 general-query」这条边界。
+9. ``TestGenerationTokenSingleComputation``——换代令牌单点计算（庚-3 卡 β1，
+   台账表 G G6）：一次请求只算一枚令牌（查侧算、传写侧复用；查侧算不出时
+   写侧自算兜底），B1–B4 逐条钉计数、兜底与写入条目代前缀同源。
 
 全部用例离线可跑：无真实 LLM（一律 ``get_llm_client`` 桩），无 Redis/Postgres/Milvus。
 复验：``.venv/Scripts/python.exe -m pytest tests/test_p173_routing_cache.py -q``
@@ -557,6 +560,156 @@ class TestCacheUnit:
         mod.reset_routing_cache()
 
         assert len(cache) == 0
+
+
+# ===========================================================================
+# 换代令牌单点计算（庚-3 卡 β1，台账表 G G6：收口批复用一次）
+# ===========================================================================
+
+
+def _wrap_counting_token(monkeypatch, mod) -> list:
+    """把 ``mod.generation_token`` 换成**计数包装**（原样放行真身，逐次记录返回值）。
+
+    包装挂在模块属性上：``router.py`` 两处调用点都是 ``routing_cache.generation_token()``
+    的模块属性取法，桩对两侧同时生效——计数才等于"一次请求实际算了几枚令牌"。
+    """
+    tokens: list = []
+    real = mod.generation_token
+
+    def _counting(*args, **kwargs):
+        token = real(*args, **kwargs)
+        tokens.append(token)
+        return token
+
+    monkeypatch.setattr(mod, "generation_token", _counting)
+    return tokens
+
+
+class TestGenerationTokenSingleComputation:
+    """B1–B4：一次请求只算一枚换代令牌（查侧算出后传给写侧复用，写侧拿不到才自算）。"""
+
+    @pytest.mark.asyncio
+    async def test_b1_miss_path_computes_generation_token_once(self, monkeypatch):
+        """B1（RED 主力）：未命中（走 LLM ⇒ 写侧）的一次请求，令牌只算 **1** 次。
+
+        改前现树：查侧 :384 与写侧 :433 各算一次 ⇒ 计数为 2 ⇒ 本用例必红。
+        """
+        monkeypatch.setattr(app_settings, "ROUTING_FASTPATH_ENABLED", False)
+        monkeypatch.setattr(app_settings, "ROUTING_CACHE_ENABLED", True)
+        mod = _cache_mod()
+        tokens = _wrap_counting_token(monkeypatch, mod)
+        monkeypatch.setattr(
+            router_mod,
+            "get_llm_client",
+            lambda **kwargs: _StubStructuredModel(Router(type="kb-query", logic="llm: b1")),
+        )
+
+        result = await analyze_and_route_query(_state("今天天气怎么样"), config={})
+
+        assert result["router"].logic == "llm: b1", "未命中必须照常走 LLM 分类"
+        assert len(tokens) == 1, (
+            f"一次请求应只算一枚换代令牌（查侧算、写侧复用），实际算了 {len(tokens)} 次"
+        )
+
+    @pytest.mark.asyncio
+    async def test_b2_hit_path_computes_generation_token_once(self, monkeypatch):
+        """B2（防回归钉）：命中路径仍只算 1 枚——复用上提后别把它算成两次或零次。"""
+        monkeypatch.setattr(app_settings, "ROUTING_FASTPATH_ENABLED", False)
+        monkeypatch.setattr(app_settings, "ROUTING_CACHE_ENABLED", True)
+        mod = _cache_mod()
+        question = "今天天气怎么样"
+        # 预置与当前同代的条目：预置用真身算令牌，发生在装桩**之前**，不进计数。
+        mod.get_routing_cache().put(
+            question,
+            Router(type="kb-query", logic="llm: preset-b2"),
+            generation=mod.generation_token(),
+        )
+        tokens = _wrap_counting_token(monkeypatch, mod)
+        monkeypatch.setattr(router_mod, "get_llm_client", _boom)  # 命中不得构造模型
+
+        result = await analyze_and_route_query(_state(question), config={})
+
+        assert result["router"].logic == "llm: preset-b2"
+        assert len(tokens) == 1, f"命中路径应只算一枚令牌，实际 {len(tokens)} 次"
+
+    @pytest.mark.asyncio
+    async def test_b3_lookup_token_failure_keeps_degradation_and_store_selfcomputes(
+        self, monkeypatch
+    ):
+        """B3（兜底面）：查侧令牌算不出 ⇒ 既有收口不劣化，且写侧自算兜底仍写成功。
+
+        构造取"第一次调用抛 RuntimeError、其后放行"（简报给出的两种候选之一，
+        取舍理由见执行报告：本路径一次请求的令牌调用点最多两处——查侧一枚 +
+        写侧兜底一枚，"前两次都抛"会把写侧兜底一并打死，与"兜底仍写成功"的
+        预期矛盾）。``cache.get`` 保持真身：查侧在算令牌处抛，降级路径与 :569
+        那条钉的是同一条早退臂。
+        """
+        if not _prometheus_available():
+            pytest.skip("prometheus_client 不可用，指标断言跳过")
+        monkeypatch.setattr(app_settings, "ROUTING_FASTPATH_ENABLED", False)
+        monkeypatch.setattr(app_settings, "ROUTING_CACHE_ENABLED", True)
+        mod = _cache_mod()
+        recorder = _RecordingLogger()
+        monkeypatch.setattr(router_mod, "logger", recorder)
+        cache = mod.get_routing_cache()
+
+        calls = {"n": 0}
+        real = mod.generation_token
+
+        def _fail_then_pass(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("token generation exploded")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(mod, "generation_token", _fail_then_pass)
+        model = _StubStructuredModel(Router(type="kb-query", logic="llm: survived b3"))
+        monkeypatch.setattr(router_mod, "get_llm_client", lambda **kwargs: model)
+        before = _routing_cache_sample("error")
+
+        result = await analyze_and_route_query(_state("今天天气怎么样"), config={})
+
+        # 既有收口逐字不劣化：结果照常、文案照常、result="error" 计数 +1
+        assert result["router"].logic == "llm: survived b3", "查侧令牌故障不得影响问答结果"
+        assert model.calls == 1
+        assert _routing_cache_sample("error") >= before + 1
+        assert "routing cache lookup failed" in recorder.text()
+        # 写侧兜底：查侧传下 None ⇒ 写侧自算（本路径第二次调用放行）并写成功
+        assert calls["n"] == 2, (
+            f"查侧一枚 + 写侧兜底一枚，实际令牌调用 {calls['n']} 次"
+        )
+        assert len(cache) == 1, "写侧自算兜底仍应把成功结果写进缓存"
+        ((key, _entry),) = list(cache.entries.items())
+        assert key.split(":")[0] == real(), "兜底写入的代前缀必须是当前代"
+
+    @pytest.mark.asyncio
+    async def test_b4_stored_generation_prefix_is_the_computed_token(self, monkeypatch):
+        """B4（复用同源）：写入条目的代前缀 == 本次请求算出的那枚令牌。
+
+        键形状 ``f"{generation}:{digest}"``（routing_cache.py ``_cache_key``）。
+        "真复用了、不是碰巧同值"由 B1 的计数 ==1 与本条的同源断言**联合**钉死：
+        全场只算过一枚令牌 ⇒ 写入前缀只可能来自那枚被复用的令牌。
+        """
+        monkeypatch.setattr(app_settings, "ROUTING_FASTPATH_ENABLED", False)
+        monkeypatch.setattr(app_settings, "ROUTING_CACHE_ENABLED", True)
+        mod = _cache_mod()
+        tokens = _wrap_counting_token(monkeypatch, mod)
+        monkeypatch.setattr(
+            router_mod,
+            "get_llm_client",
+            lambda **kwargs: _StubStructuredModel(Router(type="kb-query", logic="llm: b4")),
+        )
+
+        await analyze_and_route_query(_state("今天天气怎么样"), config={})
+
+        cache = mod.get_routing_cache()
+        assert len(cache) == 1
+        ((key, _entry),) = list(cache.entries.items())
+        prefix = key.split(":")[0]
+        assert tokens, "本次请求至少算出过一枚令牌"
+        assert set(tokens) == {prefix}, (
+            f"写入条目代前缀 {prefix} 与本次算出的令牌 {tokens} 不同源"
+        )
 
 
 # ===========================================================================
