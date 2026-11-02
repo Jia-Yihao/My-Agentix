@@ -905,6 +905,10 @@ class TestLlmCallsSavedReasonBound:
     def test_out_of_shape_reasons_map_to_other(self, reason):
         """越界形态（中文/超长/带空格）落 ``other``，不进高基数 label。"""
         self._delta(reason, "other")
+        # G21（U-A）：非 str 实参是最极端的越界形态（原形态在 ``re.match`` 抛 TypeError 上抛
+        # 主链路）——守卫后只留痕跳过、不外抛，且不进任何 label（下面逐字透传用例的计数断言
+        # 用的是 delta，本行不产生任何增量，故不会与相邻用例的计数相互干扰）。
+        metrics_mod.record_llm_calls_saved(7)  # type: ignore[arg-type]
 
     def test_true_source_vocabulary_survives_the_bound(self):
         """reason 真源 ``router.FASTPATH_REASONS`` 的每个值经限界后恒等——把"生产侧
