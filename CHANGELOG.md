@@ -12,6 +12,13 @@
 
 ## [Unreleased]
 
+- **指标埋点 fail-open 包裹面（G21 统一批 U-A）**：`agentix/observability/metrics.py` 新增唯一守卫
+  `_emit_or_skip()`，`record_llm_calls_saved()` 与 `record_task_queue_claimed()` 的判定与计数整体
+  进 try——非 `str`/不可散列实参（旧形态在 `re.match` / `frozenset` 判定处抛 `TypeError`）与
+  prometheus 侧非法 label 值一律降级为「跳过这一次计数 + `logger.warning` 留痕」，不再上抛主链路
+  （`AGENTS.md` 硬性纪律 2；守卫单点即纪律 6 ④，调用点 `router.py` / `task_queue.py` 一字未动）；
+  零新增用例、零新增开关与配置键，词表内取值逐字透传与越界落 `other` 的既有语义不变。
+
 - M3-6 收尾波次庚-收尾（第二次全量 + README §11 re-cite，2026-11-02，采样边界落树 `c155177`）：`pytest -m "not integration" -q`（经 `.tmp/test_mutex.py` 互斥壳单进程） → **6052 passed / 40 skipped / 6 deselected / 0 failed**（514.95s，Python 3.12.13，单机离线，未开并行；采集时点 `evals/**` 带另一会话未提交改动）；同轮 `ruff check agentix tests scripts evals kb_ingest`／`mypy agentix/domain`（40 文件 0 错）／`gen_staging_matrix.py --check`／`pip check` 四把尺子 EXIT=0。相对上一口径 6023（2026-11-01 己波）的 +29 为两端实测相减、**未逐条清点**（新增测试函数 23 枚的逐提交分布、2 枚参数化装饰器与差额声明见 `docs/工程口径日志.md` 的庚波条；纪律 8：本条只写指针、不复述）。`README.md` §11 现值句、`docs/工程口径日志.md` 庚波条与本条同批落地；台账 §8 的 M3-6 状态格行尾代写 D45 链三枚返工批哈希、§8.2 表 AB 新立 B-46 行、§8.3 步 5 行末追加 re-cite 落地登记（C1–C5 判据本体一字未动）。**本批零产品代码、零测试改动**，四枚文件全为文档面。
 
 - M3-6 收尾波次庚-3（续，生产与 CI 面余四批，2026-11-01 落树 `eb14093`／`af3cfbd`／`a23e43a`＋`233c4f0`／`3760e67`／`e457d38`）：δ——启动接线 `install_executor_hook` 改经 `asyncio.to_thread` 下放（同步读库不进事件循环），编译图 INFO 的降级后缀文案改准为「原因尚未清除」义（措辞与实际状态一致）；ζ——`task_queue_claimed_total` 的 `ok` 由轮级变**条级**（每成功接手并处理完一条消息记一次；`empty`／`error` 仍轮级、每轮至多一枚；指标名/label/词表/开关一项未变，只变计数粒度；两枚文档的对外口径句随本批文档面改准）；β1（含返工 `233c4f0`）——一次请求内换代令牌由算 2 枚改为算 1 枚并复用（纯内部复用，零行为变化，不属对外口径、文档面不写）；β2——路由命中腿的决策属性记点从 `route.cache_hit` 子 span 上提到函数体级，与 LLM 腿同层级；γ——档位路由的输入值指纹并入换代令牌（档位 flag、`LLM_ROLE_TIER_MAP` 原样字符串、三档模型名；并的是配置值指纹、不复刻分档判定），闭合「该配置下换模型不换代」。逐批审查结论、用例名与收集面读数以台账 §8.2 相应行为准，本文件不复述。零新增配置键、零新增开关、零新增指标与 label、零词表变化。

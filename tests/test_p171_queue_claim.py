@@ -418,6 +418,11 @@ class TestMetricVocabulary:
         assert len(warnings) == 1, "越界只留一条 warning，不抛异常也不静默（纪律 2）"
         assert "bogus" in warnings[0].getMessage()
 
+        # G21（U-A）：不可散列实参（原形态在 ``not in`` 就抛 TypeError 上抛主链路）经守卫后
+        # 只留痕跳过、不外抛。这一句必须排在上面 `warnings` 断言**之后**——它自己会经守卫
+        # 再发一条降级 warning，计入那条断言就不是「恰一条」。
+        metrics.record_task_queue_claimed(["not-a-str"])  # type: ignore[arg-type]
+
 
 # ---------------------------------------------------------------------------
 # ② 起停接线：flag 关零开销 / flag 开真起任务、关停真收口

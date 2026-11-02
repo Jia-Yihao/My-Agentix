@@ -690,6 +690,21 @@ def _bounded_label(value: str, allowed: frozenset[str]) -> str:
     return value if value in allowed else "other"
 
 
+#: G21（「指标埋点 fail-open 包裹面」统一批 U-A）：纪律 2 的守卫只此一处（纪律 6 ④）——
+#: 埋点动作整体进 try，失败即「跳过这一次计数 + warning 留痕」，绝不上抛主链路。
+#: 走本函数的新增埋点自动带上，不必各自再包一层。正常路径零日志：降级只在异常分支发声。
+def _emit_or_skip(action: Callable[[], None], metric_name: str) -> None:
+    try:
+        action()
+    except Exception as exc:  # noqa: BLE001 - 埋点失败降级为跳过，不影响主链路（纪律 2）
+        logger.warning(
+            "指标埋点失败已跳过: metric=%s err_type=%s err=%s",
+            metric_name,
+            type(exc).__name__,
+            exc,
+        )
+
+
 def record_retry_attempt(layer: str) -> None:
     """LG-3-3：某一层实际发起的**重试**次数（首次尝试不计）。"""
     RETRY_ATTEMPTS.labels(layer=_bounded_label(layer, RETRY_LAYER_VALUES)).inc()
@@ -727,9 +742,14 @@ def record_task_queue_claimed(result: str) -> None:
     # G3（台账 :1375）：词表在此第一次成为生产侧判据。越界只留痕不改口——理由见
     # 本模块 ``TASK_QUEUE_CLAIM_RESULT_VALUES`` 之上的注释（指标层改口会把"调用点
     # 传错了"这件事一起吞掉）；留痕本身不抛异常（纪律 2，指标不影响主链路）。
-    if result not in TASK_QUEUE_CLAIM_RESULT_VALUES:
-        logger.warning("task_queue_claimed_total 收到词表外 result：%r（按原值记录）", result)
-    TASK_QUEUE_CLAIMED.labels(result=result).inc()
+    # G21（U-A）：词表判定与计数一起进守卫——不可散列实参会先在 ``not in`` 抛，
+    # prometheus 侧非法 label 值同由守卫兜住；生产调用点一字不动。
+    def _action() -> None:
+        if result not in TASK_QUEUE_CLAIM_RESULT_VALUES:
+            logger.warning("task_queue_claimed_total 收到词表外 result：%r（按原值记录）", result)
+        TASK_QUEUE_CLAIMED.labels(result=result).inc()
+
+    _emit_or_skip(_action, "task_queue_claimed_total")
 
 
 #: 纪律 3 要的是**基数有界**，不是"再抄一份 reason 名单"——reason 的真源是
@@ -744,10 +764,16 @@ _BOUNDED_TOKEN_RE = re.compile(r"[A-Za-z0-9_]{1,32}\Z")
 
 def record_llm_calls_saved(reason: str) -> None:
     """Phase H·W1：确定性 fast-path 跳过的 LLM 意图分类调用数（reason 有界枚举）。"""
-    fallback = reason or "unknown"
-    LLM_CALLS_SAVED.labels(
-        reason=fallback if _BOUNDED_TOKEN_RE.match(fallback) else "other"
-    ).inc()
+    # G21（U-A）：形状限界对非 str 实参会在 ``re.match`` 抛 TypeError——那属纪律 2 的
+    # 降级面；守卫后「跳过这一次计数 + warning 留痕」。词表内逐字透传与越界落 "other"
+    # 的既有语义一字不变（见 tests/test_p172_contract_regressions.py 的既有断言）。
+    def _action() -> None:
+        fallback = reason or "unknown"
+        LLM_CALLS_SAVED.labels(
+            reason=fallback if _BOUNDED_TOKEN_RE.match(fallback) else "other"
+        ).inc()
+
+    _emit_or_skip(_action, "llm_calls_saved_total")
 
 
 #: T8：路由缓存结果的封闭枚举。调用点只有
