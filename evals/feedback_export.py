@@ -5,7 +5,7 @@ r"""P2-1 反馈导出：EventPort ``message_feedback``（rating=down）→ 回�
 
     前端点踩 → POST /api/v1/feedback → EventPort(message_feedback)
     → 本脚本（导出 + 字段映射）→ evals/feedback_ingest.py（候选 golden 行）
-    → 人工评审 → legal_golden.jsonl（**人工手动并入**，绝不自动改写）
+    → 人工评审 → 金标题集（**人工手动并入**，绝不自动改写；原 legal_golden.jsonl 已于 2026-10-26 随评测集下线删除）
 
 字段映射（**语义诚实**，不硬造）：
 

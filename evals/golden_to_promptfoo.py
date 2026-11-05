@@ -18,7 +18,10 @@ route_type / expect_reject / expected_sources / must_contain → 断言参数。
 
 用法（PowerShell）::
 
-    .\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --out evals/promptfoo_tests.jsonl --limit 25
+    .\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --golden <题集> --out evals/promptfoo_tests.jsonl --limit 25
+
+``legal_golden.jsonl`` 已于 2026-10-26 随评测集下线删除：不给 ``--golden`` 且默认
+文件不存在时，本脚本 exit 2 并列出当前可用题集与改道示例（不静默转出空用例表）。
 """
 
 from __future__ import annotations
@@ -32,6 +35,14 @@ from typing import Any, Dict, List, Optional, Sequence
 EVALS_DIR: Path = Path(__file__).resolve().parent
 DEFAULT_GOLDEN: Path = EVALS_DIR / "legal_golden.jsonl"
 DEFAULT_OUT: Path = EVALS_DIR / "promptfoo_tests.jsonl"
+
+# T3：默认题集缺失 ⇒ 响亮退出（判据与其余评测入口同源，不各写一份清单）。
+try:
+    from golden_source import ensure_default_golden
+except ModuleNotFoundError as _gs_exc:  # pragma: no cover - 包名路径（pytest / -m 调用）
+    if _gs_exc.name != "golden_source":
+        raise
+    from evals.golden_source import ensure_default_golden
 
 
 def golden_row_to_test(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -101,7 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="golden_to_promptfoo.py",
         description="legal_golden.jsonl → promptfoo tests JSONL（机械映射，期望零加工）。",
     )
-    parser.add_argument("--golden", default=str(DEFAULT_GOLDEN))
+    parser.add_argument(
+        "--golden",
+        default=None,
+        help=f"输入题集（默认 {DEFAULT_GOLDEN.name}；该集已下线时必须显式指定）",
+    )
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--limit", type=int, default=25,
                         help="试点条数（默认 25；0 = 全量 102 条）")
@@ -110,8 +125,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    # 缺省题集不存在 ⇒ 非零退出 + 可用题集清单 + 改道示例；显式传值行为逐位不变。
+    golden, rc = ensure_default_golden(
+        args.golden,
+        entry="evals/golden_to_promptfoo.py",
+        default=DEFAULT_GOLDEN,
+        example_flags="--out evals/promptfoo_tests.jsonl",
+    )
+    if rc:
+        return rc
     limit = args.limit if args.limit and args.limit > 0 else None
-    return run(Path(args.golden), Path(args.out), limit=limit)
+    return run(Path(str(golden)), Path(args.out), limit=limit)
 
 
 if __name__ == "__main__":

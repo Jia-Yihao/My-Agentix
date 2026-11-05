@@ -23,6 +23,10 @@ kind=cpu     RunEventEmitter 单流 1000 帧 + 终帧戳记的纯 CPU 地板
 
 口径纪律：每类每轮取 ``perf_counter`` 墙钟毫秒；报告 p50/p95/max/mean。
 基线录制与门禁必须使用**相同 iterations**（门禁文件头会记录并校验）。
+分位数一律走 ``evals/perf_stats.nearest_rank_quantile``（全仓唯一实现）；
+缺省 iterations 自 2026-10-27（T2）从 3 抬到 5——重复 <5 的样本没有可发布的尾部。
+本文件的秩下标同日由 ``sorted[round(p/100*n)-1]`` 换成 ``sorted[round(q*(n-1))]``
+⇒ 此前的 ``baseline.json`` 读数与新口径不同尺，判门禁前应重录（本轮按裁决不跑评测）。
 """
 
 from __future__ import annotations
@@ -49,6 +53,9 @@ DEFAULT_BASELINE = PERF_DIR / "baseline.json"
 _REPO_ROOT = str(PERF_DIR.parent.parent)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
+
+# 分位数只有一把尺子：实现住在 evals/perf_stats.py（2026-10-27 口径统一）。
+from evals.perf_stats import nearest_rank_quantile  # noqa: E402  （依赖上面的根注入）
 
 # 与 tests/conftest.py 同款兜底：直跑/CI 无 conftest 时 DATABASE_URL 落
 # 进程内 SQLite（HTTP 族 lifespan 的 create_all 不触真库）。setdefault：
@@ -80,11 +87,16 @@ def load_queries(path: Path = QUERIES_PATH) -> List[Dict[str, Any]]:
 
 
 def _percentile(samples: Sequence[float], p: float) -> float:
-    """最近秩百分位（无插值，确定性；样本已排序）。"""
-    if not samples:
-        return 0.0
-    rank = max(1, min(len(samples), int(round(p / 100.0 * len(samples)))))
-    return float(samples[rank - 1])
+    """最近秩百分位——**委托**全仓唯一实现 ``evals/perf_stats.nearest_rank_quantile``。
+
+    本函数保留自己的两点局部立场：入参是 0–100 的百分数（对外报表口径），
+    空样本返回 0.0（沿用本 runner 既有读数形态）。真正的定标算式不再自己写一份：
+    2026-10-27 之前本文件用的是 ``sorted[round(p/100*n)-1]``，与 README §15.2 的
+    ``sorted[round(q*(n-1))]`` 是**两种秩**，小样本下 p50 会差一个位次 ⇒ 历史读数
+    与新读数不可直接比，需要重录基线（``perf_gate.py --record``）。
+    """
+    value = nearest_rank_quantile(samples, p / 100.0)
+    return 0.0 if value is None else value
 
 
 def summarize(samples: List[float]) -> Dict[str, float]:
@@ -182,7 +194,7 @@ def _run_cpu(queries: List[Dict[str, Any]], iterations: int) -> Dict[str, List[f
 
 
 def run_benchmark(
-    iterations: int = 3,
+    iterations: int = 5,
     *,
     queries_path: Path = QUERIES_PATH,
     http: bool = True,
@@ -228,7 +240,11 @@ def run_benchmark(
             "platform": platform.platform(),
             "kinds": sorted(per_kind),
             "duration_total_s": round(total_s, 3),
-            "protocol": "perf_counter ms/query; p50/p90/p95/p99 nearest-rank; qps=1000/mean（顺序）",
+            "protocol": (
+                "perf_counter ms/query; p50/p90/p95/p99 nearest-rank"
+                "（evals/perf_stats：sorted[round(q*(n-1))]，2026-10-27 起全仓一把尺子）; "
+                "qps=1000/mean（顺序）"
+            ),
         },
         "queries": [
             {"class": q["class"], "kind": q.get("kind"), **summarize(raw[q["class"]])}
@@ -250,7 +266,12 @@ def write_results(results: Dict[str, Any], out_path: Path = DEFAULT_OUT) -> Path
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Phase H W0 性能基准 runner（离线）")
-    parser.add_argument("--iterations", type=int, default=3, help="每类每轮次数（默认 3）")
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=5,
+        help="每类每轮次数（默认 5——重复 <5 的分位数没有可发布的尾部，T2 口径）",
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="结果 JSON 输出路径")
     parser.add_argument("--queries", type=Path, default=QUERIES_PATH, help="查询集路径")
     parser.add_argument("--skip-http", action="store_true", help="跳过 HTTP 族")

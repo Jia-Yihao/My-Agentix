@@ -5,7 +5,7 @@
 
 设计约束（严格遵守 ``evals/README.md`` §7 回流规范）：
 
-1. **绝不自动改写 ``legal_golden.jsonl``**——本脚本只输出**候选文件**，
+1. **绝不自动改写在用金标题集**（原 ``legal_golden.jsonl``，2026-10-26 已随评测集下线删除）——本脚本只输出**候选文件**，
    必须人工评审后手动并入（防「改题过关」）。
 2. **id 不改**：已存在的 golden id 不会被复用；新候选使用 ``C<序号>`` 前缀
    并在字段中标注 ``needs_review: true``。
@@ -20,6 +20,11 @@
 
     # 指定输出目录
     python evals/feedback_ingest.py --input prod_samples.jsonl --out-dir evals/candidates
+
+    # 缺省题集 legal_golden.jsonl 已随评测集下线删除 ⇒ 必须显式指一份现有评估集，
+    # 否则本脚本非零退出并列出当前可用题集（不静默按"现有集为空"从 C001 重新编号，
+    # 那会撞上第 2 条纪律的"id 不改"）
+    python evals/feedback_ingest.py --input prod_samples.jsonl --golden evals/ceval_golden.jsonl
 """
 
 from __future__ import annotations
@@ -34,6 +39,17 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 EVALS_DIR: Path = Path(__file__).resolve().parent
 DEFAULT_GOLDEN: Path = EVALS_DIR / "legal_golden.jsonl"
 DEFAULT_CANDIDATES_DIR: Path = EVALS_DIR / "candidates"
+
+# T3：默认题集缺失 ⇒ 响亮退出（与其它五个入口同一个判据、同一份文案源）。
+# 本脚本只用 golden 算候选 id 的起始序号，读不到文件今天是**静默当空集**继续跑——
+# 于是缺省串指向已删除的文件时，它会从 C001 重新编号，与既有 golden / 既有候选
+# 撞号（"id 不得复用"这条纪律就这么被静默打破了）。响亮退出是必须的。
+try:
+    from golden_source import ensure_default_golden
+except ModuleNotFoundError as _gs_exc:  # pragma: no cover - 包名路径（pytest / -m 调用）
+    if _gs_exc.name != "golden_source":
+        raise
+    from evals.golden_source import ensure_default_golden
 
 #: 视为「失败」的状态（确定性）
 FAILURE_STATUSES: frozenset = frozenset({"error", "degraded", "missing_prediction"})
@@ -112,7 +128,7 @@ def build_candidate(
         "_review_hint": (
             "请人工确认：① route_type 是否正确；② expected_sources 应填哪些法条；"
             "③ 是否属于越界问题（expect_reject=true）。"
-            "确认后去掉下划线前缀字段并手动并入 legal_golden.jsonl（id 不得复用）。"
+            "确认后去掉下划线前缀字段并手动并入在用金标题集（原 legal_golden.jsonl 已随评测集下线删除；id 不得复用）。"
         ),
     }
 
@@ -185,7 +201,7 @@ def run(
     print(f"[回流] 候选文件：{out_path}")
     print(
         "[回流] ⚠️ 候选文件**不会**自动并入评估集。请人工评审（校准 route_type / "
-        "expected_sources / expect_reject）后手动追加到 legal_golden.jsonl。\n"
+        "expected_sources / expect_reject）后手动追加到在用金标题集（原 legal_golden.jsonl 已下线删除）。\n"
         "        依据 evals/README.md §7：golden 变更必须人工评审，id 不得复用。"
     )
     return 0
@@ -196,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="feedback_ingest.py",
         description=(
             "生产失败样本回流：生成候选 golden 行（人工确认后才可并入）。\n"
-            "本脚本**绝不**修改 legal_golden.jsonl。"
+            "本脚本**绝不**修改金标题集（原 legal_golden.jsonl 已于 2026-10-26 随评测集下线删除）。"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -212,18 +228,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--golden",
-        default=str(DEFAULT_GOLDEN),
-        help=f"现有评估集路径（用于计算候选 id 起始序号，默认：{DEFAULT_GOLDEN}）",
+        default=None,
+        help=(
+            "现有评估集路径（用于计算候选 id 起始序号，"
+            f"默认：{DEFAULT_GOLDEN}；该集已下线时必须显式指定）"
+        ),
     )
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    # 缺省题集不存在 ⇒ 非零退出 + 可用题集清单 + 改道示例；显式传值行为逐位不变。
+    golden, rc = ensure_default_golden(
+        args.golden,
+        entry="evals/feedback_ingest.py",
+        default=DEFAULT_GOLDEN,
+        example_flags="--input <生产记录.jsonl>",
+    )
+    if rc:
+        return rc
     return run(
         Path(args.input),
         out_dir=Path(args.out_dir),
-        golden_path=Path(args.golden),
+        golden_path=Path(str(golden)),
     )
 
 
