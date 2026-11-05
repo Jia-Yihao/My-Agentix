@@ -80,7 +80,7 @@ dependencies = [
     # ---- 机器学习 ----
     # LG-0-2：neo4j-graphrag 1.22.0（langchain-neo4j 0.11.0 硬依赖）要 numpy>=2.0,<3
     "numpy>=2.0.0,<3.0.0",
-    "scikit-learn==1.5.0",
+    "scikit-learn==1.7.2",
     # 完整性补齐：cypher_tools/visualize generate_chart 直连 import
     "pandas==2.3.3",
     # ---- Agent 框架 ----

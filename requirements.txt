@@ -25,7 +25,7 @@ langchain-core==1.7.0  # LG-0-2：0.3.x→1.7.0（项目 11 个 langchain_core �
 
 # Machine Learning
 numpy>=2.0.0,<3.0.0  # LG-0-2：neo4j-graphrag 1.22.0（langchain-neo4j 0.11.0 的硬依赖）要求 numpy>=2.0,<3——大版本跳跃是被逼的，不是可选
-scikit-learn==1.5.0  # S1 安全批：1.4.2→1.5.0 修复 2 项 CVE（与 numpy<2、scipy 1.11 兼容）
+scikit-learn==1.7.2  # S1 安全批：1.4.2→1.5.0 修复 2 项 CVE（与 numpy<2、scipy 1.11 兼容）
 pandas==2.3.3  # 完整性补齐：cypher_tools/visualize generate_chart 直连 import，原仅靠 lightrag/pymilvus 传递
 
 # Agent Framework
