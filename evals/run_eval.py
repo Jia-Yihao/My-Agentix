@@ -27,9 +27,13 @@
 用法::
 
     python evals/run_eval.py --help
-    python evals/run_eval.py --offline
-    python evals/run_eval.py --record      # 在具备完整服务的机器上录制基线
-    python evals/run_eval.py --compare a.jsonl b.jsonl   # 配对显著性
+    python evals/run_eval.py --golden <题集> --offline --predictions <预测文件>
+    python evals/run_eval.py --golden <题集> --record   # 在具备完整服务的机器上录制基线
+    python evals/run_eval.py --golden <题集> --compare a.jsonl b.jsonl   # 配对显著性
+
+缺省题集 ``evals/legal_golden.jsonl`` 已于 2026-10-26 随评测集下线删除：不给
+``--golden`` 且默认文件不存在时，本脚本非零退出并在 stderr 列出当前可用题集与改道
+示例（T3——不静默把"题集不存在"跑成"0 条样本 0 分"，也不新建/改指题集）。
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ import json
 import random
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -59,14 +64,30 @@ except ModuleNotFoundError as _cc_exc:  # pragma: no cover
     from evals.claim_check import build_report as _claim_build_report
     from evals.claim_check import check_row as _claim_check_row
 
+# T3：默认题集缺失就响亮退出。判据与提示文案都住在 evals/golden_source.py——
+# 六个评测入口共用一份，不许各自写一份"可用题集"清单（同一个判定不许两个源）。
+try:
+    from golden_source import ensure_default_golden
+except ModuleNotFoundError as _gs_exc:  # pragma: no cover - 见上面的双路径说明
+    if _gs_exc.name != "golden_source":
+        raise
+    from evals.golden_source import ensure_default_golden
+
 # ---------------------------------------------------------------------------
 # 路径常量
 # ---------------------------------------------------------------------------
 
 EVALS_DIR: Path = Path(__file__).resolve().parent
+REPO_ROOT: Path = EVALS_DIR.parent
 DEFAULT_GOLDEN: Path = EVALS_DIR / "legal_golden.jsonl"
 DEFAULT_PREDICTIONS: Path = EVALS_DIR / "baseline_predictions.jsonl"
 DEFAULT_RESULTS_DIR: Path = EVALS_DIR / "results"
+
+# Windows 控制台默认 GBK，编码不了自检行里的 "⇒" ⇒ 打印即崩（实测在
+# ``run_live`` 的预检输出上炸 UnicodeEncodeError）。errors="replace" 保证
+# 遇到编不了的字符只降级不抛。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # ---------------------------------------------------------------------------
 # 路由 -> 出口节点映射
@@ -616,6 +637,60 @@ def _pick_multi_agent(response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if isinstance(kwargs, dict) and isinstance(kwargs.get("multi_agent"), dict):
             return kwargs["multi_agent"]
     return None
+
+
+def _pick_perf(response: Dict[str, Any], elapsed_ms: float) -> Dict[str, Any]:
+    """从响应里提取**单题性能**读数（墙钟 + LLM 步数 + token）。
+
+    评测"多 agent 系统的性能"需要这三样，而它们此前只活在控制台进度行里
+    （录制完就没了）。这里把它们落到预测行上，**只增不删**：既有消费方
+    （``evaluate()`` 的打分、CSV 列）不读这些键，逐位等价。
+
+    * ``latency_ms``：本行 ``service.ask`` 的墙钟耗时（调用方实测传入）。
+    * ``llm_steps`` / ``llm_latency_ms``：运行轨迹里 LLM 步的数量与耗时之和
+      ——多 agent 拓扑下它直接反映"为了多一道审阅/修订，多花了几次模型调用"。
+    * ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens``：轨迹步骤
+      ``output`` 里出现 token 计数时取和；**没有就缺席**，不造 0（0 与"没采到"要分得开）。
+
+    任何一步取不到都降级为缺键，**绝不让性能采集把一次正常录制变成失败**。
+    """
+    perf: Dict[str, Any] = {"latency_ms": round(float(elapsed_ms), 2)}
+    runtime = (response.get("metadata") or {}).get("runtime") or {}
+    steps = runtime.get("steps") if isinstance(runtime, dict) else None
+    if not isinstance(steps, list):
+        return perf
+
+    llm_steps = 0
+    llm_latency = 0.0
+    tokens: Dict[str, int] = {}
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        step_type = str(step.get("step_type") or step.get("kind") or "").lower()
+        if "llm" not in step_type:
+            continue
+        llm_steps += 1
+        try:
+            llm_latency += float(step.get("latency_ms") or 0.0)
+        except (TypeError, ValueError):
+            pass
+        output = step.get("output")
+        if not isinstance(output, dict):
+            continue
+        for src_key, dst_key in (
+            ("prompt_tokens", "prompt_tokens"),
+            ("completion_tokens", "completion_tokens"),
+            ("total_tokens", "total_tokens"),
+        ):
+            value = output.get(src_key)
+            if isinstance(value, (int, float)):
+                tokens[dst_key] = tokens.get(dst_key, 0) + int(value)
+
+    perf["llm_steps"] = llm_steps
+    perf["llm_latency_ms"] = round(llm_latency, 2)
+    if tokens:
+        perf.update(tokens)
+    return perf
 
 
 def _aggregate_multi_agent(prediction_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1752,6 +1827,36 @@ def run_offline(
     return 0
 
 
+def _apply_local_llm_compatibility() -> List[str]:
+    """把本地模型（LM Studio）的两处演示层适配应用到本次录制进程，返回改动清单。
+
+    复用而不是另写一套：适配本体在 ``scripts/demo/local_kb_demo.py``
+    （``_enable_local_llm_compatibility``）——结构化输出方式按能力探测选择、
+    router 角色超时抬到 60s，都是**本机实测**出来的形态差异（README §15.2 的
+    10.6–19.2s 路由残差就是那台机器的数字）。再抄一份就是第二套口径，
+    两边会各自漂移。
+
+    按文件路径加载（``scripts`` 不是包，也不该进 ``sys.path``）。
+    """
+    import importlib.util
+
+    demo_path = REPO_ROOT / "scripts" / "demo" / "local_kb_demo.py"
+    if not demo_path.exists():
+        raise FileNotFoundError(f"本地适配脚本不存在：{demo_path}")
+    spec = importlib.util.spec_from_file_location("local_kb_demo_for_eval", demo_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    # 必须先登记进 sys.modules 再执行：模块里的 `@dataclass`（SeedResult/AskResult）
+    # 在构造期要用 `sys.modules[cls.__module__]` 取命名空间解析类型，
+    # 没登记就直接 exec 会得到 `AttributeError: 'NoneType' object has no attribute '__dict__'`。
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    return list(module._enable_local_llm_compatibility())
+
+
 def run_live(
     golden_path: Path = DEFAULT_GOLDEN,
     predictions_path: Path = DEFAULT_PREDICTIONS,
@@ -1762,6 +1867,7 @@ def run_live(
     repeat: int = 1,
     k: Optional[int] = None,
     sensitivity: bool = False,
+    local_llm: bool = False,
 ) -> int:
     """在线跑分：调用真实 ``ChatService.ask`` 逐条提问 → 落盘 → 打分。
 
@@ -1777,6 +1883,15 @@ def run_live(
     每题 × 每变体 × repeat 录制；预测行带 ``sensitivity_variant``，汇总
     自动附 ``sensitivity_range_*`` 极差键（只增、不进门禁）。关闭时录制
     行的字段集合与旧版逐字节一致。
+
+    ``local_llm=True``（``--local-llm``）：**本地录制档**，三步按序发生——
+    ① ``evals/recording_env.apply_local_recording_env()`` 把录制所需的端点/凭据
+    装配进 ``os.environ``（进程环境 > ``.env.local`` > 录制档默认，``.env`` 的
+    compose 内网名一律换成本机端口映射）；② ``preflight_local_recording()`` 实测
+    每条依赖，不齐就退出（不等两小时后发现基线是兜底答案）；③ 套用本地模型的
+    两处演示层适配（结构化输出方式按能力探测 + router 超时余量），适配本体来自
+    ``scripts/demo/local_kb_demo.py``，不新造第二套口径。关闭时不 import、
+    不 patch、不打印（纪律 1）。
     """
     golden_path = Path(golden_path)
     predictions_path = Path(predictions_path)
@@ -1786,15 +1901,62 @@ def run_live(
         print(f"[在线模式] 未找到评估集文件：{golden_path}", file=sys.stderr)
         return 2
 
+    golden_rows = load_jsonl(golden_path)
+
+    # 本地录制档必须在 agentix 导入链之前落地：① 环境变量（settings 与
+    # database.engine 是导入期对象）；② 模型适配（router profile 也是导入期对象）。
+    # 关闭时一行都不执行——录制路径与不传本开关时逐字节等价（纪律 1）。
+    if local_llm:
+        # 双路径导入（与文件头 claim_check 同一口径）：`python evals/run_eval.py`
+        # 直跑时 sys.path[0]=evals/，pytest 以文件路径加载时走包名 `evals.`。
+        try:
+            from recording_env import (
+                apply_local_recording_env,
+                preflight_local_recording,
+            )
+        except ModuleNotFoundError as _re_exc:  # pragma: no cover
+            if _re_exc.name != "recording_env":
+                raise
+            from evals.recording_env import (
+                apply_local_recording_env,
+                preflight_local_recording,
+            )
+
+        for note in apply_local_recording_env():
+            print(f"[录制环境] {note}")
+        ok_lines, problems = preflight_local_recording(golden_rows=len(golden_rows))
+        for line in ok_lines:
+            print(f"[自检 OK] {line}")
+        if problems:
+            for line in problems:
+                print(f"[自检 FAIL] {line}", file=sys.stderr)
+            print(
+                "[自检 FAIL] 依赖没接齐就开录，代价是几小时后一份「全是兜底答案」的基线。"
+                "修完再录（口径见 evals/recording_env.py 模块说明）。",
+                file=sys.stderr,
+            )
+            return 2
+        for note in _apply_local_llm_compatibility():
+            print(f"[本地适配] {note}")
+
     # 惰性导入：离线模式下完全不触碰 agentix 依赖链
     from agentix.application.services.chat_service import get_chat_service
 
-    golden_rows = load_jsonl(golden_path)
     stamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     service = get_chat_service()
 
+    # **边录边落盘**：一次录制是上百条真实请求（本地模型单条分钟级），跑完才写盘
+    # 等于「第 80 条崩掉就颗粒无收」。逐行 flush 之后中断也留下一份可核对的部分
+    # 产物；文件内容与一次性写盘逐字节相同（行序、字段集合都没变）。
+    predictions_path.parent.mkdir(parents=True, exist_ok=True)
+    sink = predictions_path.open("w", encoding="utf-8")
+    total_rows = len(golden_rows) * repeat * (
+        len(SENSITIVITY_VARIANTS) if sensitivity else 1
+    )
+
     async def _ask_all() -> List[Dict[str, Any]]:
         recorded: List[Dict[str, Any]] = []
+        seq = 0
         for golden in golden_rows:
             gid = str(golden.get("id"))
             question = str(golden.get("question", ""))
@@ -1811,7 +1973,9 @@ def run_live(
             for variant_name, outgoing in plan:
                 variant_seg = f"{variant_name}-" if variant_name is not None else ""
                 for attempt in range(repeat):
+                    seq += 1
                     session_id = f"eval-{gid}-{stamp}-{variant_seg}{attempt}"
+                    t_row = time.perf_counter()
                     try:
                         response = await service.ask(
                             message=outgoing,
@@ -1826,6 +1990,8 @@ def run_live(
                             "status": response.get("status") or "ok",
                             # Phase 19：supervisor 指标（扁平拓扑恒 None）
                             "multi_agent": _pick_multi_agent(response),
+                            # 单题性能读数（墙钟 / LLM 步数 / token）
+                            "perf": _pick_perf(response, (time.perf_counter() - t_row) * 1000),
                         }
                     except Exception as exc:  # noqa: BLE001 —— 单条失败不阻断整体录制
                         row = {
@@ -1836,18 +2002,28 @@ def run_live(
                             "message": f"[live 调用失败] {exc}",
                             "status": "error",
                             "multi_agent": None,
+                            "perf": {"latency_ms": round((time.perf_counter() - t_row) * 1000, 2)},
                         }
                     if variant_name is not None:
                         row["sensitivity_variant"] = variant_name
                     recorded.append(row)
+                    sink.write(json.dumps(row, ensure_ascii=False) + "\n")
+                    sink.flush()
+                    # 进度行是给「挂着两小时的后台录制」看的：没有它，中途只能
+                    # 猜是还在跑还是卡在某个通道上。
+                    print(
+                        f"[{seq}/{total_rows}] {gid} route={row.get('route_type')} "
+                        f"status={row.get('status')} src={len(row.get('sources') or [])} "
+                        f"{(time.perf_counter() - t_row) * 1000:.0f}ms",
+                        flush=True,
+                    )
         return recorded
 
-    recorded_rows = asyncio.run(_ask_all())
+    try:
+        recorded_rows = asyncio.run(_ask_all())
+    finally:
+        sink.close()
 
-    predictions_path.parent.mkdir(parents=True, exist_ok=True)
-    with predictions_path.open("w", encoding="utf-8") as handle:
-        for row in recorded_rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     variant_part = f" × {len(SENSITIVITY_VARIANTS)} 指令变体" if sensitivity else ""
     print(
         f"[在线模式] 已录制 {len(recorded_rows)} 条预测"
@@ -1900,12 +2076,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="录制基线：等价于 --live，用于生成 baseline_predictions.jsonl",
     )
+    mode.add_argument(
+        "--local-llm",
+        action="store_true",
+        help=(
+            "本地录制档：① 装配录制用环境变量（模型一律 LM Studio、compose 内网名换成\n"
+            "本机端口映射、知识库指向 seed 过的 SQLite+FAISS、声明法律语料换域范围），\n"
+            "② 录制前自检（端点/图谱/SQL/Redis 够不够得到，kb_ingest 不可用如实报），\n"
+            "③ 套用本地模型适配（结构化输出方式按能力探测、router 超时抬到 60s）。\n"
+            "①②见 evals/recording_env.py，③本体复用 scripts/demo/local_kb_demo.py，\n"
+            "都不改 .env、不改生产默认。缺省关闭 = 录制路径与今天逐字节等价。"
+        ),
+    )
 
     paths = parser.add_argument_group("路径")
     paths.add_argument(
         "--golden",
-        default=str(DEFAULT_GOLDEN),
-        help=f"评估集路径（默认：{DEFAULT_GOLDEN}）",
+        # 缺省留空 = 用 DEFAULT_GOLDEN；该文件不存在时 main() 响亮退出（T3），
+        # 不再静默把"题集不存在"跑成"0 条样本"。
+        default=None,
+        help=f"评估集路径（默认：{DEFAULT_GOLDEN}；该集已下线时必须显式指定）",
     )
     paths.add_argument(
         "--predictions",
@@ -2009,11 +2199,38 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 2
 
+    if args.local_llm and not (args.live or args.record):
+        print(
+            "[本地适配] --local-llm 只作用于录制（--live/--record）："
+            "离线打分不发请求，没有可适配的东西。",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.compare and (args.live or args.record):
+        # 既有的参数互斥校验**排在题集解析之前**：它的文案被 tests/test_agent_phase26
+        # 钉着，且"你要的模式本来就矛盾"比"缺题集"更上游，不该被新检查插队。
+        print(
+            "[配对比较] --compare 只支持离线打分，不能与 --live/--record 同用。",
+            file=sys.stderr,
+        )
+        return 2
+
+    # T3：缺省题集不存在 ⇒ 非零退出并列出可用题集与改道示例。排在 --sensitivity /
+    # --local-llm / --compare 互斥这三条既有校验之后是刻意的：不为了统一把既有
+    # 报错次序挪掉。显式传了 --golden 的路径完全走原逻辑（包括"传了个不存在的文件"
+    # 时由下游诚实失败），行为逐位不变。
+    golden, rc = ensure_default_golden(
+        args.golden,
+        entry="evals/run_eval.py",
+        default=DEFAULT_GOLDEN,
+        example_flags="--offline --predictions <预测文件>",
+    )
+    if rc:
+        return rc
+    args.golden = str(golden)
+
     if args.compare:
-        if args.live or args.record:
-            print("[配对比较] --compare 只支持离线打分，不能与 --live/--record 同用。",
-                  file=sys.stderr)
-            return 2
         return run_compare(
             Path(args.compare[0]),
             Path(args.compare[1]),
@@ -2031,6 +2248,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 repeat=args.repeat,
                 k=args.k,
                 sensitivity=bool(args.sensitivity),
+                local_llm=bool(args.local_llm),
             )
         return run_offline(
             golden_path=Path(args.golden),

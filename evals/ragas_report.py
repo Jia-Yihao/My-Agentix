@@ -10,7 +10,9 @@ r"""Ragas 忠实度/相关性独立报告（P2-2，observe-only）。
 本报告只作为独立观察面，与自建确定性指标（路由/引用/拒答）正交。
 
 输入：
-- ``--golden``：评估集（默认 ``evals/legal_golden.jsonl``，取 question）；
+- ``--golden``：评估集（默认 ``evals/legal_golden.jsonl``，取 question；该集已于
+  2026-10-26 下线删除 ⇒ 不给 ``--golden`` 且默认文件不存在时 exit 2 并列出可用题集，
+  不静默跑空，也不新建题集）；
 - ``--predictions``：``run_eval.py --record/--offline`` 的预测 JSONL
   （取 message=answer、sources=contexts——sources 是引用溯源串，
   ragas 只需可文本比对的字符串列表，如实使用不二次加工）。
@@ -36,6 +38,14 @@ from typing import Any, Dict, List, Optional, Sequence
 EVALS_DIR: Path = Path(__file__).resolve().parent
 DEFAULT_GOLDEN: Path = EVALS_DIR / "legal_golden.jsonl"
 DEFAULT_PREDICTIONS: Path = EVALS_DIR / "baseline_predictions.jsonl"
+
+# T3：默认题集缺失 ⇒ 响亮退出。判据与其余入口同源，不各写一份可用集清单。
+try:
+    from golden_source import ensure_default_golden
+except ModuleNotFoundError as _gs_exc:  # pragma: no cover - 包名路径（pytest / -m 调用）
+    if _gs_exc.name != "golden_source":
+        raise
+    from evals.golden_source import ensure_default_golden
 
 #: 报告键族（固定；守卫测试 tests/test_p106_ragas_report.py 钉死，
 #: 并断言与本报告键族和 CI METRICS 五键的交集为空）
@@ -207,7 +217,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="ragas_report.py",
         description="Ragas faithfulness/answer_relevancy 独立报告（observe-only，缺环境 exit 2）。",
     )
-    parser.add_argument("--golden", default=str(DEFAULT_GOLDEN), help="评估集 JSONL")
+    parser.add_argument(
+        "--golden",
+        default=None,
+        help=f"评估集 JSONL（默认 {DEFAULT_GOLDEN.name}；该集已下线时必须显式指定）",
+    )
     parser.add_argument("--predictions", default=str(DEFAULT_PREDICTIONS), help="预测 JSONL（run_eval 产物）")
     parser.add_argument("--json-out", default=None, help="报告落盘路径（可选）")
     parser.add_argument("--limit", type=int, default=None, help="最多评估 N 个样本（试点/省钱）")
@@ -215,7 +229,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    return run(build_parser().parse_args(argv))
+    args = build_parser().parse_args(argv)
+    # 缺省题集不存在 ⇒ 非零退出 + 可用题集清单 + 改道示例（T3）；显式传值行为不变。
+    golden, rc = ensure_default_golden(
+        args.golden,
+        entry="evals/ragas_report.py",
+        default=DEFAULT_GOLDEN,
+        example_flags="--predictions <预测文件>",
+    )
+    if rc:
+        return rc
+    args.golden = str(golden)
+    return run(args)
 
 
 if __name__ == "__main__":

@@ -8,13 +8,13 @@
   <h3>My Agentix</h3>
   <p>Production-oriented Agent Platform</p>
 
-  <p>三层 Multi-Agent Runtime · Agent Core 2.0 · 多路知识检索 · Control Plane · 评测回归 · 可观测</p>
+  <p>单层 Multi-Agent 编排 · Agent Core 2.0 · 多路知识检索 · Control Plane · 评测回归 · 可观测</p>
 </div>
 
 > **一个可控制、可取消、可回放的 Agent 运行时。**
 >
 > 不是又一个 RAG demo——每个 Agent 运行有预算、可取消（真正打断 asyncio Task）、
-> 失败可恢复、质量门禁四态可判（KG/RAG 评测集已下线，见 §8）。
+> 失败可恢复、质量门禁四态可判（评测集换代中、基线未录，见 §8）。
 > 3 条命令跑通一次带引用的 RAG 问答，见下方 [最小 Demo](#最小-demo3-条命令跑通一次带引用的-rag-问答)。
 
 <div align="center">
@@ -60,12 +60,12 @@
 > **不依赖 Neo4j / Milvus / DeepSeek，也不需要 Docker**：模型全部走本机 LM Studio
 > （`qwen/qwen3-8b` 生成 + `text-embedding-bge-m3` 嵌入），存储是 SQLite，向量索引是
 > FAISS（`VECTOR_STORE_BACKEND` 的出厂默认值），BM25 是进程内纯 Python——
-> L1 路由 → L2 kb 检索 → 带引用回答整条链路在同一个 Python 进程里跑完。
+> 路由 → kb 检索 → 带引用回答整条链路在同一个 Python 进程里跑完。
 
 ```bash
 python scripts/demo/local_kb_demo.py seed                        # ① 4,865 条语料 → SQLite + FAISS（冷缓存约 90s；重跑命中本地嵌入缓存约 4s）
 python scripts/demo/local_kb_demo.py ask "合同欺诈的认定依据是哪一条"    # ② 路由 → 检索 → 带引用回答
-python scripts/demo/local_kb_demo.py eval --golden <评测集>.jsonl --limit 23 --recall-k 5   # ③ 需要评测集（已下线）→ Recall@5 / MRR / 延迟 / token
+python scripts/demo/local_kb_demo.py eval --golden <kb-query 金标集>.jsonl --limit 23 --recall-k 5   # ③ 可选：需带 expected_sources 的 kb-query 金标；仓内只有 C-Eval MCQ 集，此命令暂无可跑题集（见 §8）
 ```
 
 前置只有一句：`lms server start`（或界面里开 HTTP 服务，端口 1234）；三条命令都不需要
@@ -101,7 +101,7 @@ python scripts/demo/local_kb_demo.py eval --golden <评测集>.jsonl --limit 23 
 「判定依据」那一行现在写的是**模型自己给的理由**；如果它写成 `kb-query` 而路由行没有
 confidence，说明路由结构化输出走了兜底（见 §16 的 `router_fallback_total`）。
 
-问一句寒暄（`ask "你好，你是谁"`）会看到 L1 判成 `general-query` 并以退出码 3 停下——
+问一句寒暄（`ask "你好，你是谁"`）会看到路由节点判成 `general-query` 并以退出码 3 停下——
 这个切片只跑 `kb-query` 一条链路，其余分支属于下面的可选能力。加 `--hybrid` 会显式打开
 BM25+Dense 融合（代码默认关，见 AGENTS.md 纪律 1），同一条问题的 top-5 里多出
 《民法典》第148/149条 两条欺诈本条（实测日志
@@ -137,12 +137,12 @@ My Agentix 是一套**生产导向的 Agent 平台**——以 Agent 内核为核
 | **MCP** | Client + Server，可挂载任意 MCP 工具进程 |
 | **知识系统** | 图谱 / 向量 / SQL / 社区摘要多路检索与兜底 |
 | **Adaptive Execution** | 档位路由 / fast-path / 准入排队 / 重试预算 / 负载甩载 / 隔离舱 / 单飞合流（全部 flag 灰度、默认基线等价） |
-| **评测与门禁** | 质量门禁四态（评测集下线后未武装，见 §8）、轨迹前缀回归、延迟基准与每日性能冒烟（`perf-baseline.yml`，不阻塞 PR，见 §11） |
+| **评测与门禁** | 质量门禁四态（评测集换代中、基线未录，暂未武装，见 §8）、轨迹前缀回归、延迟基准与每日性能冒烟（`perf-baseline.yml`，不阻塞 PR，见 §11） |
 | **可观测** | 步骤级轨迹、Explanation API、SLO 与告警、Prometheus 指标、OTel GenAI 语义 span |
 
 **平台定位**：它不是「某个垂直领域的问答机器人」，而是一套**领域无关的 Agent 平台内核**——领域知识（图谱 Schema、提示词、评测集、数据）通过适配层接入，同一套内核可迁移到咨询 / 客服 / 政务等垂直领域，平台本身与具体业务域解耦。
 
-**运行形态**：对外暴露 FastAPI 服务（SSE 流式对话 + 检索/任务级 Run API），LLM 编排由 LangGraph 三层 Multi-Agent 承载，Agent Core 2.0 提供可独立复用的内核（Harness + Capabilities），并以 `agentix/runtime` 收敛运行时真源。
+**运行形态**：对外暴露 FastAPI 服务（SSE 流式对话 + 检索/任务级 Run API），LLM 编排由 LangGraph **单层主图**承载（10 个节点平铺 + 条件边路由），Agent Core 2.0 提供可独立复用的内核（Harness + Capabilities），并以 `agentix/runtime` 收敛运行时真源。
 
 ---
 
@@ -165,7 +165,7 @@ My Agentix 是一套**生产导向的 Agent 平台**——以 Agent 内核为核
 
 <div align="center">
   <img src="./docs/assets/project-architecture.png" alt="My Agentix 项目整体架构图" width="100%">
-  <p><i>两套问答域（测试数据编排 / 检索）+ 知识入库流；默认主链路为 Vue3 → Nginx → FastAPI → ChatService → LangGraph L2 → Tool / Retrieval → 数据层，橙色虚线为默认关闭/可选能力。</i></p>
+  <p><i>两套问答域（测试数据编排 / 检索）+ 知识入库流；默认主链路为 Vue3 → Nginx → FastAPI → ChatService → LangGraph 主图 → Tool / Retrieval → 数据层，橙色虚线为默认关闭/可选能力。</i></p>
 </div>
 
 > **文档层级（三层，按「你此刻要回答什么问题」选）**
@@ -187,7 +187,7 @@ flowchart LR
     subgraph Domain1["测试数据编排域 /api/v1"]
         L1["Web 对话 / 外部 API"] --> L2["Nginx"] --> L3["FastAPI + 中间件"]
         L3 --> L4["ChatService"]
-        L4 --> L5["LangGraph L2 主图"]
+        L4 --> L5["LangGraph 主图"]
         L5 --> L6["KB 子图 / KG 子图 / 直接出口"]
         L6 --> L7["工具与数据层"]
         L7 --> L8["答案 + SSE"]
@@ -211,19 +211,30 @@ flowchart LR
 
 | 维度 | 测试数据编排域 | 检索域 | 入库流 |
 |---|---|---|---|
-| 是否用 LangGraph | 是（L2 扁平图；可选 L3 AgentLoop） | 否（自建 ReAct 循环） | 否 |
+| 是否用 LangGraph | 是（单层主图；可选 AgentLoop 执行循环） | 否（自建 ReAct 循环） | 否 |
 | 会话标识 | `session_id` → `thread_id` | 会话 + 用户 + 知识库作用域 | 任务/文档 ID |
 | 流式协议 | `metadata` / `message` / `tool_start` / `tool_end` / `done` / `error` | `meta` / `progress` / `tool_running` / `answer_chunk` / `error` | 任务状态轮询/回调 |
 | 主要鉴权 | API Key（默认关闭） | JWT 强制 + RBAC | 服务配置 |
 | 典型存储 | PostgreSQL / Redis / Neo4j / Milvus | PostgreSQL / Milvus / MinIO | MySQL / Milvus / MinIO / PostgreSQL |
 
-### 三层 Multi-Agent 请求链路
+### 单层主图与请求链路
 
-| 层级 | 职责 | 核心技术 |
+编排只有**一张主图**：`lg_builder.build_graph` 用 `StateGraph` 平铺 10 个节点，路由用条件边
+（`route_query`）完成，没有「层 → 层」的嵌套调用。重业务的两个分支（`graphrag` / `kb`）各自在
+**节点内部**再嵌一个多角色子图——子图是节点的实现细节，不是架构层级。
+
+| 组成 | 职责 | 落地 |
 |-----|------|---------|
-| **L1 主路由层** | 意图识别与任务分发 | 启发式 + LLM 双保险路由 |
-| **L2 多工具子图层** | 任务分解与工具编排 | LangGraph Subgraph + Map-Reduce |
-| **L3 原子工具层** | 具体工具执行 | Neo4j / Milvus / PostgreSQL / MySQL / LightRAG / 外部搜索 / MCP Server |
+| 唯一主图 | 节点平铺 + 条件边路由，`START` → `message_window` → `analyze_and_route_query` | `agentix/orchestration/langgraph/lg_builder.py` |
+| 路由节点 | 意图识别（启发式 + LLM 双保险），产出条件边的分支键 | `analyze_and_route_query` + `route_query` |
+| 业务节点 | 一次问答 / 检索 / 规划：`general` / `additional` / `research_plan` / `image` / `file` / `kb` | `agentix/application/agents/` |
+| 执行节点 | 任务执行与代码执行，由 `TASK_EXEC_ENABLED` / `CODE_EXEC_ENABLED` 在路由侧门控 | `execute_task` / `code_agent` |
+| 节点内子图（仅两处） | `graphrag` 走 `create_multi_tool_workflow`；`kb` 走 `create_kb_multi_tool_workflow` | `.../workflows/multi_agent/multi_tool.py` |
+| 工具出口 | 所有原子工具经 Tool Gateway 统一出入（权限 / 风险 / 超时 / 重试 / HITL / 审计） | `agentix/tools/gateway/` |
+
+「单层路由」是**可选开关**而非当前默认：`ROUTING_SINGLE_LAYER_ENABLED` 默认 `false`，开启后
+路由节点一次调用同时产出意图与执行参数，`kb` 子图内的 A3 节点不再做第二次检索路由（kb-query 跳数
+4→3）。默认关时路由链、提示词与图可达性与基线逐位等价。
 
 ### 运行时内核与横切能力
 
@@ -237,14 +248,14 @@ flowchart LR
 | **执行沙箱（⑮ 起有墙）** | 按 `ToolSpec.sandbox` 声明选执行位置：`in_process` / `thread` 不隔离（同进程同 GIL）；`subprocess` = 一次调用一个进程 + 子进程侧 `RLIMIT_AS/CPU/FSIZE` + 进程数闸 `RLIMIT_NPROC`（**只在配了独立且非 0 的 uid 时落**）+ 环境白名单 + 可杀进程组 + **应答按 nonce 归属且 `ok` 严格布尔**（**POSIX 专属，默认关**）；`container` 未实现 ⇒ 声明即在执行点被拒 | `agentix/tools/sandbox.py` · `agentix/tools/subprocess_worker.py` · `agentix/domain/tool/exec_env.py` |
 | **运行时写代码执行（code exec）** | 模型在运行时写 Python 代码完成任务：经 `code_execute` 工具走 `subprocess` 沙箱档（一次调用一个进程 + `RLIMIT_AS/CPU/FSIZE` 三道闸 + 环境白名单 + 可杀进程组）；**沙箱隔离但 POSIX 专属，默认关**（`CODE_EXEC_ENABLED=false`，flag-off 与基线逐位等价）；**不隔离文件系统与网络** | `.qoder/rules/code-exec.md` |
 | **可观测** | trace_id 全链路 · 步骤轨迹 · Prometheus 指标 · SLO | `agentix/observability/` |
-| **评测与门禁** | 确定性打分 · 质量门禁 · 轨迹前缀回归（KG/RAG 评测集已下线，代码保留） | `evals/` |
+| **评测与门禁** | 确定性打分 · 质量门禁 · 轨迹前缀回归（评测集换代中、基线未录，代码保留） | `evals/` |
 
 ### 终态统一执行链（Stage A/B/M 收敛后）
 
 ```text
 API / SSE / Run API（仅协议转换）
 → 应用层唯一入口创建 Run（ControlPlane 准入 · 单 owner，取消真正打断 asyncio Task）
-→ 唯一执行循环（L2 LangGraph 主图 或 L3 AgentLoop，AGENT_LOOP_ENABLED 灰度）
+→ 唯一执行循环（LangGraph 主图 或 AgentLoop，AGENT_LOOP_ENABLED 灰度）
    Context → Plan → Execute → Observe → Verify（Replan 受 Runtime 预算约束）
 → Runtime（agentix/runtime/：状态 / 步骤 / 六维预算 / 生命周期 / 统一退出契约）
 → Tool Gateway（agentix/tools/gateway/：权限 / 风险 / 超时 / 重试 / HITL / 审计）
@@ -259,9 +270,9 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 
 1. 用户提问 → 中间件链（限流 → trace_id → 请求日志 → APIKey 鉴权 → CORS）→ ChatService
 2. LangGraph 主图 `lg_builder.build_graph` → `message_window` 历史窗口化（条数窗口 + `LG_TOKEN_HISTORY_BUDGET` token 级预算，默认 0=关；ChatService 侧可注入级联指令块 `LG_INSTRUCTIONS_ENABLED` 与状态尾注 `LG_STATUS_TAIL_ENABLED`，均默认关）
-3. **L1 主路由** `analyze_and_route_query`（启发式 + LLM 双保险）分发意图：`general / additional / graphrag / kb / image / file / text2sql`（`TASK_EXEC_ENABLED` 开启后另追加 `task-query` 任务型路由，`CODE_EXEC_ENABLED` 开启后另追加 `code-query` 代码型路由）
-4. **L2 子图**（`graphrag` / `kb`）内执行：`guardrails → planner → tool_selection → 并行工具 → summarize / finalize`
-5. **L3 原子工具**并行检索：Neo4j Cypher / Milvus 向量 / LightRAG 社区摘要 / Text2SQL / 外部搜索 / MCP 远端工具
+3. **路由节点** `analyze_and_route_query`（启发式 + LLM 双保险）判定意图，条件边据此选分支：`general / additional / graphrag / kb / image / file / text2sql`（`TASK_EXEC_ENABLED` 开启后另追加 `task-query` 任务型路由，`CODE_EXEC_ENABLED` 开启后另追加 `code-query` 代码型路由）
+4. 分支落到**主图上的一个业务节点**（节点之间平级，不是上下层）：`create_research_plan` / `create_kb_query` / `execute_task` / `code_agent` 等。只有 `graphrag` 与 `kb` 两个节点**内部**再跑子图：`guardrails → planner → tool_selection → 并行工具 → summarize / finalize`
+5. 原子工具经 Tool Gateway 并行检索：Neo4j Cypher / Milvus 向量 / LightRAG 社区摘要 / Text2SQL / 外部搜索 / MCP 远端工具
 6. 结果融合并附来源引用，经 Agent Core 主循环记账（AgentState / Steps / Budget），轨迹落盘可回放
 
 ### 默认开关与能力矩阵
@@ -283,7 +294,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 
 | 开关 | 默认 | 打开后的效果 |
 |---|---|---|
-| `AGENT_LOOP_ENABLED` | `False` | `ask` 走 AgentLoop L3 |
+| `AGENT_LOOP_ENABLED` | `False` | `ask` 走 AgentLoop 执行循环 |
 | `TASK_EXEC_ENABLED` | `False` | `execute_task` 可达 |
 | `AGENTIX_ABLATION_MULTI_AGENT` | `False` | 切换 Supervisor 多智能体拓扑 |
 | `HUMAN_REVIEW_ENABLED` | `False` | 工具执行接入人工审批 |
@@ -458,15 +469,16 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 
 > **这一章证明什么**：我知道怎么判断一个 Agent 是变好还是变坏，以及怎么防止“门禁被悄悄放宽”。
 
-> ⚠️ **KG/RAG 评测集已下线（2026-10-26）**：本项目不做知识图谱 / RAG 方向的评测，原 102 条
-> 法律金标集与录制基线（预测档 + 质量基线）已删除，CI 的 `eval-offline` 质量门禁机位同步下线。
-> **评测代码全部保留**——确定性打分口径、门禁四态、轨迹前缀回归、消融框架都还在原地，
-> 换一份评测集即可重新武装；历史数字与口径链见
+> ⚠️ **评测集正在换代，尚未完成**：旧的 KG/RAG 法律金标（102 条）与录制基线（预测档 + 质量基线）
+> 已于 2026-10-26 停用并删除，CI 的 `eval-offline` 门禁机位随之暂停。**这不是放弃评测**——
+> 评测代码全部保留（确定性打分口径、门禁四态、轨迹前缀回归、消融框架），新题集见下一段，
+> 只差基线录完即可重新武装。历史数字与口径链见
 > [ENGINEERING_LOG](docs/工程口径日志.md)，**不再重录，也不再作为门禁基准**。
 >
-> ✅ 另有一套**公开 MCQ 评测集**（C-Eval 转换，156 行，**非商用许可**）用于**人工跑一次
-> 多 agent 性能测量**——**没有 CI 门禁、A/B 全量未跑**（2026-10-26 只跑过 3 题冒烟，
-> 读数与跑前要修的口子见 [evals/README.md](evals/README.md) §10.5），跑法见
+> ✅ **新题集已就位，基线未录**：公开 MCQ（C-Eval 转换，156 行 = 52 学科 × 3 题，**非商用许可**），
+> 用于多 agent 性能测量。当前状态是「题有、全量未跑」——2026-10-26 只跑过 3 题冒烟，
+> A/B 全量未跑、CI 门禁未接（**不是没有评测集**）。读数与跑前要修的口子见
+> [evals/README.md](evals/README.md) §10.5，跑法见
 > [evals/README.md §10](evals/README.md#10-公开-mcq-评测集-c-eval)。
 
 ```bash
@@ -480,8 +492,8 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 #   -b 必须指向**已录制的轨迹包目录**：脚本把该目录下每个 *.json 都当轨迹包读，
 #   而 `evals/baselines/` 是门禁基线目录（它不是轨迹包，没有 `steps`），
 #   照 `-b evals/baselines` 直跑会以「[错误] …缺少 'steps' 字段」返回码 2 退出。
-#   这是 fail-loud 的预期行为。⚠️ 别把两件事读成一件：**打分基线**已于 2026-10-26 随
-#   评测集下线，**轨迹基线**从未录制——两者都不是现成的入口。
+#   这是 fail-loud 的预期行为。⚠️ 别把两件事读成一件：**打分基线**已于 2026-10-26 随旧集停用删除，
+#   新题集的基线尚未录制；**轨迹基线**从未录制——两者都不是现成的入口。
 ./.venv/Scripts/python.exe evals/trajectory_regression.py -b <已录制轨迹目录> -c out/traces
 
 # 消融实验（A 裸 LLM → G 全能力，七变体对比出 Benchmark 表）
@@ -492,26 +504,26 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 | 能力 | 状态 | 说明 |
 |------|------|------|
 | 确定性打分 | 保留 | 路由准确率 / 引用命中率 / 拒答正确率 / 引用正确性 / must_contain / pass^k（空真口径显式可见，`*_applicable` 才是真实分母） |
-| 质量门禁 | 保留，未武装 | `quality_gate.py`——四态 **PASS / FAIL / NOT-ARMED / NOT-ENFORCED**，缺基线或缺键默认 **NOT-ARMED 硬失败**（退出码 2，不改动基线），首跑建档要显式 `--allow-bootstrap`；评测集下线后**没有基线可比**，CI 不再跑这道门 |
+| 质量门禁 | 保留，未武装 | `quality_gate.py`——四态 **PASS / FAIL / NOT-ARMED / NOT-ENFORCED**，缺基线或缺键默认 **NOT-ARMED 硬失败**（退出码 2，不改动基线），首跑建档要显式 `--allow-bootstrap`；新题集基线未录，**暂时没有可比的基线**，CI 暂不跑这道门 |
 | 消融基准表 | 保留 | `evals/ablations/`——A-G 七变体（LLM only → Full Agentix）对比，聚合出 BENCHMARK.md |
 | 失败回流 | 保留 | `feedback_ingest.py`——生产失败样本 → 候选评测行（人工评审后合入） |
 | 评估二期（Phase 31） | 保留 | 声称一致性 `claim_check` · 提示敏感性 `--sensitivity` 四变体极差 · PII 离线 `privacy_flagged`（applicable 分母、原文零留存）· Best@k——全部为报告键，只增不进门禁 |
-| 评测集 | **已下线** | 2026-10-26 删除 102 条法律金标 + 录制基线；本机位的历史五指标（`route_accuracy=0.6275` 等）是**历史测量记录**，不是当前门禁基准 |
+| 评测集 | **换代中** | 旧 KG/RAG 法律金标（102 条）与录制基线已于 2026-10-26 删除；新题集为 C-Eval 公开 MCQ（156 题），**基线未录、全量未跑**。本机位的历史五指标（`route_accuracy=0.6275` 等）是**历史测量记录**，不是当前门禁基准 |
 
 > 门禁被悄悄放宽这件事怎么防：口径在 `evals/quality_gate.py` 一处定义，CI 里不写死
 > 默认值；「缺基线」是硬失败而不是静默放行；`evals/` 的守卫测试（`test_p21` harness
 > 契约、`test_p104` promptfoo 契约、`test_ci_gate_contract` 门禁语义）不依赖评测集，
-> 下线评测集不会把它们一起废掉。
+> 评测集换代不会把它们一起废掉。
 
 详见 [evals/README.md](evals/README.md) 与 [消融实验](evals/ablations/variants.json)。
 
 **如何复现评测（promptfoo 回归主入口，P1-5）**：自建体系保留轨迹回归 / Pass^k / 质量门禁；
 promptfoo 承担声明式回归用例与断言入口（打分函数直接 import `run_eval`，口径单源）。
-前置：`.venv` 依赖 + 可用 LLM 端点 + **一份评测集**（当前仓库未提供，转换器会明确报错）。
+前置：`.venv` 依赖 + 可用 LLM 端点 + **一份评测集**（新题集 `evals/ceval_golden.jsonl` 已就位，为 C-Eval MCQ；旧 KG/RAG 金标已停用删除，转换器对不存在的 `--golden` 会明确报错）。
 
 ```powershell
-# 1. 从评测集机械转换试点用例（需要 --golden 指向一份存在的评测集）
-.\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --golden <评测集>.jsonl --limit 25
+# 1. 从评测集机械转换试点用例（--golden 指向一份存在的题集）
+.\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --golden evals/ceval_golden.jsonl --limit 25
 # 2. 本地在线评测（结果落本地 promptfoooutput/，纯 CLI 不上云）
 npx promptfoo@latest eval --ci --no-cache
 # 3.（可选红队）promptfoo redteam 生成注入/越狱 probes，作 LLM01 活体证据
@@ -814,7 +826,7 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | 检索增强 | LightRAG（社区摘要）· Reranker（Cohere / Jina / Voyage / BGE）· 多路检索兜底 |
 | 工具扩展 | MCP Client + Server（stdio JSON-RPC）· ToolRegistry 声明式注册 |
 | 可观测 | Prometheus · Grafana · Alertmanager · 步骤级轨迹回放 · SLO |
-| 质量与评测 | pytest · ruff（门禁含 `tests`）· mypy · 确定性打分契约 · 声称一致性 · 质量门禁语义 · 轨迹前缀回归（KG/RAG 评测集已下线，代码保留） |
+| 质量与评测 | pytest · ruff（门禁含 `tests`）· mypy · 确定性打分契约 · 声称一致性 · 质量门禁语义 · 轨迹前缀回归（评测集换代中、基线未录，代码保留） |
 | 安全 | APIKey / JWT / RBAC · 输出过滤 · 提示注入防护 · 限流 · 熔断（仅检索域两处接线，口径见 §7；通用 CircuitBreaker 原语未接线进其他生产链路） |
 | 交付 | Docker / docker-compose · GitHub Actions（CI + CodeQL）· Dependabot |
 
@@ -836,7 +848,7 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 |---|---|
 | [实现细节手册](docs/项目实现手册.md) | **实现级细节**：共 25 章（§0–§24），按「一次请求怎么走 → 分层怎么落地 → 各子系统怎么实现」展开；按**符号**定位、不写行号。Word 图文版 `docs/My-Agentix项目说明书.docx`（含整体架构图）为 2026-10-22 快照，**以 md 为准** |
 | [架构总览](docs/architecture/README.md) | 一句话架构、五条设计原则、运行时架构图 |
-| [架构详解](docs/architecture/架构详解.md) | 设计特色、完整架构图、三层流程逐节点说明 |
+| [架构详解](docs/architecture/架构详解.md) | 设计特色、完整架构图、主图逐节点说明 |
 | [分层与依赖规则](docs/architecture/分层架构与依赖规则.md) | 各层职责、**4 条强制依赖规则**及其守卫 |
 | [Agent Core 五层架构](docs/architecture/AgentCore五层架构.md) | Harness / Capabilities / Application / Domain / Interfaces 运行时职责与端口映射 |
 | [接口契约](docs/architecture/接口与契约.md) | 端口 Protocol、Payload TypedDict、错误码四层分类 |
@@ -862,7 +874,7 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | [历史工程口径](docs/工程口径日志.md) | 测试口径链、逐项加法、变异验证与独立审查留痕（当前值仍以 §11 为准） |
 | [已知限制清单](docs/已知限制.md) | §16 的逐条展开：沙箱 / 门禁 / 覆盖缺口 / 路由兜底 / `kb_ingest` 边界 |
 | [版本管理](docs/版本管理策略.md) | 版本号语义、发布分支与兼容策略 |
-| [评测说明](evals/README.md) | 确定性打分、质量门禁、消融实验（KG/RAG 评测集已下线；公开 MCQ 集见其 §10） |
+| [评测说明](evals/README.md) | 确定性打分、质量门禁、消融实验（评测集换代中；新题集为公开 MCQ，见其 §10） |
 | [OWASP LLM Top 10 自评](docs/security/大模型安全风险自评.md) | LLM01–LLM10 逐条：风险 → 现有缓解（含代码位置）→ 残余风险 |
 | [已归档·项目全景与整体结构](docs/archive/项目全景-归档快照.md) | 其独有内容（三条端到端数据流 / 默认开关矩阵 / 关键代码索引）已于 2026-10-27 并入本文档 §3 与 §12，代码级细节由[实现细节手册](docs/项目实现手册.md)承接；**仅作历史留档，不再作为现行依据** |
 
@@ -913,7 +925,7 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 这既解释了为什么修复后的样本"看起来更快"，也是 #6/#7 决定暂不录基线的直接原因（详见 §11 第三轮）。
 
 **测量方法**：全栈环境（LM Studio 加载固定模型快照 + 基础设施容器）下，
-对 102 条 golden（历史评测集，2026-10-26 已下线）跑一轮 `evals/run_eval.py --record`，期间从 Prometheus
+对 102 条 golden（历史评测集，2026-10-26 停用）跑一轮 `evals/run_eval.py --record`，期间从 Prometheus
 （`http://localhost:9090`）读取 TTFT 直方图分位数与 token 计数器增量，
 token 明细从 `UsageRecord` 聚合。数字与模型快照/温度绑定，换模型须重测。
 已知限制：本机显存与云服务器测量结果不可互比，回填时须标注测量环境。
@@ -923,7 +935,7 @@ token 明细从 `UsageRecord` 聚合。数字与模型快照/温度绑定，换�
 在隔离评测库中对 `data/kb/legal_corpus.txt` 的 4,865 条数据条目运行真实检索；
 语料 SHA-256 为
 `1ca58564b1f3a58c212c0fc23e9e5da317576ce524fc58cd4f6d0ec6f3aea2e5`。
-使用 `evals/legal_golden.jsonl`（历史评测集，2026-10-26 已下线）中 23 条适用的 `kb-query` 金标问题，
+使用 `evals/legal_golden.jsonl`（历史评测集，2026-10-26 停用）中 23 条适用的 `kb-query` 金标问题，
 由同一匹配器统计 Recall@5 与 MRR。Dense 向量使用本地 LM Studio
 `text-embedding-bge-m3`，Cross-Encoder 通过 Infinity CPU 服务
 `text-embedding-bge-reranker-v2-m3` 实际推理。
@@ -1014,7 +1026,7 @@ SHA-256 与 §15.1 同为 `1ca58564b1f3a58c…`）、Dense-only（`hybrid=false`
 | 路由 P50 / P95（残差） | 13462.3 / 17682.1 ms | 端到端减检索减生成逐题算得（mean 13836.1，min 10608.8，max 19243.9）——**端到端里最大的一段**，见口径④ |
 | 端到端 P50 / P95 | **20546.8 / 31543.1 ms** | 路由 + 检索 + 生成三段串行（mean 21558.3，min 12869.6，max 32546.3） |
 | 单请求 token 均值 | prompt 718.7 / completion 283.3 / 合计 1002.0 | **只计生成调用**（prompt 逐题 526–941、completion 69–580）；路由那次 LLM 分类的 token 未计入，真实每请求成本高于此数 |
-| 路由一致率 | 23/23 | 金标 `kb-query` ⇔ L1 判 `kb-query`，且 23 题都带回模型自己的 `decision` 正文（答案正文均值 465.5 字，104–885） |
+| 路由一致率 | 23/23 | 金标 `kb-query` ⇔ 路由节点判 `kb-query`，且 23 题都带回模型自己的 `decision` 正文（答案正文均值 465.5 字，104–885） |
 
 **口径必须逐条读，否则这组数会被读坏**：
 
@@ -1127,7 +1139,7 @@ SHA-256 与 §15.1 同为 `1ca58564b1f3a58c…`）、Dense-only（`hybrid=false`
   所以口径⑦只发质量数字；延迟仍看口径③（缓存开关 A/B）与口径⑥（重复区间）——
   **不发布 ≠ 没测**，但单轮分位数确实不配进基线表。
 
-复现（先按顶部最小 Demo 起好 LM Studio；`--repeat 3` 可顺带看跨轮抖动）。⚠️ 限定：下面两条命令里 `--golden evals/legal_golden.jsonl evals/legal_golden_ext.jsonl` / `--ext-golden` 指向的集**已于 2026-10-26 随评测集下线删除**，照抄会命中 `evals/golden_source.py` 的响亮退出 2（并列扫描出的可用题集清单）——本块保留为**历史读数复现路径**（改动 bash 块内任何一行都对不上当时读数），要重跑须显式换成在用题集（题数真源见 `evals/ceval_golden.manifest.json` 的 `rows`）：
+复现（先按顶部最小 Demo 起好 LM Studio；`--repeat 3` 可顺带看跨轮抖动）。⚠️ 限定：下面两条命令里 `--golden evals/legal_golden.jsonl evals/legal_golden_ext.jsonl` / `--ext-golden` 指向的集**已于 2026-10-26 随旧 KG/RAG 金标集停用删除**，照抄会命中 `evals/golden_source.py` 的响亮退出 2（并列扫描出的可用题集清单）——本块保留为**历史读数复现路径**（改动 bash 块内任何一行都对不上当时读数），要重跑须显式换成在用题集（题数真源见 `evals/ceval_golden.manifest.json` 的 `rows`）：
 
 ```bash
 .venv/Scripts/python.exe scripts/demo/local_kb_demo.py eval \

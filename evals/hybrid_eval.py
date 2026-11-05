@@ -1,6 +1,6 @@
 """R-P2-5 混合检索归因报告（只增报告键，不动质量门禁）。
 
-设计依据：``docs/design/rag-optimization.md`` §6 R-P2-5——「``evals`` 新增混合
+设计依据：``docs/design/检索增强深度优化.md`` §6 R-P2-5——「``evals`` 新增混合
 检索报告（``Recall@5/MRR × {BM25, Dense, RRF, +Rerank}`` 四列归因表，10–50 问
 小集即可回归）；只增报告键，不动质量门禁」。
 
@@ -29,12 +29,14 @@
 
 用法::
 
-    python evals/hybrid_eval.py --kb-id <KB>              # 默认 legal_golden 的 23 问 kb 小集
+    python evals/hybrid_eval.py --kb-id <KB> --golden <题集>   # 缺省题集已下线，须显式指定
     python evals/hybrid_eval.py --kb-id <KB> --limit 40 --json-out out.json
     python evals/hybrid_eval.py --help
 
 离线（无 Milvus/PG 索引）跑不了 live 通道——``--kb-id`` 缺失/索引未就绪时
-诚实返回 exit 2，不产出假表。
+诚实返回 exit 2，不产出假表。缺省题集 ``legal_golden.jsonl`` 已于 2026-10-26
+删除（评测集下线）：不给 ``--golden`` 且默认文件不存在时同样 exit 2，并列出
+当前可用题集与改道示例（不静默跑空、不新建题集）。
 """
 
 from __future__ import annotations
@@ -71,6 +73,14 @@ except ModuleNotFoundError as _rm_exc:  # pragma: no cover - 包名路径
 
 EVALS_DIR: Path = Path(__file__).resolve().parent
 DEFAULT_GOLDEN: Path = EVALS_DIR / "legal_golden.jsonl"
+
+# T3：默认题集缺失 ⇒ 响亮退出。判据/文案与其余入口同源（evals/golden_source.py）。
+try:
+    from golden_source import ensure_default_golden
+except ModuleNotFoundError as _gs_exc:  # pragma: no cover - 包名路径
+    if _gs_exc.name != "golden_source":
+        raise
+    from evals.golden_source import ensure_default_golden
 
 COLUMNS = ("bm25", "dense", "rrf", "rerank")
 COLUMN_LABELS = {"bm25": "BM25", "dense": "Dense", "rrf": "RRF", "rerank": "+Rerank"}
@@ -447,8 +457,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--kb-id", default="", help="知识库 ID（live 必填）")
     parser.add_argument(
         "--golden",
-        default=str(DEFAULT_GOLDEN),
-        help=f"金标 JSONL 路径（默认 {DEFAULT_GOLDEN.name}）",
+        # 缺省留空 = 用 DEFAULT_GOLDEN；该文件不存在时 main() 响亮退出（T3）。
+        default=None,
+        help=f"金标 JSONL 路径（默认 {DEFAULT_GOLDEN.name}；该集已下线时必须显式指定）",
     )
     parser.add_argument(
         "--limit",
@@ -475,6 +486,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    # T3：默认题集不存在 ⇒ 响亮退出（列可用集 + 改道示例）。这条**先**跑但**不吞**
+    # 既有的 --kb-id 校验：两者都是本入口的必填输入，都缺就把两条都讲清楚——
+    # 只报其中一条就是在让看的人猜（tests/test_p87 钉的 "--kb-id 必须出现在 stderr"
+    # 也因此照旧成立）。
+    golden, golden_rc = ensure_default_golden(
+        args.golden,
+        entry="evals/hybrid_eval.py",
+        default=DEFAULT_GOLDEN,
+        example_flags="--kb-id <KB>",
+    )
     if not (args.kb_id or "").strip():
         print(
             "[hybrid_eval] live 归因需要 --kb-id（无索引环境跑不了四通道；"
@@ -482,6 +503,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if golden_rc:
+        return golden_rc
+    args.golden = str(golden)
+
     if args.search_k < RECALL_K:
         print(
             f"[hybrid_eval] --search-k 需 ≥ {RECALL_K}（Recall@5 窗口）",

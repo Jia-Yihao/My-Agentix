@@ -8,7 +8,7 @@
 ## 1. 一句话架构
 
 My Agentix 是一个**以 Agent 内核 + RAG 等多路检索为核心的综合服务平台**：以「**分层 + 依赖倒置 + 可插拔注册表**」组织代码，
-以「**三层 Multi-Agent**」组织运行时（主路由层 → 多工具子图层 → 原子工具层），
+以「**单层主图 + 节点内子图**」组织运行时（一张 `StateGraph` 平铺节点、条件边路由；重业务分支的子图收在节点内部，不是架构层级），
 以「**领域适配**」保持可迁移性（测试数据 → 中医药典 → 政务服务 … 等参考领域均可接入）。
 
 ---
@@ -43,16 +43,16 @@ My Agentix 是一个**以 Agent 内核 + RAG 等多路检索为核心的综合�
 
 ---
 
-## 4. 运行时架构（三层 Multi-Agent）
+## 4. 运行时架构（单层主图）
 
 ```mermaid
 graph TD
     U([用户提问]) --> MW[中间件链：GlobalRateLimit → TraceId → RequestLogging → APIKey → CORS]
     MW --> CS[ChatService<br/>编排 / 错误分类 / 指标]
-    CS --> G[LangGraph L2 主图<br/>lg_builder.build_graph]
+    CS --> G[LangGraph 主图<br/>lg_builder.build_graph]
 
     G --> W[message_window<br/>历史窗口化]
-    W --> R[analyze_and_route_query<br/>L1 主路由]
+    W --> R[analyze_and_route_query<br/>路由节点]
     R --> RQ{route_query<br/>条件边（非节点）}
 
     RQ -->|general| GEN[respond_to_general_query]
@@ -63,8 +63,8 @@ graph TD
     RQ -->|file| FILE[create_file_query]
     RQ -->|task, flag on| TASK[execute_task<br/>TASK_EXEC_ENABLED]
 
-    KGS --> KGT[原子工具层<br/>cypher / predefined / graphrag / text2sql]
-    KBS --> KBT[原子工具层<br/>PostgreSQL / Milvus / Reranker / External]
+    KGS --> KGT[原子工具<br/>cypher / predefined / graphrag / text2sql]
+    KBS --> KBT[原子工具<br/>PostgreSQL / Milvus / Reranker / External]
 
     KGT --> OUT[Final Answer]
     KBT --> OUT
@@ -80,11 +80,13 @@ graph TD
 >
 > 两个容易误读的点：`route_query` 是条件边而非节点；`check_hallucinations` 已定义但**故意未注册**到主图。
 
-| 层 | 职责 | 关键模块 |
+| 组成 | 职责 | 关键模块 |
 |----|------|---------|
-| **L1 主路由层** | 意图识别与分发（启发式 + LLM 双保险） | `application/agents/router.py` |
-| **L2 多工具子图层** | 任务分解、工具选择、并行执行、结果融合 | `.../workflows/multi_agent/` |
-| **L3 原子工具层** | 具体检索/查询工具 | `.../components/*/node.py` |
+| **主图** | 节点平铺 + 条件边路由（`START → message_window → analyze_and_route_query`） | `orchestration/langgraph/lg_builder.py` |
+| **路由节点** | 意图识别与分发（启发式 + LLM 双保险），产出条件边分支键 | `application/agents/router.py` |
+| **业务节点** | 一次问答 / 检索 / 规划，各自是主图上的一个平级节点 | `application/agents/` |
+| **节点内子图（两处）** | 任务分解、工具选择、并行执行、结果融合；只在 `graphrag` / `kb` 两节点内部 | `.../workflows/multi_agent/` |
+| **原子工具** | 具体检索/查询工具，统一经 Tool Gateway 出入 | `.../components/*/node.py` |
 
 > 每个自主环节「为何不能用确定性 Workflow 替代」的逐条论证，见 [`../design/orchestration-rationale.md`](../design/编排方案选型论证.md)。
 

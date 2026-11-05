@@ -242,7 +242,7 @@ def main() -> None:
     ax.text(
         80,
         95.45,
-        "测试数据集知识库 + 多智能体问答平台 ｜ 默认主链：Vue3 → FastAPI → ChatService → LangGraph L2 → Tool / Retrieval → 数据层",
+        "测试数据集知识库 + 多智能体问答平台 ｜ 默认主链：Vue3 → FastAPI → ChatService → LangGraph 主图 → Tool / Retrieval → 数据层",
         ha="center",
         va="center",
         fontsize=10.2,
@@ -373,26 +373,26 @@ def main() -> None:
         ["独立入库服务"], C_WHITE, C_APP_E, title_size=8.0, body_size=6.6, lw=1.5)
 
     # ============================================================ 编排层 ====
-    group(ax, 9.0, 36.5, 92.5, 12.5, "编排层 · LangGraph L2 主图（默认）", C_ORCH, C_ORCH_E)
+    group(ax, 9.0, 36.5, 92.5, 12.5, "编排层 · LangGraph 单层主图（10 节点平铺，默认）", C_ORCH, C_ORCH_E)
     group(ax, 10.5, 36.8, 73.0, 10.6, "StateGraph · AgentState ｜ thread_id=session_id",
           C_WHITE, C_ORCH_E, ls=":", lw=0.9, label_size=6.9, z=3)
 
     box(ax, 11.5, 44.0, 16.0, 2.8, "message_window",
         ["历史窗口 / token 预算"], C_WHITE, C_ORCH_E, title_size=7.6, body_size=6.1)
     box(ax, 29.5, 44.0, 21.0, 2.8, "analyze_and_route_query",
-        ["L1 主路由：启发式 + LLM"], C_WHITE, C_ORCH_E, title_size=7.6, body_size=6.1)
+        ["路由节点：启发式 + LLM"], C_WHITE, C_ORCH_E, title_size=7.6, body_size=6.1)
     box(ax, 52.5, 44.0, 13.0, 2.8, "route_query",
-        ["条件边 · L1 分发"], C_WHITE, C_ORCH_E, title_size=7.6, body_size=6.1)
+        ["条件边 · 意图分发"], C_WHITE, C_ORCH_E, title_size=7.6, body_size=6.1)
     box(ax, 67.0, 44.0, 15.0, 2.8, "Checkpointer（持久化）",
         ["Redis → MemorySaver 降级 · 非图节点"], C_WHITE, C_ORCH_E,
         title_size=7.1, body_size=5.8)
 
     box(ax, 11.5, 39.8, 14.5, 3.1, "general / additional",
         ["直接回答 / 补充信息"], C_WHITE, C_ORCH_E, title_size=7.2, body_size=6.0)
-    box(ax, 27.5, 39.8, 12.5, 3.1, "kb 子图",
-        ["L2 多工具工作流"], C_WHITE, C_ORCH_E, title_size=7.4, body_size=6.0)
-    box(ax, 41.5, 39.8, 18.0, 3.1, "research_plan / KG 子图",
-        ["L2 图谱 + Text2SQL"], C_WHITE, C_ORCH_E, title_size=7.4, body_size=6.0)
+    box(ax, 27.5, 39.8, 12.5, 3.1, "kb 节点内子图",
+        ["多工具工作流"], C_WHITE, C_ORCH_E, title_size=7.4, body_size=6.0)
+    box(ax, 41.5, 39.8, 18.0, 3.1, "KG 节点内子图",
+        ["图谱 + Text2SQL"], C_WHITE, C_ORCH_E, title_size=7.4, body_size=6.0)
     box(ax, 61.0, 39.8, 10.0, 3.1, "image / file",
         ["多模态 / 文件"], C_WHITE, C_ORCH_E, title_size=7.4, body_size=6.0)
     box(ax, 72.5, 39.8, 9.5, 3.1, "execute_task",
@@ -403,9 +403,9 @@ def main() -> None:
             "KG: guardrails → planner → tool_selection → 并行工具 → summarize → final_answer_guard → final_answer",
             ha="center", va="center", fontsize=5.9, color=C_ORCH_E)
     ax.text(42.0, 37.55,
-            "9 节点：message_window · analyze_and_route_query · respond_to_general_query · get_additional_info · create_kb_query · "
-            "create_research_plan · create_image_query · create_file_query · execute_task",
-            ha="center", va="center", fontsize=5.7, color=C_ORCH_E)
+            "10 节点：message_window · analyze_and_route_query · respond_to_general_query · get_additional_info · create_kb_query · "
+            "create_research_plan · create_image_query · create_file_query · execute_task · code_agent",
+            ha="center", va="center", fontsize=5.5, color=C_ORCH_E)
     ax.text(42.0, 37.05,
             "route_query 是条件边（非节点）；check_hallucinations 已定义但故意未注册",
             ha="center", va="center", fontsize=5.7, color=C_ORCH_E)
@@ -413,7 +413,7 @@ def main() -> None:
     box(ax, 85.0, 43.8, 15.5, 3.0, "Supervisor 多智能体",
         ["Manager + Peer（可选）"], C_OPT, C_OPT_E, ls="--",
         title_size=7.2, body_size=6.0)
-    box(ax, 85.0, 39.8, 15.5, 3.0, "AgentLoop L3",
+    box(ax, 85.0, 39.8, 15.5, 3.0, "AgentLoop 执行循环",
         ["AGENT_LOOP_ENABLED"], C_OPT, C_OPT_E, ls="--",
         title_size=7.2, body_size=6.0)
     ax.text(85.8, 37.9, "AGENTIX_ABLATION_MULTI_AGENT / AGENT_MAX_REPLANS",
@@ -461,7 +461,7 @@ def main() -> None:
             ha="center", fontsize=6.7, color=C_RUNTIME_E)
 
     # ============================================================ 能力层 ====
-    group(ax, 9.0, 11.5, 92.5, 10.0, "能力与适配（L3 工具）", C_CAPS, C_CAPS_E)
+    group(ax, 9.0, 11.5, 92.5, 10.0, "能力与适配（原子工具）", C_CAPS, C_CAPS_E)
     box(ax, 10.5, 15.8, 24.0, 4.4, "LLM / Embedding Provider",
         ["OpenAI 兼容 · _TrackedChatOpenAI", "embedding / rerank 客户端"],
         C_WHITE, C_CAPS_E, title_size=8.2, body_size=6.4)

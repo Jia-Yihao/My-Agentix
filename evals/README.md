@@ -1,7 +1,22 @@
-# 法律领域评估集与回归（P2-1）
+# 评测框架与回归（P2-1）
 
 > 依据 `My Agentix_架构优化方案.md` P2-1（第 1159–1180 行）建立。
 > 目标：**先定义成功，再谈优化**。为 P0/P1 改动提供确定性的回归门槛。
+
+> ⚠️ **评测集正在换代，尚未完成**：旧的 KG/RAG 法律金标（102 条，`evals/legal_golden.jsonl`）
+> 与录制基线（录制预测基线与门禁基线文件）已于 2026-10-26 停用删除，CI 的 `eval-offline`
+> 门禁机位随之暂停。**这不是放弃评测**——本目录的评测代码全部保留：确定性打分口径、门禁四态、
+> 轨迹前缀回归、失败回流、消融框架都还在原地；新题集 `evals/ceval_golden.jsonl`
+> （C-Eval 公开 MCQ，156 题）也已就位，只差基线录完即可重新武装。
+> **历史数字（102 条基线、Recall@5 等）是历史测量记录，不再作为门禁基准，也不再重录。**
+>
+> ✅ **公开 MCQ 评测集已建、**A/B 全量未跑**（2026-10-26 只跑过 3 题冒烟，见 §10.5）**：为量化多 agent 系统的性能，
+> 用公开数据集 **C-Eval**（`ceval/ceval-exam`，许可 **CC BY-NC-SA 4.0 = 非商用**）
+> 转换出 156 行金标（52 个学科 × 3 题）`evals/ceval_golden.jsonl`；
+> 转换脚本 `scripts/eval/ceval_to_golden.py` 带**回源逐行校验**，
+> 出处 / 许可 / 抽样口径落在 `evals/ceval_golden.manifest.json`。
+> 这套集**只作人工性能测量用**：**没有 CI 门禁、没有质量基线、A/B 全量未跑**，
+> 跑法见本文件 §10；3 题冒烟的真实读数与"跑 A/B 前要先修的口子"见 §10.5。
 
 ---
 
@@ -9,10 +24,14 @@
 
 ```
 evals/
-├── legal_golden.jsonl            # 黄金评估集（ground truth），≥20 条
-├── baseline_predictions.jsonl    # 系统实际输出（录制产物，默认不入库）
+│                                # （旧 KG/RAG 金标集 2026-10-26 停用删除；新题集见下）
+│                                # （录制基线随旧集停用删除；新基线未录）
+├── ceval_golden.jsonl            # 公开 MCQ 评测集（C-Eval 转换而来，156 行；仅人工性能测量用）
+├── ceval_golden.manifest.json    # 上者的出处 / 许可 / 抽样口径 / 校验结论
 ├── run_eval.py                   # 批量跑 + 打分 + 输出 CSV / summary.json（judge / --compare / --sensitivity）
-├── quality_gate.py               # 质量/性能门禁（对基线 -2% CI 阻断；缺基线 NOT-ENFORCED 首跑建档）
+├── recording_env.py              # 本机录制档：宿主机环境变量装配 + 录制前自检（--local-llm 用）
+├── write_quality_baseline.py     # 由 summary **生成** quality.json（分母为 0 或值为 0.0 的键不建档）
+├── quality_gate.py               # 质量/性能门禁（对基线 -2% CI 阻断；缺基线/缺键 NOT-ARMED 硬失败，建档要 --allow-bootstrap）
 ├── claim_check.py                # 声称一致性（答案声称 vs 实际来源，只标记不判分，Phase 31）
 ├── feedback_ingest.py            # F7：生产失败样本 → 候选 golden 行（人工评审后合入）
 ├── trajectory_regression.py      # F5：轨迹前缀回归（基线轨迹 vs 候选轨迹逐位置比对）
@@ -25,9 +44,14 @@ evals/
 └── README.md                     # 本文件
 ```
 
-* `legal_golden.jsonl`：**唯一事实来源**，人工维护，禁止由模型自动生成后直接合入。
-* `baseline_predictions.jsonl`：由 `--record`（在线）在该机器上的真实输出落盘，
-  用于离线环境复现打分。
+* **评测集（曾为 `legal_golden.jsonl`）**：**唯一事实来源**，人工维护，禁止由模型自动生成后
+  直接合入。2026-10-26 随知识图谱 / RAG 评测下线一并删除；本文件其余部分描述的是**评测框架**
+  （schema 约定、评分口径、门禁语义），换一份评测集即可继续用。
+* **`ceval_golden.jsonl`（公开 MCQ 集）**：与上面那份**不是同一条线**——它是**从公开数据集
+  机器转换**来的（`scripts/eval/ceval_to_golden.py`），事实来源是 C-Eval 本身而不是人工标注；
+  用途是**人工跑一次多 agent 性能测量**，不接 CI 门禁、不建质量基线。详见 §10。
+* **录制基线（曾为 `baseline_predictions.jsonl`）**：由 `--record`（在线）在该机器上的真实输出
+  落盘，用于离线环境复现打分；同样已于 2026-10-26 删除。
 * `results/`：跑分产物，可随时重新生成，不参与版本控制（见仓库 `.gitignore` 策略）。
 * `feedback_ingest.py` / `trajectory_regression.py`：**只读 golden / 只读轨迹**，
   从不修改任何既有基线文件（见第 7、8 节）。
@@ -66,7 +90,7 @@ evals/
 例如 `《民法典》第577条`、`《劳动合同法》第87条`、`《宪法》第35条` 均可在
 `data/legal/legal_seed.json` 中逐条核对到原文。
 
-> ⚠️ 这三个数据文件目前是**模板/骨架**（`docs/design/legal_domain_schema.md` 第 5 节明确说明
+> ⚠️ 这三个数据文件目前是**模板/骨架**（`docs/design/测试数据域-本体Schema.md` 第 5 节明确说明
 > 「不含真实法律条文，正式上线前需由用户填入官方发布文本」）。因此本评估集验证的是
 > **系统行为契约**（路由、引用透传、拒答），而非法条内容的法理正确性。
 
@@ -257,7 +281,7 @@ seed 可复现），CI 含 0 → 标注「不显著（噪声区间）」：
   文档（正文 + metadata 干草）比对——法规名经 `run_eval._extract_law`
   归一后互相包含，条号统一转整数按 `第X条` 三形匹配
   （`第148条` ≡ `第一百四十八条`）；与 `citation_hit_rate` 同源解析器；
-* **分母**：仅金标非空题（默认取 `legal_golden.jsonl` 的 23 问
+* **分母**：仅金标非空题（默认取 `legal_golden.jsonl`〔该集 2026-10-26 已删，分母随在用题集现值〕的 23 问
   `kb-query` 小集，`--limit` / `--route` 可调，10–50 问带）；
   单题通道失败剔出该列分母，整列失败 = 表内 `n/a` + `unavailable`
   （诚实 fail-open，绝不产出假数）；
@@ -313,17 +337,150 @@ python evals/hybrid_eval.py --help
 
 ```bash
 ./.venv/Scripts/python.exe evals/run_eval.py --record    # 等价于 --live
+./.venv/Scripts/python.exe evals/run_eval.py --record --local-llm   # 本机录制档（推荐）
 ```
 
 调用真实 `agentix.application.services.chat_service.ChatService.ask`
 （`from agentix.application.services.chat_service import get_chat_service`），
-逐条提问、落盘 `baseline_predictions.jsonl`、再就地打分。
+逐条提问、落盘 `baseline_predictions.jsonl`、再就地打分。**逐行 flush 落盘**：
+一次录制是上百条分钟级请求，跑完才写盘等于「第 80 条崩掉就颗粒无收」，
+中断也留下一份可核对的部分产物（行序与字段集合与一次性写盘相同）。
 
-> ⚠️ 需要 **LM Studio + Docker（Redis / Neo4j / 向量库）** 全链路可用。
-> 当前仓库的离线开发环境（未启动 LM Studio / Docker，无 Redis/Neo4j/Milvus）
-> **无法运行在线模式**——因此本仓库目前**尚未录制基线分数**（见第 8 节）。
+`--local-llm`（本机录制档，缺省关闭 = 录制路径与此前逐字节等价）按序做三件事，
+本体见 `evals/recording_env.py`：
 
-### 5.3 其他参数
+1. **装配环境变量**——优先级 `进程环境 > .env.local > 录制档默认`，`.env` 只在
+   「值里没有 compose 内网名」时被采纳（`NEO4J_*` 凭据即由此采纳）。为什么需要它：
+   `.env` 是**容器视角**写的（`DATABASE_URL` 指向 `postgres:5432`、
+   `NEO4J_URI` 指向 `neo4j:7687`、LLM 指向远端 API），而 `--record` 在宿主机跑；
+   内网名解析不到 ⇒ 每条 kb 问题都在观测面撞 `Error 11001`，录出来是一份
+   「全是兜底答案」的基线。装配项含：模型一律指向 LM Studio、知识库指向
+   `local_kb_demo` seed 过的 SQLite+FAISS、`TEXT2SQL_DATABASE_URL` 从 compose 的
+   `mysql` 服务推导、主机端口从 compose 的 `ports` 推导（**不抄表**，纪律 7）、
+   以及 `KB_SCOPE_DESCRIPTION` 的**语料换域声明**（出厂 scope 是「测试数据集」口径，
+   KB 子图 guardrails 会按旧域把真法条问题判成越界并 0 引用）。
+2. **录制前自检**——端点模型是否存在、知识库行数、Neo4j 节点数、Text2SQL
+   `articles` 数、Redis ping、kb_ingest 通道可达性；不齐即退出码 `2`。
+   自检只花几秒，而跳过它的代价是两小时后一份废基线。
+3. **本地模型适配**——结构化输出方式按能力探测 + router 角色超时抬到 60s，
+   复用 `scripts/demo/local_kb_demo.py`，不新造第二套口径。
+
+装配清单**逐条打印且脱敏**（连接串里只留 user，密码替换为 `***`）——不留暗改。
+本开关不写 `.env`，机器私有的值（模型 id、Neo4j 口令等）放 `.env.local`
+（已被 `.gitignore` 覆盖）。
+
+> ⚠️ 需要 **LM Studio + Docker（Redis / Neo4j / MySQL）** 可用；
+> Milvus 与 `kb_ingest` 不在也可录，见 §5.4 的 degraded 口径。
+> 完全离线的开发环境（未启动 LM Studio / Docker）仍**无法**跑在线模式。
+> 录制前的数据准备（图谱 CSV 导入、Text2SQL 目标库回填）见
+> `docs/guides/数据准备指南.md`。
+
+### 5.3 从录制到门禁：基线是生成物，不是抄本
+
+```bash
+# ① 录制 + 打分（产出 evals/baseline_predictions.jsonl 与 evals/results/<stamp>.summary.json）
+./.venv/Scripts/python.exe evals/run_eval.py --record --local-llm
+
+# ② 由那次 summary 生成 committed 基线（先 --dry-run 看一眼）
+./.venv/Scripts/python.exe evals/write_quality_baseline.py \
+    --summary evals/results/<stamp>.summary.json --dry-run
+./.venv/Scripts/python.exe evals/write_quality_baseline.py \
+    --summary evals/results/<stamp>.summary.json
+
+# ③ 之后每次 CI 的 eval-offline 做的是：离线打分 → 五个键逐个与 quality.json 比对
+./.venv/Scripts/python.exe evals/run_eval.py --offline
+./.venv/Scripts/python.exe evals/quality_gate.py --baseline-file <基线文件> \
+    --metric route_accuracy --current 0.7843
+```
+
+`write_quality_baseline.py` 的三条规则（口径见模块 docstring，
+该守卫随旧评测集停用删除于 2026-10-26 一并撤下，规则本身仍由 `write_quality_baseline.py` 的 docstring 说明）：
+
+* **落盘值为 0.0 的键不写**（分母为 0 或分母不为 0 都算，**先 `round(…, 4)` 再判**——
+  恒 PASS 的形态由写进文件的那个数决定，`0.00004` 折成 `0.0` 同样是常绿灯）。
+  `*_applicable` 在本轮没有
+  适用样本时给出 `0.0`；录制中断时可评测样本还会**全落在缺预测区间**，于是分母 34
+  的 `citation_correctness_applicable` 也是 `0.0`（2026-10-25 实测）。把 `0.0` 当
+  基线写进去等于宣布该指标恒 PASS（`0.0 ≥ 0.0 × 0.98` 恒真），而且这条**连
+  `--force` 都越不过**——它与录制完整与否无关，是「这个键没有可把关的下界」。
+  宁可让这个键**红**：2026-10-26 起门禁对缺键是 `NOT-ARMED` + 退出码 2（旧口径是
+  NOT-ENFORCED + 建档 + 绿灯），所以「本轮有键归档不了」会直接体现在 CI 上，处置只有两条
+  可评审的路——补录一份五键都能归档的 summary，或把该指标从 `ci.yml` 的 `METRICS` 里显式摘掉。
+* **缺预测不为零时拒绝建档**（`--force` 才能覆盖）：录制未跑完时缺预测按失败计，
+  基线被系统性压低，此后真劣化会藏在噪声里。
+* **写入的是生成物 + 溯源**：`_meta` 记下来源 summary、题数与各指标分母；
+  门禁按键取值，多余键忽略。
+
+> **生成器只保证「写出的键是对的」，拦不住「已入库的键被人删掉」——这条 2026-10-26 已由门禁侧封住。**
+> 旧口径下 `quality_gate.py` 对「基线里没有这个键」的处理是 NOT-ENFORCED + **把本轮值写回去建档**
+> + 退出码 0：单独看这一步是"响亮地没把关"，但配合删键就成了**静默降级**——那一轮不比对，
+> 下一轮起拿本轮值当新地板。2026-10-25 审查按此复现（删
+> `citation_correctness_applicable` ⇒ `rc=0` 并把它写了回去）。现在的三条钉子：
+>
+> 1. **缺输入即阻断，且拒绝路径上不写文件**（`evals/quality_gate.py`）：基线文件不存在、
+>    或基线里没有该键 ⇒ `::error` + `NOT-ARMED` + 退出码
+>    `NOT_ARMED_EXIT_CODE = 2`（**刻意不等于 FAIL 的 1**：1 意思是"指标劣化了"，这里是
+>    "什么都没比对"，混在一个码上日志里就分不开）。首跑建档退成必须显式声明的
+>    `--allow-bootstrap`（保留旧 NOT-ENFORCED 语义 + 写回 + rc 0），`ci.yml` 的 `eval-offline`
+>    **不带**这一行，只有 `perf-baseline.yml` 的 nightly 带——那里"本轮无基线"是常态。
+> 2. **基线值本身**：`test_committed_baseline_is_a_real_gate_not_an_empty_archive` 把下界收严成
+>    **开区间**（`0.0 < value ≤ 1.0`，0.0 基线直接红），`test_committed_baseline_covers_every_ci_gate_metric`
+>    要求 committed 基线**覆盖** ci.yml 的 `METRICS` 每个键（键清单复用
+>    `test_ci_gate_contract._ci_gate_metrics` 从 ci.yml 抽，不另抄一份），并要求生成器的
+>    `CI_GATE_METRICS` 与之双向相等。
+> 3. **劣化预算写死在 workflow 里**：`test_ci_pins_the_regression_budget_instead_of_inheriting_the_default`
+>    从 ci.yml 门禁段落正则抽出 `--max-regression` 的字符串值并断言 `== 0.02`。过去它靠
+>    `quality_gate.py` 的 argparse 默认值，而既有用例全部**自己显式传值** ⇒ 往 ci.yml 加一行
+>    `--max-regression 0.99` 就静默解除五个指标的门禁；现在放宽必须在这份文件上留下一行可评审的改动。
+>    同族还有一条 `test_workflow_bootstrap_posture_is_explicit_where_it_is_needed`：守 perf-baseline
+>    真的显式带着 `--allow-bootstrap`，否则默认值翻成硬失败会把 nightly 首跑打成一堆假红。
+>
+> 三条降级路径的实测（2026-10-26，打在**真树**上：备份 → 变异 → `test_p124` + `test_ci_gate_contract`
+> + `test_p41` 三份合跑 → 还原 → sha256 复核逐位一致）：
+>
+> | 变异 | 红在哪 | 条数 |
+> | --- | --- | --- |
+> | 删 committed 基线的一个键 | `test_committed_baseline_covers_every_ci_gate_metric` | 1 |
+> | 删门禁基线文件 | p124 三条（真门 / 覆盖每个键 / README 数字一致）+ p41 两条文档路径守卫 | 5 |
+> | 删 `evals/baseline_predictions.jsonl` | `test_committed_predictions_cover_the_golden_set_exactly` | 1 |
+>
+> 删预测文件那一条是**本轮新增的内容守卫**：过去它「192 条一条都不红」——p41 的 `_PATH_EXT`
+> 刻意不含 `jsonl`，`test_ci_gate_contract` 又只断言 ci.yml **正文**提到这个文件名。现在守卫判的是
+> 存在 · 非空 · **题数与金标同源**（不与 `legal_golden.jsonl` 行数相等就红，不写死 102）·
+> id 唯一 · id 集合与金标**双向相等**。为什么值得单独一条：CI 的 `eval-offline` 在预测文件缺失时
+> 走「响亮跳过」，job 依旧绿而门禁是关的——那是**唯一的静默解除路径**，光靠 workflow 侧的
+> `::warning` 拦不住合入。机理与取舍见 `docs/项目实现手册.md` §20.5。
+
+### 5.4 录制机位的已知限制（读基线数字前必看）
+
+* **`kb_ingest` / Milvus 通道未起**：KB 子图的两条本地通道里，
+  `postgres` 通道是 HTTP POST 到 kb_ingest（后端 Milvus `legal` 集合）。本机
+  Milvus 镜像未拉、服务未起 ⇒ 该通道每条都失败 ⇒ 子图判定「通道失败 ≠ 查不到」，
+  走 `milvus`（本地 RetrievalPort，FAISS + SQLite）兜底并给
+  `status=degraded`。打分口径**容忍**这一点（`score_reject` 明文：
+  「单纯的 `degraded` 不算误拒，因为降级仍可能给出实质性回答」），
+  但 `--record` 前自检会如实打印这一条，避免后人重新考古。
+  注意端口：`.env` 的 `INGEST_SERVICE_URL` 是 `localhost:8000`，而本机 8000 上
+  跑的是**另一个项目**的服务（实测 `/openapi.json` 报 TicketPilot）——录制档把它
+  换成 compose 推导出的 kb_ingest 映射端口（默认 8100），宁可连接拒绝，
+  也不要跨项目串台拿到一个语义不明的 404。
+* **本地 8B 模型的路由残差（2026-10-25 全量录制实测，38/102 不符）**：
+  `graphrag-query → kb-query` **17 条（该路由全量误判）**、`additional → kb` 6、
+  `general → additional` 5、`general → kb` 5、`text2sql → kb` 2、
+  `text2sql → 报错` 1、`file → kb` 1、`additional → graphrag` 1。
+  两个后果必须写清：① 图谱子图整轮**只执行了 1 次**（还是一条 additional-query
+  问题被误判过去），所以 `route_accuracy=0.6275` 里含着一整块结构性失分，该机位下
+  天花板是 (102−17)/102 = 0.833；② 因此**基线不能读成「图谱检索质量」**——
+  图谱路径根本没被度量到。`route_accuracy` 在这里的意义只是「同机同口径可比」。
+* **1 条 `status=error`（L080）**：Text2SQL 路径在 live 调用里抛 `KeyError: 'code'`，
+  由 `run_eval` 如实记成 error 行（`route_type=null`）并按失败计入，**没有**为了
+  数字好看把它剔掉。这是一个待定位的产品缺陷，不是评估口径问题。
+* **单条耗时（n=102 实测）**：min 11.0 s / median 52.8 s / p95 76.8 s / max 148.5 s /
+  mean 48.0 s；整轮 15:50:21 → 17:11:55 = **81.5 分钟**。
+  因此录制适合挂后台（`Start-Process` 脱离，见 runbook 第 4 步），进度行
+  （`[n/102] id route=… status=… src=… ms`）就是为这个写的。
+
+### 5.5 其他参数（下方示例里的 `evals/legal_golden.jsonl` 已于 2026-10-26 下线：未显式换成在用题集时，入口按 `evals/golden_source.py` 响亮退出 2 并列出可用集——示例不代为改指）
 
 ```bash
 ./.venv/Scripts/python.exe evals/run_eval.py --help
@@ -352,7 +509,7 @@ python evals/hybrid_eval.py --help
 * `--sensitivity`：敏感性微扰（仅 `--live`/`--record` 生效，见 §4.6）；
   离线/`--compare` 附带该 flag → 中文提示 + 退出码 `2`（拒做假扰动）。
 
-### 5.4 输出
+### 5.6 输出
 
 * `evals/results/<timestamp>.csv`：逐条明细，列为
   `id, question, expected_route, actual_route, route_ok, citation_hit_rate, reject_ok, status`
@@ -396,7 +553,7 @@ python evals/hybrid_eval.py --help
 * 线上用户点踩 / 人工抽检发现的事实性错误的问答对；
 * `sources` 引用错误（张冠李戴：法条引用与问题不匹配）的样本。
 
-### 7.1.1 自动化候选生成（`feedback_ingest.py`）
+### 7.1.1 自动化候选生成（`feedback_ingest.py`；下方 `--golden` 示例指向已停用删除的 `legal_golden.jsonl`，须显式换成在用题集）
 
 回流流程的**机械化部分**由脚本承担，**评审部分仍然人工**：
 
@@ -519,7 +676,12 @@ python evals/hybrid_eval.py --help
 
 ## 9. 当前状态说明
 
-* ✅ golden 评估集已建立（**102 条**，覆盖全部 7 类路由与 6 个出口节点，含 **13 条**越界）。
+* ⚠️ **评测集换代中**：旧的 102 条法律金标（覆盖全部 7 类路由与 6 个出口节点，含 13 条越界）
+  与录制基线已于 2026-10-26 停用删除；下面的框架能力全部保留，新题集基线录完即可重新武装。
+* ✅ **公开 MCQ 评测集已建、**A/B 全量未跑**（2026-10-26 只跑过 3 题冒烟，见 §10.5）**：`ceval_golden.jsonl`（C-Eval 转换，
+  156 行，非商用许可）+ `scripts/eval/ceval_to_golden.py`（带回源校验）+
+  `scripts/eval/mcq_report.py`（MCQ 判分 + 多 agent 性能报告）已就位；
+  **跑法见 §10；A/B 全量未跑**（2026-10-26 只跑过 3 题冒烟，读数见 §10.5），不接 CI 门禁。
 * ✅ `run_eval.py` 离线/在线双后端、**5 个确定性打分函数**（`score_route` /
   `score_citations` / `score_citation_correctness` / `score_must_contain` /
   `score_reject`）、CSV/summary 输出、`--judge` 开关（Phase 26：真实端点出分 +
@@ -538,24 +700,144 @@ python evals/hybrid_eval.py --help
   样本上求均值；另附 `reject_false_refusal_rate`（不该拒却拒了的比例）。
   `pass_k` 在**无任何可评测预测**时返回 `null` 而非 `0.0`（配套 `pass_k_applicable`
   与 `pass_k_unavailable_reason`），避免把「没跑」读成「全错」。
-* ⚠️ **尚未录制基线分数**：当前环境无 LM Studio / Docker / Redis / Neo4j / Milvus，
-  `--live` 无法执行，`baseline_predictions.jsonl` 尚未生成。
-  即 `evals/results/` 目前为空，**没有任何真实分数可比对**。
-  连带后果：CI 的 `eval-offline` job 会整体跳过（已改为显式 warning + job summary，
-  不再静默变绿），且 `evals/baselines/quality.json` 仍是空 `{}` ⇒ 质量门禁处于
-  「首次建档」状态，**尚未真正阻断过任何一次退化**。
+* ⚠️ **基线与门禁的历史记录（2026-10-25 录制，2026-10-26 随旧集停用删除）**：`evals/baseline_predictions.jsonl`
+  是 102 条**真实录制**（机位：本机 LM Studio `qwen/qwen3-8b` + `text-embedding-bge-m3`；
+  容器 Redis/Neo4j/MySQL 起，Milvus 与 `kb_ingest` 未起 ⇒ 46 条 `status=degraded`、
+  55 条 `ok`、1 条 `error`）。门禁基线由
+  `write_quality_baseline.py` 从那次 `--offline` 的 summary 生成（生成物，勿手抄）：
 
-  **武装顺序（Phase 17；需全栈机器，拒绝手工伪造 baseline）**：
-  1. 全栈环境跑 `python evals/run_eval.py --record` → 提交 `evals/baseline_predictions.jsonl`；
-  2. `python evals/run_eval.py --offline` → 从最新 `evals/results/*.summary.json` 读 5 个指标；
-  3. 本地对每个指标跑一次 `quality_gate.py --current <v>`（首次 NOT-ENFORCED 并写回
-     `evals/baselines/quality.json`）→ **手动提交 quality.json**（CI runner 上的建档写回会丢）；
-  4. 此后 CI `eval-offline` 在 >2% 相对回退时 exit 1 真阻断。
+  | 指标 | 基线 | 分母 | −2% 阈值 | 还能掉几条样本 |
+  |---|---:|---:|---:|---|
+  | `route_accuracy` | 0.6275 | 102 | 0.6150 | 1 条 |
+  | `citation_hit_rate_applicable` | 0.6268 | 46 | 0.6143 | **0 条** |
+  | `citation_correctness_applicable` | 0.5833 | 34 | 0.5716 | **0 条** |
+  | `must_contain_applicable` | 0.9098 | 61 | 0.8916 | 1 条 |
+  | `reject_accuracy_applicable` | 1.0000 | 13 | 0.9800 | **0 条** |
 
-  > 分步 PowerShell 操作版见 [docs/runbooks/eval-recording.md](../docs/runbooks/eval-recording.md)。
+  双向取证（2026-10-26 对着门禁新默认值复跑过一遍）：同值五个指标逐个走**真比对 PASS**
+  （输出里既没有 `NOT-ENFORCED` 也没有 `NOT-ARMED`——后者是本轮新增的"缺输入即阻断"态，
+  见上），注入 −5pp 五个全部 FAIL、退出码 1。**这段是历史测量记录**：输入文件已于
+  2026-10-26 删除，CI 的 `eval-offline` 机位同步下线，门禁当前处于「未武装」状态。
+* ⚠️ **武装后的门禁把关的是「打分口径 + 基线文件」，不是线上运行时质量**。
+  `--offline` 是 `committed 预测 × golden × 打分代码` 的纯函数——实测两份离线打分
+  （`20261025_171228` / `20261025_172925`）summary **逐键完全相同**；与录制那轮的就地打分
+  （`20261025_155021`）相比，差的只有 `best_at_k_requested` /
+  `pass_k_requested` / `pass_k_tasks_with_full_runs` 三个 **pass@k 记账键**（录制轮知道每条
+  是第几次尝试，离线重打分只见单 attempt ⇒ 102→0、1→None），**五个门禁指标逐键相同**。
+  所以 CI 这一步变红说明**有人放宽了打分口径
+  或动了基线预测**；要回答「这次代码改动有没有让答案变差」，仍得在全栈机位重新
+  `--record` 一次，而那一步是非确定性的、人工的。CI 里真正跑产品代码的是
+  另一个 job（`retrieval-gate`），别把两者的覆盖面混着讲。
+* ⚠️ **三个指标的 2% 阈值比一条样本还细**（分母 46/34/13 ⇒ 单样本 2.17pp/2.94pp/7.7pp）。
+  意味着「任何一条适用样本退化 = CI 红」，重录一次就可能因与改动无关的路由抖动变红。
+  这不是 bug，是分母小的必然结果——届时读的是逐条 diff（`evals/results/*.csv`）
+  与路由分布，而不是绿/红本身。想让门禁松一个样本的粒度，得先扩样，而不是调
+  `--max-regression`。
+* ⚠️ **基线数字的形态限定**（详见 §5.4，读数字前必看；§5.x 编号已于 2026-10-27 与文档序对齐）：17 条 `graphrag-query`
+  金标全部被本地 8B 路由判成 `kb-query`，图谱子图本次只执行了 1 次（还是一条
+  `additional-query` 问题被误判过去）⇒ `route_accuracy` 在该机位下的天花板是
+  (102−17)/102 = 0.833，**这份基线不能读成「图谱检索质量」**；另有 1 条
+  `status=error`（L080，Text2SQL 路径 `KeyError: 'code'`）如实按失败计入，未做修饰。
+
+  > 分步 PowerShell 操作版见 [docs/runbooks/评测基线录制.md](../docs/runbooks/评测基线录制.md)；
+  > 换模型 = 换基线口径，重录后必须重新跑 `write_quality_baseline.py` 而不是手改数字。
 * ✅ LLM-as-a-Judge 语义相关度**已接入**（Phase 26 去 stub）：真实端点出分、
   `judge_model` 标注、无端点/不可解析诚实失败；**默认关、不进门禁**，
   启用前仍需按 §4.4 人工抽样校准。`--compare` 配对 bootstrap 显著性同步接入。
 * ⚠️ 轨迹包导出必须用子目录（如 `evals/baselines/traces/`），勿与 `quality.json` 同级。
-  生产侧 `TRAJECTORY_SINK=jsonl` 机制已完备（见 `docs/architecture/runtime-guardrails.md`
+  生产侧 `TRAJECTORY_SINK=jsonl` 机制已完备（见 `docs/architecture/运行时护栏.md`
   §12.5）；跨进程回放需配置 `TRAJECTORY_PATH`（默认 `memory` sink 重启即丢）。
+
+---
+
+## 10. 公开 MCQ 评测集 C-Eval
+
+> 用公开数据集 C-Eval 转换出的一份 MCQ 集，**用来量化多 agent 系统的性能**
+> （正确率 / 延迟 / 模型调用次数 / supervisor 出口契约）。
+
+### 10.1 它是什么、不是什么
+
+| | 说明 |
+|---|---|
+| **事实来源** | 公开数据集 **C-Eval**（HF `ceval/ceval-exam`，revision `617524a0…`），**不是**人工标注 |
+| **许可** | **CC BY-NC-SA 4.0 —— 非商用**。商用前须另行取得授权（见 `evals/ceval_golden.manifest.json`） |
+| **规模** | 156 行 = 52 个学科 × 3 题（分层抽样，种子固定 ⇒ 可复现）；**题数的唯一真源是 `evals/ceval_golden.manifest.json` 的 `rows` 字段**（由 `scripts/eval/ceval_to_golden.py` 生成，用例 `test_manifest_records_license_and_provenance` 钉 `rows>0` 且 `verification.rows_checked == rows`）。除本行（唯一声明处）外，对 `evals/README.md`、`README.md`、`docs/migration/现有目录树.md`、`docs/migration/PhaseJ_*.md` 跑 `grep -n "156"` 的**每一处命中都是本行的抄本快照**：本文件卷首 ✅ 横幅 `:16`、§1 目录用途块内的目录行 `:30`、§9 当前状态说明 `:683`、§10.5 跑批预算 `:819` 与 `:831`；`README.md:378`、`docs/migration/现有目录树.md:21`、`docs/migration/PhaseJ_评测活证据与叙事收口规划.md` 的 `:16`/`:17`/`:78`/`:97`/`:98`/`:112`/`:158`。登记面即上述四个文件的 `grep -n "156"` 命中；`CHANGELOG.md` 内的「156」是既有条目或行号引用，不属本登记面（该文件 `:35` 已就地说明）。**唯一例外**：本文件 `:103` 的「第 156–159 行」是 `agentix/application/agents/router.py` 的**行号引用**，不是题数抄本。对账跑 `wc -l evals/ceval_golden.jsonl` 并与 manifest 的 `rows` 比对（纪律 7：手抄数不留成第二基准） |
+| **用途** | 跑一次**多 agent 系统的性能测量**：正确率 / 延迟 / 模型调用次数 / supervisor 出口契约 |
+| **不是** | 不是 CI 门禁、不是质量基线、**A/B 全量未跑**（3 题冒烟见 §10.5）、不替换 §1 那条已停用删除的旧 KG/RAG 评测线 |
+
+### 10.2 重新生成（数据集变了就重跑，别手改金标）
+
+```bash
+python scripts/eval/ceval_to_golden.py --per-subject 3
+```
+
+产出 `evals/ceval_golden.jsonl` + `evals/ceval_golden.manifest.json`。
+脚本**自带回源校验**：写完重新打开文件、重新加载源数据，逐行比对题干 / 四个选项 /
+答案字母 / 路由 / `must_contain`，不一致直接**退出码 2**。
+
+### 10.3 跑一次测量（多 agent 开 / 关各来一次）
+
+```bash
+# A：多 agent 拓扑（supervisor）
+AGENTIX_ABLATION_MULTI_AGENT=true python evals/run_eval.py \
+    --local-llm --live --record \
+    --golden evals/ceval_golden.jsonl \
+    --predictions .tmp/preds_ma_on.jsonl --results-dir .tmp/results_ma_on --no-judge
+
+# B：扁平拓扑（基线对照）——去掉上面那行环境变量，其余逐字相同
+python evals/run_eval.py --local-llm --live --record \
+    --golden evals/ceval_golden.jsonl \
+    --predictions .tmp/preds_ma_off.jsonl --results-dir .tmp/results_ma_off --no-judge
+
+# 各自出报告
+python scripts/eval/mcq_report.py --golden evals/ceval_golden.jsonl \
+    --predictions .tmp/preds_ma_on.jsonl --label "多 agent 开" --out .tmp/ma_on.md
+```
+
+多 agent 开关是 `AGENTIX_ABLATION_MULTI_AGENT`（默认 **关** = 扁平图，
+接线点 `agentix/orchestration/langgraph/lg_builder.py::get_active_graph`），
+**每请求读一次、不缓存** ⇒ 两组跑在同一个进程里也互不污染。
+
+### 10.4 判分口径（别把宽松当准确）
+
+* **MCQ 正确率用「选项字母抽取」**，不是子串命中。抽取优先级：
+  ① "答案/选 X" 类显式标注 → ② 行首 "X." → ③ 四个选项原文里出现了哪一个
+  （**只在抽不到字母时启用**）→ ④ 抽不出记 `none`。
+  ②③④ 的命中条数分别统计在报告的「抽取方式分布」里 ⇒ 宽松口径占比看得见。
+* **多 agent 指标只统计带 `multi_agent` 元数据的行**；扁平拓扑恒无 ⇒ 该组显示「不适用」
+  而不是 0（把「没有」读成 0 是这类报告最常见的撒谎方式）。
+* **性能读数**取自预测行的 `perf` 段（墙钟 / LLM 步数 / token），缺就显示「未采集」，
+  不补 0。
+* **路由准确率单列**：C-Eval 期望路由恒为 `general-query`（纯文本知识问答，
+  无附件 / 无图 / 无表 / 无 DB / 无知识图谱在评测范围内）。路由判错**单算一项**，
+  不混进 MCQ 正确率。
+
+### 10.5 冒烟实测（2026-10-26，3 题）与 A/B 未跑
+
+跑法同 §10.3，只把金标集换成 3 行切片，模型走**本机** LM Studio（`--local-llm` 录制档默认
+`qwen/qwen3-8b` @ `127.0.0.1:1234/v1`，不外送提示词）。**A/B 全量（156 题 × 多 agent 开 / 关）未跑**——
+维护者裁决本轮不跑评测，本节只登记冒烟读数与跑之前必须先补的口子。
+
+- **接线通了**：`--local-llm` 的录制前自检（`evals/recording_env.py::preflight_local_recording`）
+  全条 OK——两个模型 id 在列、知识库 / Neo4j / Text2SQL / Redis 可达；`run_eval.py --live --record`
+  落预测、`mcq_report.py` 出报告两条路径都跑通。
+- **路由准确率 0**：3 题期望恒 `general-query`，实测路由器给出 `kb-query`（2 条）/
+  `text2sql-query`（1 条）。这是被测系统的真实行为，不是脚本问题。
+- **MCQ 正确率「无法判分」而非 0%**：3 题答案全部抽不出选项字母（抽取方式分布 `none` 3/3）。
+  真因是进了 KB / Text2SQL 管线后被 guardrails 判"不在本知识库问答范围内"而**拒答** ⇒
+  答案文本里没有选项字母。报告如实显示「—（0/0 可判分）」，不折成 0%。
+- **单题墙钟 29.3s / 40.5s / 45.5s**（那一轮同时在与全量回归抢 CPU ⇒ 只当量级看）。按 40s/题
+  外推，156 题 × 2 臂**串行**约 3.5–5 小时；两臂不得并行——LM Studio 单实例并行会互相抢 CPU，
+  把延迟读数污染成不可比。
+- ⚠️ **跑 A/B 前必须先修的一处**（**措辞修正**：此处此前记的「录制侧把 `perf.llm_steps` / `perf.llm_latency_ms`
+  写成了**常量 0**」**不准确**——本轮沿代码复核证明**没有任何一处写死 0**，真缺口是三层接线：
+  ① 整条 ask 被包成**一次** Runtime 步骤，类型 `EXECUTING`（`agentix/application/services/chat_service.py:869`–`870`，
+  `agentix/runtime/runtime.py:185` / `:199` 同样只用 `StepType.EXECUTING`）⇒ 轨迹里没有 LLM 粒度的步骤；
+  ② `StepType` 里**没有 LLM / MODEL 成员**（`agentix/domain/runtime/steps.py:21`–`31`；`GENERATE = "generate"`
+  定义在 `:29` 但在 `agentix/` 全包**零代码引用**）；③ 报告侧判据只认带 `llm` 字样的类型
+  （`evals/run_eval.py:656`–`658`：`if "llm" not in step_type: continue`）。
+  后果形态也与"填 0"不同：`evals/run_eval.py:644`–`648` 的「缺就返回缺键、不补 0」在本次冒烟里**并没有被绕过**——
+  `.tmp/smoke_preds.jsonl` 三行的 `llm_steps` 键**存在**，值 0 表示「步骤列表取到了、其中没有一条算 LLM 步」，
+  是"真的没采到"而非"填了个 0"。**结论不变**：「模型调用次数」这项指标当前**不可用**，跑 A/B 前要先修仪表接线
+  （在执行链里登记 LLM 步 + 报告侧判据与真源同源），照现在跑 A/B 会产出一份"两臂每题都调用了 0 次模型"的报告。
+- 非商用许可（CC BY-NC-SA 4.0）不变；本轮 3 题只作本地测量，未再分发题目。

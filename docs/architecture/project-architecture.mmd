@@ -43,14 +43,14 @@ flowchart TB
   end
 
   subgraph ORCH["编排层"]
-    O1["LangGraph L2 主图（默认）<br/>message_window · analyze_and_route_query · route_query（条件边）"]
+    O1["LangGraph 单层主图（默认）<br/>10 节点平铺 · message_window → analyze_and_route_query · 条件边路由"]
     O2["直接出口<br/>general / additional / image / file"]
-    O3["KB 子图<br/>guardrails → kb_router → local_search / external_search → finalize"]
-    O4["KG 子图<br/>guardrails → planner → tool_selection → 并行工具 → summarize → final_answer_guard → final_answer"]
+    O3["KB 节点内子图<br/>guardrails → kb_router → local_search / external_search → finalize"]
+    O4["KG 节点内子图<br/>guardrails → planner → tool_selection → 并行工具 → summarize → final_answer_guard → final_answer"]
     O5["execute_task<br/>TASK_EXEC_ENABLED"]
     O6["Retrieval ReAct Runner<br/>无 LangGraph · 工具循环"]
     O7["Supervisor 多智能体<br/>Manager + Peer"]
-    O8["AgentLoop L3<br/>AGENT_LOOP_ENABLED"]
+    O8["AgentLoop 执行循环<br/>AGENT_LOOP_ENABLED"]
   end
 
   subgraph CORE["运行时 / Agent Core"]
