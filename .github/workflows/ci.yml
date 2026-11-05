@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 env:
-  PYTHON_VERSION: "3.10"
+  PYTHON_VERSION: "3.12"
 
 jobs:
   version-consistency:
@@ -62,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10"]
+        python-version: ["3.12"]
     env:
       # 单测不联网；这把假 key 只用于让"缺 key 即报错"的配置校验走过去。
       OPENAI_API_KEY: test-key-not-used-in-ci
