@@ -15,7 +15,7 @@ black==24.1.1
 ruff==0.5.7
 flake8==7.0.0
 mypy==1.8.0
-pre-commit==3.6.0
+pre-commit==4.6.2
 types-PyYAML
 types-requests
 
