@@ -14,7 +14,7 @@
 > **一个可控制、可取消、可回放的 Agent 运行时。**
 >
 > 不是又一个 RAG demo——每个 Agent 运行有预算、可取消（真正打断 asyncio Task）、
-> 失败可恢复、质量门禁四态可判（评测集换代中、基线未录，见 §8）。
+> 失败可恢复、质量门禁四态可判（见 §8）。
 > 3 条命令跑通一次带引用的 RAG 问答，见下方 [最小 Demo](#最小-demo3-条命令跑通一次带引用的-rag-问答)。
 
 <div align="center">
@@ -451,7 +451,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 - **流式防挂起**（批次 B1）：SSE 逐次取事件包 `STREAM_IDLE_TIMEOUT`（默认 60s）看门狗——上游静默挂起即 error + done 兜底收口并归还并发槽位，连接绝不悬挂
 - **预算意识**（Phase 28）：步数预算观测，轨迹 append `budget_notice`（剩余 ≤2 可见、不动静态前缀）+ 状态栏 `max_iter` 常量键（`BUDGET_NOTICE_ENABLED` 默认关）
 - **执行边界加固**（Phase S · §24.3 T0）：治理链回答「该不该做」，这一层回答「跑出去之后能不能切断」——非协程工具 handler 下放线程后 `timeout_ms` 才真能截断（`TOOL_SYNC_OFFLOAD_ENABLED`，默认关）、MCP 子进程只拿白名单环境不再继承全部密钥（`MCP_SUBPROCESS_ENV_SCRUB`）、表达式资源护栏（长度/指数/位宽/浮点有限性，语法白名单挡不住 `9**9**9`）、text2sql 两条闸门共用同一份只读词表（先等长抹除字面量再按词边界匹配）、日志凭据脱敏、`engine.echo` 与生产身份从 `DEBUG` 解耦（`DB_ECHO`/`APP_ENV`/`UVICORN_RELOAD`）、compose backend 加 `no-new-privileges` + CPU/内存/pids 配额；后续补上 T1 ⑫ 提前落地的 `kb_ingest` 连接串闸门（`KB_MYSQL_URL_GUARD`，默认关）与 T1 ⑧ 的 handler 类型契约告警（`TOOL_HANDLER_CONTRACT_ENABLED`，默认关：注册期点名非协程 handler，把「这条工具的超时为什么不生效」从排障现场前移到启动日志）、以及 T1 ⑬ 的数据库 engine 惰性化（`agentix/infrastructure/core/database.py` 不再在模块导入期建池，`import agentix.capabilities.mcp` 连带把整个数据面拉起来的副作用已切断；`engine` / `SessionLocal` 旧写法仍可用，只是取用才建）、以及 T0 ⑤ 的容器运行身份旋钮（`AGENTIX_CONTAINER_USER`，默认 `0:0` 仍是 root——降权要先准备宿主目录属主，否则失败形态是 restart 崩溃循环而不是拒绝启动，步骤见 [staging Runbook](docs/runbooks/预发环境与配置矩阵.md)）、以及 T1 ⑪ 的设置接口授权闸门（`SETTINGS_AUTHZ_ENABLED`，默认关：打开后 `GET /settings/{kb_id}` 要求该 kb 属于调用者租户、`PUT` 再要求 admin。**为什么掩码不够**——`llm_base_url` 这类字段本身可写，改指外部端点不需要密钥却足以让该租户的提问整批外送；「掩码」堵的是读、「授权」才堵得住写。开启有两个前置：迁移已回填 `knowledgebase.tenant_id`（NULL 走 fail-closed 一律 403）、且该租户内确有 admin（全仓暂无自助升 admin 的接口））、以及 T1 ⑫ 的第二半——导入过滤参数化（`KB_MYSQL_WHERE_PARAMETRIZED`，默认关：开则原始 `where` 片段一律拒，过滤只能走 `{column, op, value}` 结构化条件，列名过标识符白名单、运算符取封闭枚举、值全部走 bindparams。**为什么不是"再补几个黑名单词"**——黑名单拦得住 `;` 堆叠，拦不住 `1=1 OR 1=1` 这类合法但越界的片段，对拼出来的 SQL 而言调用方给的就是语法；也因此这一位是硬切而不是加字段，调用方要先迁完）、以及 T2 ⑭ 的执行位置端口（`EXECUTION_SANDBOX_ENABLED`，默认关：`ToolSpec.sandbox` 把「这条工具在哪儿跑」从写死在 `_invoke` 里变成声明，能跑的 `in_process` / `thread` 两档中后者让**单条工具**不必为它打开全局 `TOOL_SYNC_OFFLOAD_ENABLED` 就能下放线程；`container` 仍未实现 ⇒ 声明它在执行点被拒而不是静默退回进程内。**注意这两档都不是隔离**：同进程、同 GIL、同环境变量，端口的价值是让 ⑮ 的墙有地方接）、以及 T2 ⑮ 的子进程沙箱档（`TOOL_SANDBOX_SUBPROCESS_ENABLED`，默认关：开了、且某条工具**逐条声明** `sandbox="subprocess"`，才真的走墙。**一次调用一个进程**，子进程侧先落资源闸 `RLIMIT_AS=512MiB` / `RLIMIT_CPU=30s` / `RLIMIT_FSIZE=32MiB`（可选 `TOOL_SANDBOX_SUBPROCESS_UID=-1` 不降权；root 容器实测降到 65534）**再 import 业务代码**，环境变量走与 G2 **同一份**白名单 `agentix/domain/tool/exec_env.py`（实测父进程里的 `DATABASE_URL`/`LLM_API_KEY` 不过界），协议是 stdin 一条 JSON 请求 + stdout 一行带哨兵的 JSON 应答、两侧各有体积闸，**且成功信封必须回显本次调用的 nonce**（墙内代码自己 `print` 一条"成功信封"换不到它——旧口径下那条会被父进程当成成功结果返回，已实测复现；**且 `ok` 必须是严格布尔**，`"ok": 1` 这种伪造件同样会被真值判定当成成功，归属凭证在那条路上压根没执行），取消经 `start_new_session` + `os.killpg` 真杀进程组；⑯ 的能力探测不过（Windows 缺 `resource` 与进程组 kill）⇒ 执行点响亮拒绝，一次 handler 都不调、一个进程都不起。**它是墙，不是笼子**：挡住地址空间 / CPU 秒 / 文件大小 / 环境密钥 / 可杀性，另买到**带前置的**进程数闸（`RLIMIT_NPROC`，上限 32 个**任务**——线程也算：实测 soft=8 时先起 7 个线程、fork 预算就归 0；只在 `TOOL_SANDBOX_SUBPROCESS_UID` 配了**独立且非 0** 的 uid 时落，共用父 uid 会被假拦或形同虚设，uid 0 因持 `CAP_SYS_RESOURCE` 被内核豁免 ⇒ 明确不落并告警一次），**仍没挡住**文件权限与出网（只读根、指定可写目录、出网默认拒绝三件属 ⑰/T3）。代价实测：单次调用 p50 **≈50ms**（容器本机 FS），同一条 handler 走 `in_process` 档 p50 **0.001ms**、`thread` 档 **0.074ms** ⇒ 默认档必须留在进程内。取证步骤与数字表见 [subprocess 沙箱验证 Runbook](docs/runbooks/子进程沙箱取证.md)）。T2 G14 的同名重复注册点名告警也在这层（无开关、默认打印；`TOOL_DUPLICATE_REGISTRATION_STRICT` 可选、默认关）。口径见 [运行时护栏 §15](docs/architecture/运行时护栏.md)、选型与被拒方案见 [PROJECT_SPEC §23.8](docs/项目实现手册.md)、逐项实测见 [PROJECT_SPEC §24](docs/项目实现手册.md)
-- **运行时写代码执行**（Phase P2 · 默认关）：模型在运行时**自己写 Python 代码**完成任务，而不是把每一步翻译成既有工具调用（`code-query` 意图 → `code_agent` 节点 → `code_execute` 工具 → `subprocess` 沙箱档）。失败语义分两层：**治理层**失败（沙箱档位不可用 / 风险被拒 / HITL 未批 / 参数非法）**终局**——重试换不来一个实现，不进自愈循环；**运行层**失败（退出码非零 / 超时）才把真实 stdout/stderr 回灌让模型改码，最多 `CODE_EXEC_MAX_ROUNDS` 轮**尝试（含首次执行）**，轮数用尽产出**含最后一次输出**的失败回执、不假装成功。**POSIX 专属**，且**不隔离文件系统与网络**。口径见 [code exec 项目级声明](.qoder/rules/code-exec.md)
+- **运行时写代码执行**（Phase P2 · 默认关）：模型在运行时**自己写 Python 代码**完成任务，而不是把每一步翻译成既有工具调用（`code-query` 意图 → `code_agent` 节点 → `code_execute` 工具 → `subprocess` 沙箱档）。失败语义分两层：**治理层**失败（沙箱档位不可用 / 风险被拒 / HITL 未批 / 参数非法）**终局**——重试换不来一个实现，不进自愈循环；**运行层**失败（退出码非零 / 超时）才把真实 stdout/stderr 回灌让模型改码，最多 `CODE_EXEC_MAX_ROUNDS` 轮**尝试（含首次执行）**，轮数用尽产出**含最后一次输出**的失败回执、不假装成功。**POSIX 专属**，且**不隔离文件系统与网络**。口径见 `docs/项目实现手册.md` 里 code exec 的配置段
 
 **`kb_ingest` 服务间鉴权**：该服务是**写入语义**（入库直接改 Milvus 集合），且 compose 以 `ports: 8100:8000` 发布、`uvicorn --host 0.0.0.0` 启动。现已于 **router 级**挂载 `X-API-Key` 校验（router 级而非逐端点，避免新端点静默裸奔）：
 
@@ -682,13 +682,13 @@ docker compose --profile full up -d       # 基础设施 + backend + web（compo
 
 > **当前测试基线（2026-11-02 实测）**：`.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **6052 passed / 40 skipped / 6 deselected / 0 failed**（514.95s，Python 3.12.13，单机离线，未开并行）；`ruff check agentix tests scripts evals kb_ingest` 全绿；`mypy agentix/domain` 40 文件 0 错；`python scripts/gen_staging_matrix.py --check` 退出 0；`pip check` 无 broken requirement。
 >
-> 更早口径（2026-10-27 PhaseK：5239 passed / 40 skipped / 4 deselected / 1 failed）与 5084 → 5061 → … → 2329 已移入历史链，见 [docs/工程口径日志.md](docs/工程口径日志.md)；README 只保留当前值，避免同一事实写两处。
+> 更早口径（2026-10-27 PhaseK：5239 passed / 40 skipped / 4 deselected / 1 failed）与 5084 → 5061 → … → 2329 已移入历史链；README 只保留当前值，避免同一事实写两处。
 >
-> 历史口径链（5084 → 5061 → … → 2329）、逐项加法、变异验证与独立审查留痕已移出本节，见 [docs/工程口径日志.md](docs/工程口径日志.md)；README 只保留当前值，避免同一事实写两处。
+> 历史口径链（5084 → 5061 → … → 2329）、逐项加法、变异验证与独立审查留痕已移出本节；README 只保留当前值，避免同一事实写两处。
 
 > **教训（写进口径链，不只写进这一次的说明）**：⑫ 落地时只跑了定向守卫（p113 及其邻域），而它改的是 `_build_query` 的调用契约，破坏面在**没人想到要跑**的旧文件里。定向回归证明"新行为对"，全量套件才证明"旧行为没被撞坏"——两者不可互替。
 
-**前端套件当前验证值**：2026-10-23 运行 `npm run test -- --reporter=dot`，**26 个测试文件、223 个测试全部通过**（5.77s）。历史增量链见 [docs/工程口径日志.md](docs/工程口径日志.md)。
+**前端套件当前验证值**：2026-10-23 运行 `npm run test -- --reporter=dot`，**26 个测试文件、223 个测试全部通过**（5.77s）。
 
 40 条 skip 均为显式声明：22 条 p125 的 POSIX 专属用例（Windows 上按设计跳过，由 Linux 容器真跑取证，见 [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md)）+ 4 条 p131 的 POSIX 专属用例（code exec 在墙内真跑一段代码 / 非零退出如实上报 / 超时被杀且秒级返回 / 墙被杀时孙进程随之被杀（`PR_SET_PDEATHSIG`）——最后那条在 Windows 上是**按设计跳过**：口径 §5 写明这条承诺只在 Linux 成立（macOS 没有 `prctl`），它测的不是"这台机器测不了"，而是"这个平台兑现不了那条承诺"；4 条的跳过理由都取自与执行点同源的能力探测，第 4 条取自 `parent_death_signal_supported()`）+ 4 条集成/端到端用例（2 条需 `LEGELBOT_RUN_INTEGRATION_TESTS=1`，2 条 LightRAG 端到端需 `LEGELBOT_RUN_LIGHTRAG_E2E=1`）+ 10 条 Redis Stream 契约用例（本机无 Redis 服务时按设计诚实跳过，`RedisStreamEventBus` 懒连接、连接错误向上传播不伪造）。真图 HITL 进环 E2E（`test_p81` `TestRealGraphE2E`）在本地 Python 3.12.13 执行；CI Python 3.10 按设计跳过，**不存在无原因静默跳过**。
 
@@ -860,7 +860,6 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | [配置管理](docs/architecture/配置管理.md) | 单一事实来源、特性开关回滚表 |
 | [架构决策记录](docs/architecture/adr/) | 分层与端口 / 注册表可插拔 / 声明式配置 |
 | [优化路线图与落地台账](docs/design/性能与优化路线图.md) | 性能功能盘点 · 优化清单 · 分期路线 · 落地记录（代码 + 守卫 + 取证边界）· 架构分层与 Agent 内核的 M 组（§7 / §8） |
-| [架构审计 2026-09-28](docs/architecture/架构审计-2026-09-28.md) | 遗留可优化点分期方案；批次 A/B/C **已修复清单**（§1，随批移项）+ 验证基线 |
 | [技术栈指南](docs/guides/技术栈详解.md) | 全量技术选型、版本与集成细节 |
 | [Quick Start 常见问题](docs/guides/快速启动.md) | 端口占用 / 连接超时 / LLM 空返回排查 |
 | [Agent 路由速查表](docs/guides/路由速查表.md) | 路由意图、出口节点、关键词兜底 |
@@ -873,7 +872,6 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | [失败恢复 Runbook](docs/runbooks/失败恢复演练.md) | 四层失败恢复机制与现场演示命令 |
 | [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md) | ⑮/⑯ 在 Linux 容器里的资源闸、环境白名单、降权与延迟数字怎么复现 |
 | [变更记录](CHANGELOG.md) | 按版本记录功能、修复、迁移与验证口径；历史迁移文档已移除，当前结构以 [§3 架构](#3-架构) 为准 |
-| [历史工程口径](docs/工程口径日志.md) | 测试口径链、逐项加法、变异验证与独立审查留痕（当前值仍以 §11 为准） |
 | [已知限制清单](docs/已知限制.md) | §16 的逐条展开：沙箱 / 门禁 / 覆盖缺口 / 路由兜底 / `kb_ingest` 边界 |
 | [版本管理](docs/版本管理策略.md) | 版本号语义、发布分支与兼容策略 |
 | [评测说明](evals/README.md) | 确定性打分、质量门禁、消融实验（评测集换代中；新题集为公开 MCQ，见其 §10） |

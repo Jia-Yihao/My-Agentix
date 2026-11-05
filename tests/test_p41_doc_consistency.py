@@ -465,7 +465,15 @@ class TestCoverageBlindSpots:
         )
 
     def test_docx_scan_actually_found_paths(self):
-        """防空真：docx 抽取失效（改名/损坏）会让上一条永远绿。"""
+        """防空真：抽取失效（改名/损坏）会让上一条永远绿。
+
+        公开分发的仓库里不带说明书 docx，因此这里按「有 docx 才判」：
+        `docs/` 下一旦出现 docx，抽取条数就必须过百；一个都没有时这条不空转，
+        只在有 docx 的形态下生效。
+        """
+        docx_files = sorted(DOCS_ROOT.rglob("*.docx"))
+        if not docx_files:
+            return
         refs = _docx_paths()
         assert len(refs) >= 100, (
             f"docx 只抽到 {len(refs)} 条路径引用——抽取逻辑可能失效"
@@ -917,13 +925,27 @@ class TestNoUnpublishedRemoteLinks:
             + "\n发布到公共远端后，再按 README §10 的注释回填链接与徽章。"
         )
 
-    def test_history_still_holds_it(self):
-        """防空真：豁免面必须真的含该串，否则上一条等于什么都没拦。"""
-        assert UNPUBLISHED_REMOTE in (
-            PROJECT_ROOT / "CHANGELOG.md"
-        ).read_text(encoding="utf-8"), (
-            "CHANGELOG 里已查不到该 URL——豁免面前提消失，"
-            "请把上一条的空转风险一并处理（改成正向锚点或扩大扫描面）"
+    #: 全仓 md 扫描时跳过的目录（构建产物与虚拟环境，不是仓库内容）
+    _SKIP_DIRS = {".git", ".tmp", ".venv", "node_modules", "__pycache__"}
+
+    def test_no_document_anywhere_links_the_unpublished_remote(self):
+        """防空真：扫描面从「当前态文档」扩到全仓 md。
+
+        CHANGELOG 重写后不再引用该 URL，原先靠「CHANGELOG 里一定有这串」做的
+        正向锚点随之失效。与其留一条空转的断言，不如把扫描面扩大：任何**已入库**
+        的 md 再引用这个实测 404 的远端都会红。
+        """
+        offenders = []
+        for path in sorted(PROJECT_ROOT.rglob("*.md")):
+            rel_parts = set(path.relative_to(PROJECT_ROOT).parts)
+            if rel_parts & self._SKIP_DIRS:
+                continue
+            if UNPUBLISHED_REMOTE in path.read_text(encoding="utf-8", errors="ignore"):
+                offenders.append(path.relative_to(PROJECT_ROOT).as_posix())
+        assert not offenders, (
+            f"仍有文档引用未发布的远端 {UNPUBLISHED_REMOTE}（实测 404）：\n  "
+            + "\n  ".join(offenders)
+            + "\n改用当前公开仓库的地址。"
         )
 
 
