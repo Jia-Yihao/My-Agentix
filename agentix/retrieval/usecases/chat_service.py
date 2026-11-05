@@ -528,6 +528,20 @@ async def retrieve_scoped_docs_cached(
             logger.warning("query intelligence failed (fail-open)", exc_info=True)
             effective_norm = question_norm
             cache_suffix = ""
+
+    # 5W1H 槽位扩展：确定性、零模型调用，只往检索文本追加规范词（原句保留）。
+    # 独立于上面两个 LLM flag，默认关 = 基线逐位等价；生效才加缓存池后缀。
+    if settings.RETRIEVAL_SLOT_EXPANSION_ENABLED:
+        try:
+            from agentix.retrieval.usecases.query_slots import expand_query
+
+            slot = expand_query(effective_norm)
+            if slot.added_terms:
+                effective_norm = slot.search_text
+                cache_suffix += "|s1"
+        except Exception:  # noqa: BLE001 - 扩展失败保留原检索文本
+            logger.warning("query slot expansion failed (fail-open)", exc_info=True)
+
     rewrite_ms = (time.perf_counter() - t_rewrite) * 1000.0
     hybrid_on = bool(settings.RETRIEVAL_HYBRID_ENABLED)
 

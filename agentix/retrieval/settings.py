@@ -248,6 +248,12 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_QUERY_REWRITE_ENABLED = _bool_env("RETRIEVAL_QUERY_REWRITE_ENABLED", "false")
     RETRIEVAL_HYDE_ENABLED = _bool_env("RETRIEVAL_HYDE_ENABLED", "false")
 
+    # 5W1H 槽位扩展：纯确定性、零 LLM 调用，只往检索文本追加规范词。默认关 =
+    # 基线逐位等价；词法通道的召回收益以实测消融为准，不假定一定为正。
+    RETRIEVAL_SLOT_EXPANSION_ENABLED = _bool_env(
+        "RETRIEVAL_SLOT_EXPANSION_ENABLED", "false"
+    )
+
     # 检索优化三闸 + 精排动态
     # 跳过，全部默认关 ⇒ flag-off 与基线逐位等价（检索域 env 键沿既有惯例
     # 只进 .env.example 注释示例块，不入 配置管理.md/p41 名单）。
