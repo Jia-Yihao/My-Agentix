@@ -30,7 +30,7 @@ jobs:
       # 基线只需要进程活着能路由，不需要外部中间件 ⇒ SQLite。
       DATABASE_URL: sqlite:///./perf_baseline.db
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -145,7 +145,7 @@ jobs:
       # 首周口径的到期日：2026-10-28 建档 → 到 2026-11-03 只报告 → 2026-11-04 起同日判定真阻断。
       PERF_ENFORCE_FROM: "2026-11-04"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}

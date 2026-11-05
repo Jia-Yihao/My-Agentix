@@ -26,7 +26,7 @@ jobs:
     name: Analyze (Python)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 解释器版本与 CI/运行时口径对齐（PROJECT_SPEC §21.2：py3.10）。
       - uses: actions/setup-python@v5
         with:
