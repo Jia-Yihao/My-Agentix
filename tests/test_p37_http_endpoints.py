@@ -119,19 +119,62 @@ class TestMiddlewareAndErrorHandling:
         assert resp.status_code == 404
         assert "detail" in resp.json()
 
-    def test_external_service_failure_collapses_to_500(self, client):
-        """无 Redis/MySQL 时，依赖它们的端点应返回 **500 而非让进程崩**。
+    def test_redis_down_collapses_to_500(self, client, monkeypatch):
+        """Redis 不可用时，依赖它的端点应返回 **500 而非让进程崩**。
 
-        这是 `global_exception_handler` 的验收：异常被收敛、不泄漏堆栈。
+        这是 `global_exception_handler` 的验收：异常被收敛、响应体不带堆栈也不带
+        原始异常文案（处理器只回通用文案，见 `agentix/main.py::global_exception_handler`）。
+
+        故障是**注入**的而不是等环境自然发生：宿主机上恰好跑着 Redis 时，
+        `ops/dashboard` 会正常返回 200，这条用例就会从「量异常收敛」退化成
+        「量本机装没装 Redis」——本地绿、CI 红，取决于环境而不取决于代码。
+        """
+        import redis
+
+        from agentix.interfaces.http import ops_router
+
+        class _ObservabilityWithRedisDown:
+            """门面替身：取一次看板数据就抛连接错误，等价于 Redis 掉线。"""
+
+            async def get_dashboard(self):
+                raise redis.exceptions.ConnectionError("p37: injected redis outage")
+
+        monkeypatch.setattr(ops_router, "get_observability", lambda: _ObservabilityWithRedisDown())
+
+        resp = client.get("/api/v1/ops/dashboard", timeout=CLIENT_TIMEOUT)
+        assert resp.status_code == 500, f"Redis 掉线未收敛为 500：{resp.status_code}"
+        assert "error" in resp.json()
+        assert "Traceback" not in resp.text
+        assert "injected redis outage" not in resp.text
+
+    def test_database_down_collapses_to_500(self, client):
+        """DB 不可用时，sessions 端点应返回 **500 而非让进程崩**。
+
+        同样用注入替代「等环境里没有 MySQL」：DB 可达与否取决于宿主 `DATABASE_URL`
+        指向哪个库（CI 指 SQLite，本地 `.env` 指 compose 里的 PostgreSQL），
+        真实调用等于让用例的结论随宿主配置漂移。这里把 `get_db` 依赖换成
+        「一取连接就抛 OperationalError」，直接量 DB 层的异常是否走同一个收敛路径。
         （sessions 的 user_id 已改必填——缺参只会 422，须带参才能进到 DB 层。）
         """
-        for path in ("/api/v1/ops/dashboard", "/api/v1/sessions/?user_id=u-p37"):
-            resp = client.get(path, timeout=CLIENT_TIMEOUT)
-            assert resp.status_code == 500, f"{path} 未收敛为 500：{resp.status_code}"
-            body = resp.json()
-            assert "error" in body
-            # 原始异常信息不得外泄
-            assert "Traceback" not in resp.text
+        from sqlalchemy.exc import OperationalError
+
+        from agentix.infrastructure.core.database import get_db
+
+        def _unreachable_session():
+            raise OperationalError(
+                "SELECT 1", {}, Exception("p37: injected db outage")
+            )
+
+        client.app.dependency_overrides[get_db] = _unreachable_session
+        try:
+            resp = client.get("/api/v1/sessions/?user_id=u-p37", timeout=CLIENT_TIMEOUT)
+        finally:
+            client.app.dependency_overrides.pop(get_db, None)
+
+        assert resp.status_code == 500, f"DB 掉线未收敛为 500：{resp.status_code}"
+        assert "error" in resp.json()
+        assert "Traceback" not in resp.text
+        assert "injected db outage" not in resp.text
 
 
 # ---------------------------------------------------------------------------

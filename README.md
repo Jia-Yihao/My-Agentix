@@ -876,7 +876,6 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | [版本管理](docs/版本管理策略.md) | 版本号语义、发布分支与兼容策略 |
 | [评测说明](evals/README.md) | 确定性打分、质量门禁、消融实验（评测集换代中；新题集为公开 MCQ，见其 §10） |
 | [OWASP LLM Top 10 自评](docs/security/大模型安全风险自评.md) | LLM01–LLM10 逐条：风险 → 现有缓解（含代码位置）→ 残余风险 |
-| [已归档·项目全景与整体结构](docs/archive/项目全景-归档快照.md) | 其独有内容（三条端到端数据流 / 默认开关矩阵 / 关键代码索引）已于 2026-10-27 并入本文档 §3 与 §12，代码级细节由[实现细节手册](docs/项目实现手册.md)承接；**仅作历史留档，不再作为现行依据** |
 
 ---
 
@@ -1013,7 +1012,7 @@ LG-0-2 起 `.venv` 已迁到 `openai 2.54.0 / langchain-openai 1.7.3 / langchain
 （`qwen/qwen3-8b` + `text-embedding-bge-m3`）、SQLite、FAISS 索引（`doc_count=4,865`，语料
 SHA-256 与 §15.1 同为 `1ca58564b1f3a58c…`）、Dense-only（`hybrid=false`）、温度 0.0、
 `/no_think` 关思考链、单进程串行一轮、无并发。
-明细：[`data/demo/eval_e2e_venv_py312_openai1109.json`](data/demo/eval_e2e_venv_py312_openai1109.json)
+明细：`data/demo/eval_e2e_venv_py312_openai1109.json`
 （`data/demo/` 已进 `.gitignore`，需要时自行重跑生成）。
 
 | 指标 | 数值 | 口径 |
@@ -1048,8 +1047,8 @@ SHA-256 与 §15.1 同为 `1ca58564b1f3a58c…`）、Dense-only（`hybrid=false`
 3. **延迟绝对值对 Python 栈敏感，质量结论不敏感**——这条是本轮踩出来的，值得单独讲。
    同一份代码、同一份语料 SHA，另一套栈（Anaconda `python 3.13.9 / openai 1.47.0 /
    langchain-openai 1.1.6`，脚本为它自动改用 `function_calling + tool_choice="auto"`）把 23 题
-   重跑一遍（明细留档
-   [`data/demo/eval_e2e_anaconda_py313_openai147.json`](data/demo/eval_e2e_anaconda_py313_openai147.json)）：
+   重跑一遍（明细留档到 `data/demo/eval_e2e_anaconda_py313_openai147.json`，
+   该目录已进 `.gitignore`）：
    **逐题位次与检索集合 0 处差异**（Recall@5、MRR 逐位相同），但**检索 P50 从 100.3ms 变成
    2310.8ms**（mean 2304.1）。归因不在 FAISS：每次搜索都会重建 embedding 客户端——
    `RetrievalPortAdapter.search()`（`agentix/retrieval/usecases/retrieval_port_adapter.py:73`）
