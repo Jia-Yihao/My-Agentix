@@ -723,7 +723,7 @@ py -3.12 -m venv .venv
 | 可观测性 | 轨迹回放 / 首错定位 / Pass^k / 轨迹前缀回归 |
 | Agent Runtime / MCP | Run API 语义（超时 / 取消 / 预算）、MCP 协议与桥接 |
 
-**CI/CD**：五条工作流（`ci.yml` / `codeql.yml` / `perf-baseline.yml` / `release.yml` / `secrets-scan.yml`）+ Dependabot 四生态（pip / npm / github-actions / docker）。
+**CI/CD**：五条工作流（`ci.yml` / `codeql.yml` / `perf-baseline.yml` / `release.yml` / `secrets-scan.yml`）+ Dependabot 安全更新（pip / npm / github-actions / docker 四生态；版本升级手动执行）。
 
 `ci.yml` 的汇总门 `ci-gate`（`if: always()`）要求七个 job 全绿：`version-consistency`（`scripts/bump_version.py --check`：pyproject / `agentix.__version__` / `web/package.json` / `.env.example` 四处一致）· `lint`（`ruff check agentix scripts evals kb_ingest tests` + `black --check` 非阻断 + `mypy agentix/domain`）· `test`（`pytest -m "not integration" -q`，矩阵只有 **Python 3.10**）· `architecture-guards`（`test_p17_domain_layer.py` + `test_p22_obs_scope.py`）· `eval-smoke`（`test_p21_eval_harness.py` harness 契约，只跑单测、不需要评测集）· `retrieval-gate`（检索与租户契约 8 个测试文件 + 三条 import 装配验）· `frontend`（`npm ci` + `npm run lint` + `npm run build`，**不含 vitest**）。
 

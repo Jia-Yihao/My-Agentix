@@ -1,3 +1,5 @@
+# 依赖版本升级不自动开 PR（open-pull-requests-limit: 0），需要时手动升级。
+# 安全更新由仓库的 security 设置单独驱动，不受本文件限制。
 version: 2
 
 updates:
@@ -5,7 +7,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 8
+    open-pull-requests-limit: 0
     groups:
       dev-tools:
         patterns:
@@ -18,15 +20,17 @@ updates:
     directory: /web
     schedule:
       interval: weekly
-    open-pull-requests-limit: 8
+    open-pull-requests-limit: 0
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
 
   - package-ecosystem: docker
     directories:
       - /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0

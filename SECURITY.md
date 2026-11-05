@@ -120,13 +120,13 @@ My Agentix 在架构层面内置了以下安全机制，便于你在部署与二
   准备目录属主——步骤见 [staging Runbook](docs/runbooks/预发环境与配置矩阵.md) 的「容器降权」一节。
   降权买到的是「写宿主挂载要过属主检查 + setuid 位失效」，买不到 `cap_drop`、
   只读根文件系统与 user namespace 映射（容器内 uid 与宿主 uid 仍是同一身份）
-- 定期运行 `pip-audit` / Dependabot 检查依赖漏洞（CI 已集成 Dependabot）
+- 定期运行 `pip-audit` 复核依赖漏洞；仓库开启 Dependabot 安全公告与安全更新，版本升级按需手动执行（`open-pull-requests-limit: 0`）
 
 ## 依赖安全现状
 
-- 以 `pip-audit -r requirements.txt` 实测为准（2026-10-04，S2 安全批，**历史读数**）：残余 **21 项 / 8 包**，全部属 langchain 0.3.x 生态（langgraph-checkpoint、langgraph、langchain-core、langchain、langchain-openai、langchain-text-splitters、langgraph-sdk、langsmith），清零需 langchain 1.x 大版本迁移。
+- 以 `pip-audit -r requirements.txt` 实测为准（2026-10-04 实测，**历史读数**）：残余 **21 项 / 8 包**，全部属 langchain 0.3.x 生态（langgraph-checkpoint、langgraph、langchain-core、langchain、langchain-openai、langchain-text-splitters、langgraph-sdk、langsmith），清零需 langchain 1.x 大版本迁移。
   - **LG-0-2（2026-10-27）已把 langchain 家族迁到 1.x**（`langgraph 1.2.18` / `langchain-core 1.7.0` / `langsmith 0.14.13` 等，见 `requirements.txt`），上面那 8 包**全部换了版本线** ⇒ 21 项既不能当作已清零，也不能沿用为现状：**必须在 1.x 栈上重跑 `pip-audit -r requirements.txt` 才能出结论**（本次环境未装 `pip-audit`，未复测，故不写新数字）。
-  - 核心 Web 栈（`fastapi==0.142.2` / `starlette==1.7.0` 等）漏洞在 S2 批已清零，本次未动这两个 pin，详见 `CHANGELOG.md`「S2 安全批」。
+  - 核心 Web 栈（`fastapi==0.142.2` / `starlette==1.7.0` 等）漏洞在 2026-10-04 那一轮已清零，本次未动这两个 pin。
 - `bandit`（medium+ 级别）当前 **0 findings**；LOW 级信息性项（try/except pass 等）保留并逐项复核。
 - 升级`requirements.txt` 与 `pyproject.toml` 双声明必须同步（`tests/test_dependency_consistency.py` 守卫），升级后以全量测试套件验证（README §11 唯一真源）。
 
