@@ -446,7 +446,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 - **服务间鉴权**：`kb_ingest` 的写入 / 检索端点需 `X-API-Key`
 - **Token 预算**：三档判定 + 两级台账，默认关闭、按需开启
 - **可靠性原语**：限流（全局 + 路由级）· 熔断（circuit breaker）· 并发限制，见 `agentix/reliability/`。**熔断的接线范围分开说（两个概念不互相援引）**：检索域两处**已接线**——① 检索 rerank 熔断（`agentix/retrieval/infra/rag/rerank.py`，熔断 OPEN / 半开探测额度用尽 ⇒ 快速降级、保留原召回顺序），② 检索链 LLM 调用熔断（`agentix/retrieval/usecases/chat_llm.py::invoke_with_breaker`，`LLM_CIRCUIT_BREAKER_ENABLED` 默认开）；**通用 CircuitBreaker 原语**（`agentix/reliability/circuit_breaker.py` 的装饰器与类直接用法）实现存在、未接线进检索域以外的生产链路（主编排 / 工具执行等无熔断闸），对外不声称"通用熔断已在生产链路生效"（发布门禁 release gate 已于 A6 删除，现由 `.github/workflows/release.yml` preflight + `evals/quality_gate.py` 承担）
-- **出站通知**（Phase 23）：`NOTIFY_USER_ENABLED=true` 注册 `notify_user` 工具——通知落 EventPort（type=`user_notification`）并经 `GET /api/v1/ops/events` 可查；声明 L1 → MEDIUM，开启 `HUMAN_REVIEW_ENABLED` 时**先审批后执行**（出站即副作用，不得绕闸）；本批不接真实邮件/短信通道
+- **出站通知**（Phase 23）：`NOTIFY_USER_ENABLED=true` 注册 `notify_user` 工具——通知落 EventPort（type=`user_notification`）并经 `GET /api/v1/ops/events` 可查；声明 L1 → MEDIUM，开启 `HUMAN_REVIEW_ENABLED` 时**先审批后执行**（出站即副作用，不得绕闸）；当前未接真实邮件/短信通道
 - **配置漂移告警**（Phase 22）：会话中途检测配置哈希变化 → 结构化 `system_notice`（仅键名不含值），实现见 `application/services/config_watch.py`
 - **流式防挂起**（批次 B1）：SSE 逐次取事件包 `STREAM_IDLE_TIMEOUT`（默认 60s）看门狗——上游静默挂起即 error + done 兜底收口并归还并发槽位，连接绝不悬挂
 - **预算意识**（Phase 28）：步数预算观测，轨迹 append `budget_notice`（剩余 ≤2 可见、不动静态前缀）+ 状态栏 `max_iter` 常量键（`BUDGET_NOTICE_ENABLED` 默认关）
@@ -469,16 +469,18 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 
 > **这一章证明什么**：我知道怎么判断一个 Agent 是变好还是变坏，以及怎么防止“门禁被悄悄放宽”。
 
-> ⚠️ **评测集正在换代，尚未完成**：旧的 KG/RAG 法律金标（102 条）与录制基线（预测档 + 质量基线）
-> 已于 2026-10-26 停用并删除，CI 的 `eval-offline` 门禁机位随之暂停。**这不是放弃评测**——
-> 评测代码全部保留（确定性打分口径、门禁四态、轨迹前缀回归、消融框架），新题集见下一段，
-> 只差基线录完即可重新武装。历史数字与口径链见
-> [ENGINEERING_LOG](docs/工程口径日志.md)，**不再重录，也不再作为门禁基准**。
+> **评测集已完成换代**：旧的 KG/RAG 法律金标（102 条）与录制基线已于 2026-10-26 停用删除，
+> CI 的 `eval-offline` 门禁机位随之暂停。评测代码全部保留（确定性打分口径、门禁四态、
+> 轨迹前缀回归、消融框架），题集改为公开 C-Eval MCQ（156 行 = 52 学科 × 3 题，**非商用许可**）。
 >
-> ✅ **新题集已就位，基线未录**：公开 MCQ（C-Eval 转换，156 行 = 52 学科 × 3 题，**非商用许可**），
-> 用于多 agent 性能测量。当前状态是「题有、全量未跑」——2026-10-26 只跑过 3 题冒烟，
-> A/B 全量未跑、CI 门禁未接（**不是没有评测集**）。读数与跑前要修的口子见
-> [evals/README.md](evals/README.md) §10.5，跑法见
+> ✅ **全量实测读数（2026-11-05，本机 LM Studio qwen3-8b，扁平拓扑 156 题全量）**：
+> MCQ 正确率 **0.7097**（110/155 可判分，1 题抽不出字母）、路由准确率 **1.0**、
+> 单题墙钟 p50 **5923 ms** / p90 **6931 ms**、整轮 **16 分 18 秒**、零拒答零缺失。
+> 多 agent 拓扑在同题集上跑 22 题后中止（单题 p50 **9628 ms**，约为扁平拓扑的 1.6 倍），
+> 部分样本正确率 0.7273（16/22），样本过小不作结论。
+>
+> 评测线不产出 `quality.json` 质量基线（C-Eval 无引用要求样本），因此门禁四态仍处于未武装状态；
+> 打分与门禁代码全部保留，接入带引用要求的题集即可重新武装。跑法见
 > [evals/README.md §10](evals/README.md#10-公开-mcq-评测集-c-eval)。
 
 ```bash
@@ -504,11 +506,11 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 | 能力 | 状态 | 说明 |
 |------|------|------|
 | 确定性打分 | 保留 | 路由准确率 / 引用命中率 / 拒答正确率 / 引用正确性 / must_contain / pass^k（空真口径显式可见，`*_applicable` 才是真实分母） |
-| 质量门禁 | 保留，未武装 | `quality_gate.py`——四态 **PASS / FAIL / NOT-ARMED / NOT-ENFORCED**，缺基线或缺键默认 **NOT-ARMED 硬失败**（退出码 2，不改动基线），首跑建档要显式 `--allow-bootstrap`；新题集基线未录，**暂时没有可比的基线**，CI 暂不跑这道门 |
+| 质量门禁 | 保留，未武装 | `quality_gate.py`——四态 **PASS / FAIL / NOT-ARMED / NOT-ENFORCED**，缺基线或缺键默认 **NOT-ARMED 硬失败**（退出码 2，不改动基线），首跑建档要显式 `--allow-bootstrap`；C-Eval 题集无引用要求样本、不产出 `quality.json`，门禁仍处于未武装状态，CI 暂不跑这道门 |
 | 消融基准表 | 保留 | `evals/ablations/`——A-G 七变体（LLM only → Full Agentix）对比，聚合出 BENCHMARK.md |
 | 失败回流 | 保留 | `feedback_ingest.py`——生产失败样本 → 候选评测行（人工评审后合入） |
 | 评估二期（Phase 31） | 保留 | 声称一致性 `claim_check` · 提示敏感性 `--sensitivity` 四变体极差 · PII 离线 `privacy_flagged`（applicable 分母、原文零留存）· Best@k——全部为报告键，只增不进门禁 |
-| 评测集 | **换代中** | 旧 KG/RAG 法律金标（102 条）与录制基线已于 2026-10-26 删除；新题集为 C-Eval 公开 MCQ（156 题），**基线未录、全量未跑**。本机位的历史五指标（`route_accuracy=0.6275` 等）是**历史测量记录**，不是当前门禁基准 |
+| 评测集 | **已换代并实测** | 旧 KG/RAG 法律金标（102 条）与录制基线已于 2026-10-26 删除；新题集为 C-Eval 公开 MCQ（156 题），2026-11-05 本机扁平拓扑全量实测 MCQ 正确率 **0.7097**（110/155 可判分）。历史五指标（`route_accuracy=0.6275` 等）是历史测量记录，不是当前门禁基准 |
 
 > 门禁被悄悄放宽这件事怎么防：口径在 `evals/quality_gate.py` 一处定义，CI 里不写死
 > 默认值；「缺基线」是硬失败而不是静默放行；`evals/` 的守卫测试（`test_p21` harness
@@ -678,7 +680,7 @@ docker compose --profile full up -d       # 基础设施 + backend + web（compo
 
 **测试真源**（唯一声明处，其他文档只应指向本节）：
 
-> **当前测试基线（2026-11-02，M3-6 收尾波次庚-收尾第二次全量后）**：`.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **6052 passed / 40 skipped / 6 deselected / 0 failed**（514.95s，Python 3.12.13，单机离线，未开并行；采集时点 `evals/**` 带另一会话未提交改动，采样边界提交 `c155177`；相对上一口径 6023（2026-11-01 己波）的 +29 增量归因与未逐条清点的参数化差额、采集条件与「40 skipped」的口径拆解见 `docs/工程口径日志.md` 的庚波条）；`ruff check agentix tests scripts evals kb_ingest` 全绿；`mypy agentix/domain` 40 文件 0 错（2026-11-01 实测，M3 链后由 38 增至 40）；`python scripts/gen_staging_matrix.py --check` 退出 0；`pip check` 无 broken requirement。口径链：文档分层收敛 **5242** → LG-0-2 依赖迁移 **5242**（零增删）→ LG-0-3 策略集中 **5260**（+18 新守卫 `test_p147`）→ LG-1-1 只读节点重试 **5272**（+12 新用例 `test_p148`）→ LG-1-2 业务分类 `retry_on` **5286**（+14 新用例 `test_p149`）→ LG-1-3 三层退避与原生默认同源 **5305**（+19 新用例 `test_p150`）→ LG-1-4 部署面预算桶 **5309**（+4 新守卫 `test_p151`）→ LG-2-1 恢复线程派生 **5320**（+11 新守卫 `test_p152`）→ LG-2-2 挂起续跑 409 **5325**（+5 新用例 `test_p153`）→ LG-2-3 轮数预算统一 **5335**（+10 新用例 `test_p154`）→ LG-2-4 定点重跑 **5344**（+9 新用例 `test_p155`）→ LG-2-5 历史回看 **5355**（+11 新用例 `test_p156`）→ LG-2-6 durability **5373**（+18 新用例 `test_p157`）→ LG-2-7 启动恢复限界 **5384**（+11 新用例 `test_p158`）→ LG-3-1 预算感知 **5400**（+16 新用例 `test_p159`）→ LG-3-2 节点超时 **5426**（+26 新用例 `test_p160`）→ LG-3-3 四个业务指标 **5448**（+22 新用例 `test_p161`）→ LG-3-4 恢复期幂等 **5474**（+26 新用例 `test_p162`）→ LG-3-5 节点级错误补偿 **5494**（+20 新用例 `test_p163`）→ LG-3-6 优雅关闭 **5519**（+25 新用例 `test_p164`）→ approval-recovery T19 审批等待时限 **5580**（+61 新用例 `test_p165_hitl_approval_deadline.py`）→ 收口批（T11 控制面取消 / T12 检索基准探针 / T15 队列告警 / T16 业务端点 p95 / T21 运行态落库 + T3 补测）**5657**（2026-10-28 那轮全量实测，新增用例见各自 CHANGELOG 小节）→ M2/M3 链与收尾波次甲–戊（M2-1…M2-5 拆边与录基线、M1 架构守卫可执行化、M3-1…M3-6 内核合一与收口）收口于 **6023**（2026-11-01 己波全量实测；该时点句原写作「己波唯一一次全量」，2026-11-02 波次庚-收尾已做第二次全量，范围冲突登记见台账 §8.3 步 5 行末与 §8.2 表 AB 的 B-45／B-46 行；相对 5657 的 +366 为两端实测相减、不逐条清点，逐段归属见台账 §8）→ 庚-3 六枚代码批 **6052**（2026-11-02 于采样边界 `c155177` 实测；相对 6023 的 +29 为两端实测相减、未逐条清点，逐提交新增测试函数枚数与 2 枚参数化装饰器的分布及差额声明见 `docs/工程口径日志.md` 的庚波条），逐段读数与条件见 [docs/工程口径日志.md](docs/工程口径日志.md)。**文档分层收敛轮（5242）是本仓第一次全量 0 failed**：上一轮唯一的红是文档路径存在性守卫点名两条「规划中但从未存在」的引用，当轮把这两处改述成不带路径反引号的写法（它们本来就是「当前不存在」的事实陈述），没有删守卫、没有加豁免、没有调测试基线，理由见 [CHANGELOG](CHANGELOG.md) 的「文档分层收敛」小节。
+> **当前测试基线（2026-11-02 实测）**：`.venv/Scripts/python.exe -m pytest -m "not integration" -q` → **6052 passed / 40 skipped / 6 deselected / 0 failed**（514.95s，Python 3.12.13，单机离线，未开并行）；`ruff check agentix tests scripts evals kb_ingest` 全绿；`mypy agentix/domain` 40 文件 0 错；`python scripts/gen_staging_matrix.py --check` 退出 0；`pip check` 无 broken requirement。
 >
 > 更早口径（2026-10-27 PhaseK：5239 passed / 40 skipped / 4 deselected / 1 failed）与 5084 → 5061 → … → 2329 已移入历史链，见 [docs/工程口径日志.md](docs/工程口径日志.md)；README 只保留当前值，避免同一事实写两处。
 >
@@ -857,7 +859,7 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | [请求执行图](docs/architecture/请求执行图与关键路径.md) | 请求链路与节点依赖 |
 | [配置管理](docs/architecture/配置管理.md) | 单一事实来源、特性开关回滚表 |
 | [架构决策记录](docs/architecture/adr/) | 分层与端口 / 注册表可插拔 / 声明式配置 |
-| [优化路线图与落地台账](docs/design/性能与优化路线图.md) | 性能功能盘点 · 优化清单 · 分期路线 · 落地台账（代码 + 守卫 + 取证边界，含本批收尾结论）· 架构分层与 Agent 内核的 M 组（§7 / §8） |
+| [优化路线图与落地台账](docs/design/性能与优化路线图.md) | 性能功能盘点 · 优化清单 · 分期路线 · 落地记录（代码 + 守卫 + 取证边界）· 架构分层与 Agent 内核的 M 组（§7 / §8） |
 | [架构审计 2026-09-28](docs/architecture/架构审计-2026-09-28.md) | 遗留可优化点分期方案；批次 A/B/C **已修复清单**（§1，随批移项）+ 验证基线 |
 | [技术栈指南](docs/guides/技术栈详解.md) | 全量技术选型、版本与集成细节 |
 | [Quick Start 常见问题](docs/guides/快速启动.md) | 端口占用 / 连接超时 / LLM 空返回排查 |

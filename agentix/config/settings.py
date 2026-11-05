@@ -1610,6 +1610,12 @@ class Settings(BaseSettings):
         default=False,
         description="Enable deterministic clarify gate before handlers (ambiguous input asks first; default off)",
     )
+    # 评测专用：C-Eval 等通识 MCQ 题集不经过意图分类与 KB/KG guardrails，
+    # 直接落 general-query 由基座 LLM 作答。默认关 ⇒ 生产路由链逐位等价。
+    EVAL_FORCE_GENERAL_QUERY: bool = Field(
+        default=False,
+        description="Evaluation-only: force general-query routing to bypass intent classification and KB/KG guardrails for MCQ benchmarks; default off",
+    )
     # Phase 28（Ch10 §10.6 预算意识）：预算只读可见（默认**关**）。
     # flag-on = 状态栏常量键 max_iter（构造侧写入，同配置前缀稳定，KV Cache 纪律）
     # + 剩余 ≤2 步时轨迹 append budget_notice（append-only；动态剩余量**拒绝**

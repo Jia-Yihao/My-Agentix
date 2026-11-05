@@ -452,6 +452,20 @@ def _store_routing_cache(
 
 async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) -> dict:
     """Analyze the user's query and determine the appropriate routing."""
+    # 评测专用（EVAL_FORCE_GENERAL_QUERY=true）：通识 MCQ 题集不经过意图分类
+    # 与 KB/KG guardrails，直接落 general-query 由基座 LLM 作答。默认关 ⇒
+    # 下方路由链逐位等价；开时零 LLM 分类调用。
+    if settings.EVAL_FORCE_GENERAL_QUERY:
+        question_text = state.messages[-1].content if state.messages else ""
+        logger.info("eval[force_general_query]: skip intent classification")
+        return {
+            "router": Router(
+                type="general-query",
+                logic="eval: forced general-query (MCQ benchmark)",
+                question=question_text,
+            )
+        }
+
     # 消融开关（AGENTIX_ABLATION_ROUTER_ENABLED=false）：
     # 彻底绕过意图分类——既不构造 router 角色 LLM，也不发分类请求，
     # 固定返回 kb-query。这才是变体 B_rag「固定向量检索（绕过路由）」的语义；

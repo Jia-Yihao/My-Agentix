@@ -10,13 +10,13 @@
 > （C-Eval 公开 MCQ，156 题）也已就位，只差基线录完即可重新武装。
 > **历史数字（102 条基线、Recall@5 等）是历史测量记录，不再作为门禁基准，也不再重录。**
 >
-> ✅ **公开 MCQ 评测集已建、**A/B 全量未跑**（2026-10-26 只跑过 3 题冒烟，见 §10.5）**：为量化多 agent 系统的性能，
+> ✅ **公开 MCQ 评测集已建并完成全量实测（2026-11-05）**：为量化多 agent 系统的性能，
 > 用公开数据集 **C-Eval**（`ceval/ceval-exam`，许可 **CC BY-NC-SA 4.0 = 非商用**）
-> 转换出 156 行金标（52 个学科 × 3 题）`evals/ceval_golden.jsonl`；
-> 转换脚本 `scripts/eval/ceval_to_golden.py` 带**回源逐行校验**，
+> 转换出 156 行金标（52 个学科 × 3 题）`evals/ceval_golden.jsonl`；转换脚本带**回源逐行校验**，
 > 出处 / 许可 / 抽样口径落在 `evals/ceval_golden.manifest.json`。
-> 这套集**只作人工性能测量用**：**没有 CI 门禁、没有质量基线、A/B 全量未跑**，
-> 跑法见本文件 §10；3 题冒烟的真实读数与"跑 A/B 前要先修的口子"见 §10.5。
+> 扁平拓扑全量实测 **MCQ 正确率 0.7097**（110/155 可判分）、路由准确率 1.0、单题 p50 5923 ms；
+> 多 agent 拓扑跑 22 题后中止（单题 p50 9628 ms）。这套集**只作人工性能测量用**：
+> **没有 CI 门禁、没有质量基线**，跑法见 §10，读数与复现命令见 §10.6。
 
 ---
 
@@ -678,10 +678,11 @@ python evals/hybrid_eval.py --help
 
 * ⚠️ **评测集换代中**：旧的 102 条法律金标（覆盖全部 7 类路由与 6 个出口节点，含 13 条越界）
   与录制基线已于 2026-10-26 停用删除；下面的框架能力全部保留，新题集基线录完即可重新武装。
-* ✅ **公开 MCQ 评测集已建、**A/B 全量未跑**（2026-10-26 只跑过 3 题冒烟，见 §10.5）**：`ceval_golden.jsonl`（C-Eval 转换，
+* ✅ **公开 MCQ 评测集已建并完成全量实测（2026-11-05）**：`ceval_golden.jsonl`（C-Eval 转换，
   156 行，非商用许可）+ `scripts/eval/ceval_to_golden.py`（带回源校验）+
   `scripts/eval/mcq_report.py`（MCQ 判分 + 多 agent 性能报告）已就位；
-  **跑法见 §10；A/B 全量未跑**（2026-10-26 只跑过 3 题冒烟，读数见 §10.5），不接 CI 门禁。
+  **扁平拓扑全量实测 MCQ 正确率 0.7097**（110/155 可判分），多 agent 拓扑跑 22 题后中止；
+  跑法见 §10，读数与复现命令见 §10.6，不接 CI 门禁。
 * ✅ `run_eval.py` 离线/在线双后端、**5 个确定性打分函数**（`score_route` /
   `score_citations` / `score_citation_correctness` / `score_must_contain` /
   `score_reject`）、CSV/summary 输出、`--judge` 开关（Phase 26：真实端点出分 +
@@ -763,7 +764,7 @@ python evals/hybrid_eval.py --help
 | **许可** | **CC BY-NC-SA 4.0 —— 非商用**。商用前须另行取得授权（见 `evals/ceval_golden.manifest.json`） |
 | **规模** | 156 行 = 52 个学科 × 3 题（分层抽样，种子固定 ⇒ 可复现）；**题数的唯一真源是 `evals/ceval_golden.manifest.json` 的 `rows` 字段**（由 `scripts/eval/ceval_to_golden.py` 生成，用例 `test_manifest_records_license_and_provenance` 钉 `rows>0` 且 `verification.rows_checked == rows`）。除本行（唯一声明处）外，对 `evals/README.md`、`README.md`、`docs/migration/现有目录树.md`、`docs/migration/PhaseJ_*.md` 跑 `grep -n "156"` 的**每一处命中都是本行的抄本快照**：本文件卷首 ✅ 横幅 `:16`、§1 目录用途块内的目录行 `:30`、§9 当前状态说明 `:683`、§10.5 跑批预算 `:819` 与 `:831`；`README.md:378`、`docs/migration/现有目录树.md:21`、`docs/migration/PhaseJ_评测活证据与叙事收口规划.md` 的 `:16`/`:17`/`:78`/`:97`/`:98`/`:112`/`:158`。登记面即上述四个文件的 `grep -n "156"` 命中；`CHANGELOG.md` 内的「156」是既有条目或行号引用，不属本登记面（该文件 `:35` 已就地说明）。**唯一例外**：本文件 `:103` 的「第 156–159 行」是 `agentix/application/agents/router.py` 的**行号引用**，不是题数抄本。对账跑 `wc -l evals/ceval_golden.jsonl` 并与 manifest 的 `rows` 比对（纪律 7：手抄数不留成第二基准） |
 | **用途** | 跑一次**多 agent 系统的性能测量**：正确率 / 延迟 / 模型调用次数 / supervisor 出口契约 |
-| **不是** | 不是 CI 门禁、不是质量基线、**A/B 全量未跑**（3 题冒烟见 §10.5）、不替换 §1 那条已停用删除的旧 KG/RAG 评测线 |
+| **不是** | 不是 CI 门禁、不是质量基线；扁平拓扑已全量实测（§10.6），多 agent 拓扑仅部分样本；不替换 §1 那条已停用删除的旧 KG/RAG 评测线 |
 
 ### 10.2 重新生成（数据集变了就重跑，别手改金标）
 
@@ -841,3 +842,43 @@ python scripts/eval/mcq_report.py --golden evals/ceval_golden.jsonl \
   是"真的没采到"而非"填了个 0"。**结论不变**：「模型调用次数」这项指标当前**不可用**，跑 A/B 前要先修仪表接线
   （在执行链里登记 LLM 步 + 报告侧判据与真源同源），照现在跑 A/B 会产出一份"两臂每题都调用了 0 次模型"的报告。
 - 非商用许可（CC BY-NC-SA 4.0）不变；本轮 3 题只作本地测量，未再分发题目。
+
+### 10.6 全量实测（2026-11-05，本机 qwen3-8b）
+
+在 §10.3 命令上加两个参数：`--question-suffix " /no_think"` 关闭 Qwen3 的思考链
+（否则短回答被 reasoning 吃光、`content` 为空，答案抽不出字母），
+以及环境变量 `EVAL_FORCE_GENERAL_QUERY=true`（评测专用开关，绕过意图分类与
+KB/KG guardrails，让通识选择题直落 general-query；默认关，生产路由逐位等价）。
+环境走本机 LM Studio，不传 `--local-llm`——该录制档的自检要求 Redis / Neo4j /
+MySQL 与 seed 语料，本机未起。
+
+**扁平拓扑（默认）**：
+
+| 指标 | 读数 |
+|---|---|
+| 题目数 | 156 |
+| MCQ 正确率 | **0.7097**（110/155 可判分） |
+| 抽取方式 | `letter` 155 · `none` 1 |
+| 路由准确率 | 1.0 |
+| 单题墙钟 | p50 **5923 ms** · p90 **6931 ms** · 均值 6214 ms |
+| 整轮耗时 | 16 分 18 秒 |
+| 拒答 / 缺失 | 0 / 0 |
+
+**多 agent 拓扑**：同题集跑到 22 题后中止——单机 8B 下单题 p50 **9628 ms**、均值 11924 ms，
+约为扁平拓扑的 1.6 倍，全量需 100 分钟以上。22 题部分样本正确率 0.7273（16/22），
+样本过小，不作结论。
+
+**仍未解决**：`perf.llm_steps` 仍恒为 0（执行链没有 LLM 粒度步骤，见 §10.5 末条），
+因此「每题模型调用次数」不提供；A/B 的调用次数对照需要先修仪表接线。
+
+复现命令：
+
+    EVAL_FORCE_GENERAL_QUERY=true \
+    LLM_BASE_URL=http://127.0.0.1:1234/v1 LLM_MODEL=qwen/qwen3-8b LLM_API_KEY=lm-studio \
+    .venv/Scripts/python.exe evals/run_eval.py --live --record \
+      --golden evals/ceval_golden.jsonl \
+      --predictions .tmp/preds_flat.jsonl --results-dir .tmp/results_flat \
+      --no-judge --question-suffix " /no_think"
+
+    .venv/Scripts/python.exe scripts/eval/mcq_report.py \
+      --golden evals/ceval_golden.jsonl --predictions .tmp/preds_flat.jsonl --label "扁平拓扑"
