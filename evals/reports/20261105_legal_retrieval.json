@@ -1,0 +1,590 @@
+{
+  "summary": {
+    "sample_size": 23,
+    "route_filter": "kb-query",
+    "search_k": 5,
+    "recall_k": 5,
+    "recall_at_k": 0.8696,
+    "mrr_within_recall_k": 0.7029,
+    "mrr_full": 0.7029,
+    "latency_ms": {
+      "retrieval_p50": 110.0,
+      "retrieval_p95": 241.5,
+      "generation_p50": 0.0,
+      "generation_p95": 0.0,
+      "end_to_end_p50": 16141.5,
+      "end_to_end_p95": 26368.5
+    },
+    "tokens": {
+      "prompt_mean": 0.0,
+      "completion_mean": 0.0,
+      "total_mean": 0.0
+    },
+    "env": {
+      "chat_model": "qwen/qwen3-8b",
+      "embedding_model": "text-embedding-bge-m3",
+      "vector_backend": "faiss",
+      "database": "sqlite:///D:/Code/My-Agentix/data/demo/agentix_demo.db",
+      "hybrid": false,
+      "thinking_disabled": true,
+      "kb_id": "legal-demo"
+    },
+    "golden": [
+      ".tmp/eval/legal_domain_golden.jsonl"
+    ]
+  },
+  "per_query": [
+    {
+      "id": "L009",
+      "question": "一方以欺诈手段使我订立的合同，我可以请求撤销吗？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第148条"
+      ],
+      "retrieved_sources": [
+        "《民法典》第148条",
+        "《民法典》第149条",
+        "《民法典》第150条",
+        "《民法典合同编通则司法解释》第5条",
+        "《民法典》第151条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 1137.7,
+      "generation_ms": 0.0,
+      "total_ms": 20292.2,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L010",
+      "question": "用人单位违法解除劳动合同，应当支付多少赔偿金？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《劳动合同法》第87条"
+      ],
+      "retrieved_sources": [
+        "《劳动合同法》第87条",
+        "《劳动合同法》第48条",
+        "《最高人民法院关于审理劳动争议案件适用法律问题的解释（一）》第45条",
+        "《劳动争议司法解释（二）》第18条",
+        "《劳动争议司法解释（二）》第12条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 82.2,
+      "generation_ms": 0.0,
+      "total_ms": 15753.8,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L011",
+      "question": "宪法规定公民享有哪些基本的政治自由？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《宪法》第35条"
+      ],
+      "retrieved_sources": [
+        "《宪法》第35条",
+        "《宪法》第34条",
+        "《宪法》第51条",
+        "《宪法》第47条",
+        "《宪法》第37条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 106.1,
+      "generation_ms": 0.0,
+      "total_ms": 14445.1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L043",
+      "question": "合同里没约定违约金，一方违约后损失怎么赔？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 3,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第584条"
+      ],
+      "retrieved_sources": [
+        "《民法典》第585条",
+        "《民法典》第588条",
+        "《民法典》第584条",
+        "《民法典》第592条",
+        "《民法典》第582条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 139.3,
+      "generation_ms": 0.0,
+      "total_ms": 16449.8,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L044",
+      "question": "约定的违约金过分高于实际损失，法院会调吗？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 4,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第585条"
+      ],
+      "retrieved_sources": [
+        "《民法典合同编通则司法解释》第65条",
+        "《民法典合同编通则司法解释》第64条",
+        "《最高人民法院关于审理商品房买卖合同纠纷案件适用法律若干问题的解释》第12条",
+        "《民法典》第585条",
+        "《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》第20条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 163.6,
+      "generation_ms": 0.0,
+      "total_ms": 19222.6,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L045",
+      "question": "向人民法院请求保护民事权利的诉讼时效期间是多久？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第188条"
+      ],
+      "retrieved_sources": [
+        "《民法典》第188条",
+        "《民法典总则编司法解释》第36条",
+        "《最高人民法院关于审理著作权民事纠纷案件适用法律若干问题的解释》第27条",
+        "《民法典》第190条",
+        "《最高人民法院关于审理商标民事纠纷案件适用法律若干问题的解释》第18条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 75.9,
+      "generation_ms": 0.0,
+      "total_ms": 17934.8,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L046",
+      "question": "试用期最长不能超过多久？",
+      "route": "general-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《劳动合同法》第19条"
+      ],
+      "retrieved_sources": [
+        "《劳动合同法》第19条",
+        "《劳动合同法》第70条",
+        "《劳动合同法》第83条",
+        "《刑法》第73条",
+        "《劳动合同法》第20条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 110.0,
+      "generation_ms": 0.0,
+      "total_ms": 26368.5,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L047",
+      "question": "试用期的工资不得低于劳动合同约定工资的百分之多少？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《劳动合同法》第20条"
+      ],
+      "retrieved_sources": [
+        "《劳动合同法》第20条",
+        "《劳动合同法》第83条",
+        "《劳动合同法》第19条",
+        "《劳动合同法》第70条",
+        "《劳动合同法》第72条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 77.1,
+      "generation_ms": 0.0,
+      "total_ms": 16077.2,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L048",
+      "question": "员工没有签书面劳动合同，单位要支付二倍工资吗？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 3,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《劳动合同法》第82条"
+      ],
+      "retrieved_sources": [
+        "《劳动争议司法解释（二）》第7条",
+        "《劳动争议司法解释（二）》第6条",
+        "《劳动合同法》第82条",
+        "《劳动争议司法解释（二）》第9条",
+        "《劳动合同法》第11条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 65.6,
+      "generation_ms": 0.0,
+      "total_ms": 13046.4,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L049",
+      "question": "平时加班、周末加班、法定节假日加班的加班费分别是多少倍？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": null,
+      "recall_at_k": false,
+      "expected_sources": [
+        "《劳动法》第44条"
+      ],
+      "retrieved_sources": [
+        "《劳动合同法》第31条",
+        "《劳动合同法》第85条",
+        "《最高人民法院关于审理劳动争议案件适用法律问题的解释（一）》第42条",
+        "《劳动合同法》第72条",
+        "《劳动争议司法解释（二）》第6条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 187.8,
+      "generation_ms": 0.0,
+      "total_ms": 13814.1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L050",
+      "question": "欺诈 使对方违背真实意思订立的合同，受欺诈方可以怎么办？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 2,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第148条"
+      ],
+      "retrieved_sources": [
+        "《民法典合同编通则司法解释》第5条",
+        "《民法典》第148条",
+        "《民法典》第149条",
+        "《民法典总则编司法解释》第21条",
+        "《民法典》第500条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 65.5,
+      "generation_ms": 0.0,
+      "total_ms": 14909.4,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L051",
+      "question": "无权处分人把不动产卖给我，我符合什么条件能善意取得？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 2,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第311条"
+      ],
+      "retrieved_sources": [
+        "《民法典物权编司法解释（一）》第14条",
+        "《民法典》第311条",
+        "《民法典物权编司法解释（一）》第15条",
+        "《民法典》第313条",
+        "《民法典》第304条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 90.9,
+      "generation_ms": 0.0,
+      "total_ms": 14238.5,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L052",
+      "question": "高空抛物砸伤人找不到具体侵权人，谁来担责？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第1254条"
+      ],
+      "retrieved_sources": [
+        "《民法典侵权责任编司法解释（一）》第25条",
+        "《民法典侵权责任编司法解释（一）》第24条",
+        "《民法典》第1254条",
+        "《民法典》第1240条",
+        "《民法典》第1253条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 108.2,
+      "generation_ms": 0.0,
+      "total_ms": 11483.7,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L053",
+      "question": "生产不符合食品安全标准的食品，消费者可以主张几倍赔偿？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《食品安全法》第148条"
+      ],
+      "retrieved_sources": [
+        "《最高人民法院关于审理食品药品惩罚性赔偿纠纷案件适用法律若干问题的解释》第12条",
+        "《食品安全民事纠纷解释（一）》第7条",
+        "《最高人民法院关于审理食品药品惩罚性赔偿纠纷案件适用法律若干问题的解释》第1条",
+        "《最高人民法院关于审理食品药品惩罚性赔偿纠纷案件适用法律若干问题的解释》第14条",
+        "《食品安全民事纠纷解释（一）》第1条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 104.1,
+      "generation_ms": 0.0,
+      "total_ms": 11882.0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L054",
+      "question": "经营者提供商品有欺诈行为，消费者可以主张几倍赔偿？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《消费者权益保护法》第55条"
+      ],
+      "retrieved_sources": [
+        "《最高人民法院关于审理食品药品惩罚性赔偿纠纷案件适用法律若干问题的解释》第9条",
+        "《食品安全民事纠纷解释（一）》第7条",
+        "《网络消费纠纷规定（一）》第10条",
+        "《最高人民法院关于审理食品药品惩罚性赔偿纠纷案件适用法律若干问题的解释》第12条",
+        "《最高人民法院关于审理食品药品惩罚性赔偿纠纷案件适用法律若干问题的解释》第16条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 183.9,
+      "generation_ms": 0.0,
+      "total_ms": 14640.0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L055",
+      "question": "在上下班途中受到非本人主要责任的交通事故伤害，算工伤吗？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": null,
+      "recall_at_k": false,
+      "expected_sources": [
+        "《工伤保险条例》第14条"
+      ],
+      "retrieved_sources": [
+        "《人身损害赔偿司法解释》第3条",
+        "《民法典》第1212条",
+        "《民法典》第1217条",
+        "《民法典》第1240条",
+        "《民法典侵权责任编司法解释（一）》第17条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 110.1,
+      "generation_ms": 0.0,
+      "total_ms": 15260.5,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L056",
+      "question": "非法获取出售公民个人信息五百条以上，构成什么罪？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": null,
+      "recall_at_k": false,
+      "expected_sources": [
+        "《刑法》第253条之一"
+      ],
+      "retrieved_sources": [
+        "《民法典》第111条",
+        "《刑法》第180条",
+        "《民法典》第1038条",
+        "《民法典》第1035条",
+        "《刑事诉讼法司法解释》第559条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 115.6,
+      "generation_ms": 0.0,
+      "total_ms": 18144.4,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L057",
+      "question": "《婚姻法》规定的离婚法定条件是什么？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第1079条"
+      ],
+      "retrieved_sources": [
+        "《民法典》第1079条",
+        "《民法典》第1080条",
+        "《民法典》第1076条",
+        "《民法典》第1082条",
+        "《民法典》第1091条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 76.0,
+      "generation_ms": 0.0,
+      "total_ms": 17356.1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L058",
+      "question": "按《侵权责任法》的规定，高空抛物找不到侵权人怎么办？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第1254条"
+      ],
+      "retrieved_sources": [
+        "《民法典侵权责任编司法解释（一）》第25条",
+        "《民法典》第1254条",
+        "《民法典侵权责任编司法解释（一）》第24条",
+        "《民法典》第1253条",
+        "《民法典》第1240条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 111.1,
+      "generation_ms": 0.0,
+      "total_ms": 19401.3,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L059",
+      "question": "《合同法》第107条关于违约责任是怎么规定的？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第577条"
+      ],
+      "retrieved_sources": [
+        "《民法典》第577条",
+        "《民法典》第582条",
+        "《民法典》第593条",
+        "《民法典》第617条",
+        "《民法典》第578条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 80.5,
+      "generation_ms": 0.0,
+      "total_ms": 16141.5,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L060",
+      "question": "《物权法》上的善意取得制度现在依据什么法律？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 4,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第311条"
+      ],
+      "retrieved_sources": [
+        "《民法典》第313条",
+        "《民法典物权编司法解释（一）》第6条",
+        "《民法典物权编司法解释（一）》第14条",
+        "《民法典物权编司法解释（一）》第19条",
+        "《民法典担保制度司法解释》第67条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 241.5,
+      "generation_ms": 0.0,
+      "total_ms": 27038.6,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L061",
+      "question": "《继承法》规定的法定继承顺序还有效吗？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第1127条"
+      ],
+      "retrieved_sources": [
+        "《民法典》第1127条",
+        "《民法典》第1121条",
+        "《民法典继承编司法解释（一）》第18条",
+        "《民法典继承编司法解释（一）》第39条",
+        "《民法典》第1154条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 110.1,
+      "generation_ms": 0.0,
+      "total_ms": 22262.6,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    {
+      "id": "L062",
+      "question": "《民法通则》关于诉讼时效的规定现在还能用吗？",
+      "route": "kb-query",
+      "status": "ok",
+      "rank": 1,
+      "recall_at_k": true,
+      "expected_sources": [
+        "《民法典》第188条"
+      ],
+      "retrieved_sources": [
+        "《民法典总则编司法解释》第35条",
+        "《民法典》第196条",
+        "《民法典》第193条",
+        "《民事诉讼法司法解释》第127条",
+        "《民法典合同编通则司法解释》第69条"
+      ],
+      "answer_chars": 0,
+      "retrieval_ms": 112.4,
+      "generation_ms": 0.0,
+      "total_ms": 18542.9,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  ]
+}

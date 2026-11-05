@@ -1868,6 +1868,7 @@ def run_live(
     k: Optional[int] = None,
     sensitivity: bool = False,
     local_llm: bool = False,
+    question_suffix: str = "",
 ) -> int:
     """在线跑分：调用真实 ``ChatService.ask`` 逐条提问 → 落盘 → 打分。
 
@@ -1978,7 +1979,7 @@ def run_live(
                     t_row = time.perf_counter()
                     try:
                         response = await service.ask(
-                            message=outgoing,
+                            message=f"{outgoing}{question_suffix}",
                             session_id=session_id,
                         )
                         row: Dict[str, Any] = {
@@ -2162,6 +2163,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    parser.add_argument(
+        "--question-suffix",
+        default="",
+        help=(
+            "在线模式：在每道题面末尾追加固定后缀（如 Qwen3 的 /no_think），"
+            "用于关闭推理模型的 thinking，使 MCQ 直接输出选项字母；"
+            "缺省空串 ⇒ 出站消息与现状逐字节一致。"
+        ),
+    )
     sensitivity = parser.add_argument_group("提示敏感性（Ch7 §7.5，默认关闭）")
     sensitivity.add_argument(
         "--sensitivity",
@@ -2249,6 +2259,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 k=args.k,
                 sensitivity=bool(args.sensitivity),
                 local_llm=bool(args.local_llm),
+                question_suffix=str(args.question_suffix),
             )
         return run_offline(
             golden_path=Path(args.golden),
