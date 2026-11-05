@@ -2,7 +2,7 @@
 
 ## 验收口径（指导文档 §4.2 LG-1-4）
 
-1. `Settings` 字段默认**仍是** `False`（纪律 1：新开关默认关，flag-off 与基线逐位等价）；
+1. `Settings` 字段默认**仍是** `False`（约定 1：新开关默认关，flag-off 与基线逐位等价）；
 2. `.env.example` 与 `docker/compose.override.staging.yml` 写推荐值 `true` 并注明理由；
 3. 配置矩阵那一行由部署物算出来（走 `scripts/gen_staging_matrix.py` 的同一份口径），
    不靠人抄——表里加粗 = 预发真的设了。
@@ -48,7 +48,7 @@ def _comment_block_above(lines: list[str], needle: str) -> list[str]:
 
 
 def test_settings_default_stays_off() -> None:
-    """纪律 1：读**字段默认值**，不实例化 Settings（实例化会吃宿主机 `.env`）。"""
+    """约定 1：读**字段默认值**，不实例化 Settings（实例化会吃宿主机 `.env`）。"""
     from agentix.config.settings import Settings
 
     field = Settings.model_fields["RETRY_BUDGET_ENABLED"]

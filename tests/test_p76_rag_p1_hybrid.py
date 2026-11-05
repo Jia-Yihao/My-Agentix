@@ -1,6 +1,6 @@
 """F1a：RAG P1 真 Hybrid（R-P1-1..5）契约守卫（p76）。
 
-钉死（docs/design/检索增强深度优化.md §5）：
+钉死 §5 的五项 P1：
 
 1. **flag-off 字节等价**：``RETRIEVAL_HYBRID_ENABLED=false``（默认）时
    sparse/融合/精排零调用，走既有 dense 单通道链；

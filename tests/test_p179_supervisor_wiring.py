@@ -448,7 +448,7 @@ def _imported_modules(path: pathlib.Path) -> List[Tuple[int, str]]:
     """全树 import 模块名（`ast.walk`：函数体内的延迟 import 同样计入）。
 
     口径注记（与 p178 第 7 组同）：`node.level == 0` 过滤意味着只扫**绝对导入**，
-    跨包相对导入的兜底源是 p177 守卫 #5，本文件不复制第二份判据（纪律 6 ④）。
+    跨包相对导入的兜底源是 p177 守卫 #5，本文件不复制第二份判据（约定 6 ④）。
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     found: List[Tuple[int, str]] = []

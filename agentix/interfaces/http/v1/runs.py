@@ -218,7 +218,7 @@ def _key_fingerprint(key: str) -> str:
     """键的可关联形式：SHA-256 前 12 位。
 
     键是调用方提供的任意字符串，可能承载调用方侧敏感语义，且属高基数内容
-    （纪律 3 禁止进指标 label）——日志里只出现指纹，不出现原文。
+    （约定 3 禁止进指标 label）——日志里只出现指纹，不出现原文。
     """
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
 
@@ -227,7 +227,7 @@ def _extract_idempotency_key(request: Request) -> Tuple[Optional[str], Optional[
     """解析 ``Idempotency-Key`` header，返回 (键, 拒绝理由)。
 
     header 缺位 ⇒ ``(None, None)``：调用方完全没带键，走基线路径。
-    拒绝理由只说为什么被拒，**不回放键内容**（纪律 6 ③ 精神：被拒输入
+    拒绝理由只说为什么被拒，**不回放键内容**（约定 6 ③ 精神：被拒输入
     不进响应体，错误路径本身不得变成回显器）。
     """
     raw = request.headers.get(IDEMPOTENCY_HEADER)
@@ -393,7 +393,7 @@ async def api_create_agent_run(request: Request, body: AgentRunCreate):
         }
         # T21：``meta.thread_id`` 是对外**响应体变更**（契约登记见
         # docs/项目实现手册.md 的 Run API 段），只在落库面装配时出现——flag-off 的
-        # 响应体与基线逐字节相同（纪律 1）。取值 = ``options.session_id``（``chat``
+        # 响应体与基线逐字节相同（约定 1）。取值 = ``options.session_id``（``chat``
         # 执行器的会话语义，也是图形的 checkpoint thread）；没有就**不写该键**，
         # 不拿空串占位（历史 run 回落时「没有线程」与「线程是空串」不该混为一谈）。
         # 「落库面是否装配」就是 flag 在本模块内的唯一判据（单一来源：
@@ -489,7 +489,7 @@ async def api_list_agent_runs(request: Request, state: Optional[str] = None):
     store = plane.run_store
     if store is not None:
         try:
-            # 同步 repo 经 to_thread 下放，不卡事件循环（纪律 6 ②）
+            # 同步 repo 经 to_thread 下放，不卡事件循环（约定 6 ②）
             records = await asyncio.to_thread(
                 store.list_runs,
                 state=state_filter.value if state_filter is not None else None,

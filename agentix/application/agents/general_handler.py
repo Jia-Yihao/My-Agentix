@@ -284,7 +284,7 @@ async def create_kb_query(state: AgentState, *, config: RunnableConfig) -> Dict[
         }
         # T30-2（单层路由）：L1 那次调用**给了**检索通道参数 ⇒ 一并转发给子图，
         # A3 节点据此跳过第二次模型调用。这里读的是「L1 有没有产出参数」，
-        # **不重读 flag**：flag 的判定源只有 ``router._exec_flags`` 一处（纪律 6 ④）。
+        # **不重读 flag**：flag 的判定源只有 ``router._exec_flags`` 一处（约定 6 ④）。
         # 判据取"这个 router 的 schema 里是否**声明过** kb_route"：只有单层变体
         # （``*SingleLayerRouter``）声明过它，基类 ``Router`` 上 ``extra="allow"``
         # 万一带回同名键也不算 L1 的决策产物——这样 flag-off 连加键的可能都不存在，

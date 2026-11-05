@@ -29,7 +29,7 @@
 ``container`` 是 T3 ⑰ 的落点，**这里没有实现**。
 :func:`resolve_sandbox` 对它抛 :class:`~agentix.domain.tool.sandbox.SandboxUnavailable`。
 「词汇表」与「当前真能跑的集合」的差集必须**可见**：那正是 ADR-0007
-要被推翻时用的接口。``subprocess`` 在差集里**与否**由 flag 决定——这是纪律 1
+要被推翻时用的接口。``subprocess`` 在差集里**与否**由 flag 决定——这是约定 1
 「新开关默认关 + flag-off 逐位等价」在阶梯上的具体形态。
 """
 
@@ -82,7 +82,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 #: ``subprocess`` 档的资源闸（**首批不给成旋钮**：它们定义的是这一档承诺的隔离强度，
-#: 不是部署偏好。要按工具调宽，请先把它做成 Settings 键并补纪律 4 的五处同步。）
+#: 不是部署偏好。要按工具调宽，请先把它做成 Settings 键并补约定 4 的五处同步。）
 #: 这三个值以 ``agentix.code_exec_runtime`` 为唯一来源（见顶部 import 处的说明），
 #: 名字与取值保持不变 ⇒ ``from agentix.tools.sandbox import RLIMIT_AS_MB`` 仍然可用。
 #: 进程数闸的上限。**只在配置了独立且非 0 的 uid 时才落**（判据见
@@ -525,7 +525,7 @@ class SubprocessSandbox:
         """把子进程**回读到的**真实边界打出来——"我调过 setrlimit"不是证据，回读才是。
 
         顺带把"这一档没落下的维度"报响一次：``nproc_gate.applies is False`` 是墙里自己
-        回传的判定，不是父进程猜的。纪律 2：观测失败绝不影响主链路，所以整段自吞。
+        回传的判定，不是父进程猜的。约定 2：观测失败绝不影响主链路，所以整段自吞。
         """
         try:
             applied = caps.get("rlimit_applied") or {}
@@ -560,7 +560,7 @@ _SANDBOXES: dict[str, ExecutionSandbox] = {
 }
 
 #: ``subprocess`` **不进** ``_SANDBOXES``：它由 ``TOOL_SANDBOX_SUBPROCESS_ENABLED``
-#: 单独决定（默认关）。纪律 1 的形态是"关着的时候，阶梯上这一格仍然是空的"——
+#: 单独决定（默认关）。约定 1 的形态是"关着的时候，阶梯上这一格仍然是空的"——
 #: 所以它必须在两处查询点（``implemented_kinds`` / ``resolve_sandbox``）都被 flag 挡住，
 #: 而不是把实现塞进注册表再指望调用方不去拿它。
 _SUBPROCESS_SANDBOX = SubprocessSandbox()

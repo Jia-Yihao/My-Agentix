@@ -7,8 +7,8 @@
   helper **绝不向上抛**——不得让一次正常问答因观测设施失败而失败；
 - ``record_model_used`` 即使 model_used 与 primary 相同也写（语义是"实际服务方"）；
 - ``record_resume_from_checkpoint`` 仅 thread_id_present 为真时写 ``True``，为假不写；
-- helper 不新增任何指标/label（纪律 3：判定值只进 span，不进指标）；
-- 键名常量只有一个源（纪律 6 ④）：``gen_ai.response.model`` 字面量只许出现在
+- helper 不新增任何指标/label（约定 3：判定值只进 span，不进指标）；
+- 键名常量只有一个源（约定 6 ④）：``gen_ai.response.model`` 字面量只许出现在
   tracing.py 常量表，spans.py 必须经常量引用。
 
 追加（PhaseK 任务 4/5/6，消费点接线）：
@@ -144,7 +144,7 @@ def test_helpers_noop_when_no_span_at_all_without_monkeypatch():
 
 
 def test_no_new_metric_labels_registered(fake_span):
-    """三个 helper 只写 span 属性，不触碰 Prometheus 注册表（纪律 3）。"""
+    """三个 helper 只写 span 属性，不触碰 Prometheus 注册表（约定 3）。"""
     from prometheus_client import REGISTRY
 
     # 指标名集合前后一致 ⇒ 没有新指标被注册（label 挂在指标上，无新指标即无新 label 面）
@@ -156,7 +156,7 @@ def test_no_new_metric_labels_registered(fake_span):
 
 
 def test_response_model_literal_single_source():
-    """``gen_ai.response.model`` 字面量只在 tracing.py 出现，spans.py 经常量引用（纪律 6 ④）。"""
+    """``gen_ai.response.model`` 字面量只在 tracing.py 出现，spans.py 经常量引用（约定 6 ④）。"""
     root = Path(__file__).resolve().parents[1]
     spans_src = (root / "agentix" / "observability" / "spans.py").read_text(encoding="utf-8")
     assert '"gen_ai.response.model"' not in spans_src
@@ -214,7 +214,7 @@ async def test_router_records_route_decision_attr(fake_span, monkeypatch):
     route_value = fake_span.attrs[ROUTE_DECISION_ATTR]
     # 属性值必须与返回的最终 route 一致（判定单源，不许 span 与实际各写一套）
     assert route_value == result["router"].type
-    # 有界词表守卫：值 ∈ router.py 的 7 类 ALLOWED_TYPES（纪律 3：只落可枚举判定值）
+    # 有界词表守卫：值 ∈ router.py 的 7 类 ALLOWED_TYPES（约定 3：只落可枚举判定值）
     assert route_value in router_module.ALLOWED_TYPES
     assert len(router_module.ALLOWED_TYPES) == 7
 
@@ -276,7 +276,7 @@ async def test_fallback_result_records_actual_model_on_span(fake_span, monkeypat
             return self.chain
 
         async def ainvoke_with_fallback(self, prompt, *, primary_model, fallback_models, build_client, invoke):
-            # 记录主模型名来源：必须是调用点透传的 ctx.model_name（判定单源，纪律 6 ④）
+            # 记录主模型名来源：必须是调用点透传的 ctx.model_name（判定单源，约定 6 ④）
             primary_seen.append(primary_model)
             return gw_result
 
@@ -325,7 +325,7 @@ async def test_fallback_result_records_actual_model_on_span(fake_span, monkeypat
 async def test_resume_paths_mark_checkpoint_attr(fake_span, monkeypatch):
     """两条恢复路径都要在 config 的 thread_id 非空时写 ``agentix.resume_from_checkpoint``，
     无 thread_id 时**不写该属性**（PhaseK 任务 6；判据只许来自
-    ``config["configurable"]["thread_id"]``，不得另取 thread 概念——纪律 6 ④）。"""
+    ``config["configurable"]["thread_id"]``，不得另取 thread 概念——约定 6 ④）。"""
     import json
 
     # ---- 路径①：lg_builder.resume_in_loop（进环 Command(resume=...)）----

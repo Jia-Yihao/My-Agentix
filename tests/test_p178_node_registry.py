@@ -275,7 +275,7 @@ class TestProviderThunkSemantics:
 
     @pytest.mark.parametrize("flag", ["awaits", "takes_config"])
     def test_shape_flags_must_be_bool(self, flag: str) -> None:
-        """形态位必须显式布尔：让注册表猜就是第二个判据源（纪律 6 ④）。"""
+        """形态位必须显式布尔：让注册表猜就是第二个判据源（约定 6 ④）。"""
         reg = NodeRegistry()
         kwargs: Dict[str, Any] = {"awaits": True, "takes_config": True}
         kwargs[flag] = "yes"
@@ -330,7 +330,7 @@ class TestAwaitableCriterion:
     def test_class_form_async_call_is_awaitable(self) -> None:
         node = _AsyncCallNode()
         assert _criterion_of(node) is True
-        # 纪律 6 ④的反面证据：按字面判会把每个类形式的异步节点登记成同步。
+        # 约定 6 ④的反面证据：按字面判会把每个类形式的异步节点登记成同步。
         assert inspect.iscoroutinefunction(node) is False
 
     def test_criterion_is_the_registry_helper_itself(self) -> None:
@@ -542,7 +542,7 @@ def _imported_modules(path: pathlib.Path) -> List[Tuple[int, str]]:
     的过滤意味着本 helper 只扫**绝对导入**，跨包相对导入（`from ..pkg import x`）它看不见。
     那条判据的唯一源是 p177：它在 `:187-197` 解析 `level > 1`，并由守卫 #5
     `test_no_cross_package_relative_imports`（`:1049-1059`）兜底。本文件刻意不复制这份
-    解析——同一个判定不许两个源（`AGENTS.md` 纪律 6 ④）。
+    解析——同一个判定不许两个源（工程约定 6 ④）。
     本批结论不受影响：`agentix/orchestration/` 全目录当前**零相对导入**
     （grep `^\\s*from \\.` 零命中），故窄口径与全口径在本批等价。
     """

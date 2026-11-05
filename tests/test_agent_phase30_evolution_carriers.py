@@ -1,6 +1,6 @@
 """Phase 30 — 进化闭环：载体扩展（knowledge/program）+ 提案落盘 + 睡眠学习。
 
-验收对应 `docs/migration/Phase28-31_优化规划.md` §4 Phase 30 DoD：
+验收对应：
 
 * 新载体两值 + 门元组；PROGRAM 触保护路径 fail-closed；
 * 落盘三状态全记、同 content_hash 重放 append 幂等、无 sink 基线等价；

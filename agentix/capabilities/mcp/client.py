@@ -58,19 +58,19 @@ DEFAULT_REQUEST_TIMEOUT_S = 15.0
 
 # T25 有界重连常量。**刻意不进 Settings**：本批次 `agentix/config/settings.py`
 # 被另一任务独占（禁新增配置键，避免撞车）；若后续解禁，这三个常量应迁往
-# Settings 并按纪律 4 五处同步——迁移前以本处为唯一真源。
+# Settings 并按约定 4 五处同步——迁移前以本处为唯一真源。
 #: 单次断连触发的重连 spawn 尝试上限（防重连风暴：进程起停循环必须有封顶）。
 MCP_RECONNECT_MAX_ATTEMPTS = 3
 #: 指数退避基数（秒）：第 n 次重连尝试前 sleep ``base * 2**(n-1)``（0.5 / 1.0 / 2.0）。
 MCP_RECONNECT_BACKOFF_BASE_S = 0.5
 #: 耗尽后的降级冷却窗口（秒）：窗口内新调用**即刻**拿到明示降级拒绝——既不反复
-#: spawn 放大风暴，也不把"辅助子系统故障"变成新的挂起或主链拒绝路径（纪律 2）。
+#: spawn 放大风暴，也不把"辅助子系统故障"变成新的挂起或主链拒绝路径（约定 2）。
 MCP_RECONNECT_DEGRADED_COOLDOWN_S = 30.0
 
 #: G2 的白名单判据**只有一个真源**：`agentix.domain.tool.exec_env.OS_ENV_ALLOWLIST`。
 #: 这里保留旧名字做再导出（`tests/test_p107_sandbox_hardening.py` 从本模块取符号），
 #: 因为 §24.3 T2 ⑮ 的 `subprocess` 沙箱要裁的是同一件事——两处各抄一份白名单，
-#: 迟早只关一条（AGENTS.md §15.9）。
+#: 迟早只关一条（`docs/architecture/运行时护栏.md` §15.9）。
 OS_ENV_ALLOWLIST = _SHARED_OS_ENV_ALLOWLIST
 
 
@@ -411,7 +411,7 @@ class MCPStdioClient:
                     await self._spawn_and_handshake()
                 except (MCPError, OSError, RuntimeError) as exc:
                     # 重连尝试失败属于自愈循环内部：记录原因、回收残骸、进入下一次
-                    # 退避——不向上抛，否则"子进程单次死亡"被放大成主链异常（纪律 2）。
+                    # 退避——不向上抛，否则"子进程单次死亡"被放大成主链异常（约定 2）。
                     last_reason = f"{type(exc).__name__}: {exc}"
                     self._reap_zombie()
                     continue
@@ -441,7 +441,7 @@ class MCPStdioClient:
         """尽力清理已断连的子进程句柄（必须在请求锁内调用）。
 
         断连场景下进程通常已自行退出（stdout EOF 即其信号）；kill/wait 只是兜底
-        残骸，失败没有补救对象——真实错误原因已由调用方记录（纪律 2：辅助回收
+        残骸，失败没有补救对象——真实错误原因已由调用方记录（约定 2：辅助回收
         不得制造新故障点）。
         """
         proc = self._proc

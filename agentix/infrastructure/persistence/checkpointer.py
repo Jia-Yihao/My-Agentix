@@ -68,11 +68,11 @@ _REQUIRED_CHECKPOINT_DB = 0
 def _db_in_effect(redis_client) -> Optional[int]:
     """取本次连接**实际生效**的 db 号——判据直接读建连 client 的连接池参数。
 
-    诊断必须与执行链同源（AGENTS.md 硬性纪律 6 ④）：若另解析一遍
+    诊断必须与执行链同源（AGENTS.md 硬性约定 6 ④）：若另解析一遍
     settings.REDIS_CHECKPOINT_URL，就立了第二个判点——from_url 的缺省语义
     （URL 无路径段 ⇒ 生效 db 0）与手写解析可能漂移，改一处漏一处。
     返回 None 表示"无法判定"（测试桩 / 异形 client）：跳过告警，
-    诊断绝不能反过来打断执行链（纪律 2）。
+    诊断绝不能反过来打断执行链（约定 2）。
     """
     try:
         pool_kwargs = redis_client.connection_pool.connection_kwargs
@@ -89,7 +89,7 @@ def _db_in_effect(redis_client) -> Optional[int]:
 
 
 def _check_checkpoint_db_invariant(redis_client) -> None:
-    """T7 运行时校验：生效 db 非约定值 ⇒ ERROR 日志告警；**只告警不设卡**（纪律 2 / 验收②）。
+    """T7 运行时校验：生效 db 非约定值 ⇒ ERROR 日志告警；**只告警不设卡**（约定 2 / 验收②）。
 
     存在的理由：db0 不变式此前只有注释与静态形状守卫——容器 env 注入 db2 时，
     静态守卫照常绿，运行期只剩 asetup 失败后的静默降级，无人可见（规划文档 T7 卡）。
@@ -110,12 +110,12 @@ def _check_checkpoint_db_invariant(redis_client) -> None:
 
 #: G2（台账 §8.2 表 D）：关闭被丢弃 client 的唯一动作点——「谁丢弃谁关闭」的关闭
 #: 判据只写这一枚，两个丢弃点（`_connect_redis_saver` 内部失败、
-#: `retry_upgrade_checkpointer` 的 rewire 失败臂）共用（纪律 6 ④：同一个判定
+#: `retry_upgrade_checkpointer` 的 rewire 失败臂）共用（约定 6 ④：同一个判定
 #: 不许两个源，两处各写一份必然漂移）。
 async def _close_redis_client_quietly(client) -> None:
     """尽力关闭一只被丢弃的 Redis client（含其新建的连接池）；失败只留痕，不抛。
 
-    fail-open（纪律 2）：关闭自身失败只 `logger.warning`，绝不把异常传出——泄漏
+    fail-open（约定 2）：关闭自身失败只 `logger.warning`，绝不把异常传出——泄漏
     一个池是可观测的资源问题，而把关闭失败升格成异常会篡改调用方的原失败语义
     （降级原因 / 重试判定 / `return False` 都读原异常，关闭动作无论排在哪个位置
     都不许改写它们）。
@@ -137,7 +137,7 @@ async def _close_redis_client_quietly(client) -> None:
         return
     try:
         await close(close_connection_pool=True)
-    except Exception as exc:  # noqa: BLE001 - 关闭失败降级为一条 warning，不改调用方语义（纪律 2）
+    except Exception as exc:  # noqa: BLE001 - 关闭失败降级为一条 warning，不改调用方语义（约定 2）
         logger.warning(
             "checkpointer: closing discarded redis client failed (pool may leak): {}",
             exc,
@@ -164,7 +164,7 @@ async def _connect_redis_saver(AsyncRedisSaver):
     """建连 + db0 不变式校验 + asetup，返回 `(saver, redis_client)`；失败**原样抛出**。
 
     抽成函数而不是在「启动初始化」与「运行期升级重试」各写一遍：建连参数、不变式
-    校验点、asetup 的调用顺序是同一段口径，写两份必然漂移（纪律 6 ④）。
+    校验点、asetup 的调用顺序是同一段口径，写两份必然漂移（约定 6 ④）。
 
     异常在这里刻意不翻译——「降级 / 拒绝启动 / 本轮重试失败」是三种不同处置，
     判定留在两个调用点（它们各自知道自己在哪条语义里）。
@@ -181,15 +181,15 @@ async def _connect_redis_saver(AsyncRedisSaver):
     redis_client = Redis.from_url(settings.REDIS_CHECKPOINT_URL, decode_responses=False)
     try:
         # T7：db0 不变式运行时校验。判据取自上面这个 client 的池参数（与执行链同源，
-        # 纪律 6 ④），位置必须在建连之后、AsyncRedisSaver 构造之前——失败发生在
-        # asetup（更晚）才暴露，等读到降级日志再追注入源就晚了。只告警不阻断（纪律 2）。
+        # 约定 6 ④），位置必须在建连之后、AsyncRedisSaver 构造之前——失败发生在
+        # asetup（更晚）才暴露，等读到降级日志再追注入源就晚了。只告警不阻断（约定 2）。
         _check_checkpoint_db_invariant(redis_client)
         saver = AsyncRedisSaver(
             redis_client=redis_client,
             ttl={"default_ttl": 60 * 24 * 7, "refresh_on_read": True},  # 分钟 → 7 天
         )
         await saver.asetup()  # 创建 RediSearch 索引，幂等
-    except Exception:  # noqa: BLE001 - 收口本次丢弃的池后原样抛出，不翻译异常类型（G2 / 纪律 2）
+    except Exception:  # noqa: BLE001 - 收口本次丢弃的池后原样抛出，不翻译异常类型（G2 / 约定 2）
         # 建池即负责：from_url 本身抛时还没有 client，不进这里；此处关闭的
         # 只会是本函数自己刚建的那一只。只关这一次，调用点不再重复关闭。
         await _close_redis_client_quietly(redis_client)
@@ -283,7 +283,7 @@ def _record_upgrade(result: str) -> None:
         from agentix.observability.metrics import record_checkpointer_upgrade
 
         record_checkpointer_upgrade(result if result in _UPGRADE_RESULT_VALUES else "fail")
-    except Exception:  # noqa: BLE001 - 指标故障不影响升级与主链路（纪律 2）
+    except Exception:  # noqa: BLE001 - 指标故障不影响升级与主链路（约定 2）
         pass
 
 
@@ -291,7 +291,7 @@ def is_upgrade_retryable() -> bool:
     """T22：当前降级态**值不值得**重试（唯一判定源，见模块 docstring 末段）。
 
     重试循环只读这个函数，不在 `agentix/main.py` 里按配置键或降级原因字符串再判一遍
-    （纪律 6 ④：同一个判定不许两个源）。
+    （约定 6 ④：同一个判定不许两个源）。
     """
     return _upgrade_retryable
 
@@ -327,7 +327,7 @@ async def retry_upgrade_checkpointer(rewire: Optional[Callable[[object], None]] 
     退避不换成功率，只多一套要记的口径）。
 
     fail-open：任何异常就地收口成 ``False`` 并刷新 `_degraded_reason`，让下一轮与
-    「次数用尽」告警都能读到**最后一次**失败原因；绝不把升级失败抛进主链路（纪律 2）。
+    「次数用尽」告警都能读到**最后一次**失败原因；绝不把升级失败抛进主链路（约定 2）。
     失败时**不提交新 saver**（`_saver` 保持原值），`_upgrade_retryable` 保持真，
     下一轮还会再试。
     """
@@ -362,7 +362,7 @@ async def retry_upgrade_checkpointer(rewire: Optional[Callable[[object], None]] 
     # T22（第 2 轮返工）：装配成功才提交。装配失败按「本轮尝试失败」处置——两条事实
     # 都写进 `_degraded_reason`（Redis 侧其实已就绪 + 装配失败的原因），`result="fail"`，
     # 标记保持真让下一轮再来；不在这里另写 `_saver`（提交点只有下面这一处，
-    # 判定与提交同源，纪律 6 ④）。
+    # 判定与提交同源，约定 6 ④）。
     if rewire is not None:
         try:
             rewire(saver)

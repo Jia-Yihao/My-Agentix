@@ -4,7 +4,7 @@
 
 1. **关时逐位等价**：``NODE_ERROR_HANDLER_ENABLED=false``（默认）时编译图里
    没有任何 ``__error_handler__*`` 节点、``node_error_handler_map`` 为空——
-   即 ``add_node`` **完全不传**该形参（纪律 1）；静态守卫钉住
+   即 ``add_node`` **完全不传**该形参（约定 1）；静态守卫钉住
    ``lg_builder._node_error_handler_kwargs`` 的实参来自 ``policies``。
 2. **开时重试耗尽进入 handler，``Command`` 能改 state 并完成路由**：同节点挂
    ``retry_policy``+``error_handler``，节点执行满 ``max_attempts`` 次后 handler
@@ -238,7 +238,7 @@ class TestStoreNotAssembled:
     """``store=None``（``HITL_PENDING_PERSIST_ENABLED`` 关或装配失败）不得兜底建表。
 
     库面装配判据唯一源是 ``hitl_bridge._resolve_pending_store``；handler 若自己
-    兜底建表，flag 关时仍会建表写行（纪律 6 ④ 的第二装配源）。
+    兜底建表，flag 关时仍会建表写行（约定 6 ④ 的第二装配源）。
     """
 
     def test_none_store_skips_write_and_still_returns_failure_exit(self, monkeypatch):
@@ -447,7 +447,7 @@ class TestStaticGuard:
         }
         assert "resolve_pending_store" in imported, (
             "lg_builder 必须从 agentix.policies.hitl.hitl_bridge 导入 resolve_pending_store："
-            "补偿存储的装配判据只有一个源（纪律 6 ④），另立判据或兜底建表都会漂移"
+            "补偿存储的装配判据只有一个源（约定 6 ④），另立判据或兜底建表都会漂移"
         )
 
         store_values = [

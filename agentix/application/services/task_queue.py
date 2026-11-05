@@ -283,7 +283,7 @@ class TaskQueue:
         """消费循环：``xreadgroup`` 取新消息 + 周期性 ``XAUTOCLAIM`` 接手死消费者的 PEL。
 
         **本方法不读任何 flag**：要不要跑由调用方（``main._start_task_queue_worker``）
-        判定一次（纪律 6 ④：同一个判定不许两个源）。
+        判定一次（约定 6 ④：同一个判定不许两个源）。
 
         **上界是什么**（验收①「有界」）：认领每 ``_CLAIM_INTERVAL_S`` 秒最多一轮、
         每轮最多 ``_CLAIM_MAX_PER_ROUND`` 条 ⇒ 单次运行内认领次数上界是
@@ -349,7 +349,7 @@ class TaskQueue:
         """做**一轮** ``XAUTOCLAIM``，把认领到的消息交给**同一份** ``_process_message``。
 
         返回本轮实际交给处理器的条数（供调用方/测试断言；0 表示没有可认领消息）。
-        **不复制处理逻辑**（纪律 6 ④）：认领来的消息与新消息在语义上完全一致，
+        **不复制处理逻辑**（约定 6 ④）：认领来的消息与新消息在语义上完全一致，
         走两套处理代码只会让「ack / 重试 / dead letter / 甩负荷」慢慢漂移。
 
         失败姿态：``XAUTOCLAIM`` 自身失败**只留痕 + 记指标后返回 0**，异常不上抛——
@@ -368,7 +368,7 @@ class TaskQueue:
             )
         except asyncio.CancelledError:
             raise
-        except Exception as exc:  # noqa: BLE001 - 认领失败降级为「本轮不认领」，留痕 + 指标，下一轮再试（纪律 2）
+        except Exception as exc:  # noqa: BLE001 - 认领失败降级为「本轮不认领」，留痕 + 指标，下一轮再试（约定 2）
             record_task_queue_claimed("error")
             logger.warning(
                 "PEL claim failed (retrying next round): stream={} group={} consumer={} "

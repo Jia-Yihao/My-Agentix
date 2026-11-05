@@ -301,7 +301,7 @@ def test_settings_field_defaults_off() -> None:
     """默认值只认 ``Settings`` 的**声明值**，不读 live 实例。
 
     审查登记项 N2：live 值会被宿主 ``.env`` 改写，拿它当"默认关"的证据等于让被核
-    对象自己当基准（纪律 7 同一条教训）。运行期从 False 起跑由 autouse fixture 保证。
+    对象自己当基准（约定 7 同一条教训）。运行期从 False 起跑由 autouse fixture 保证。
     """
     field = type(settings).model_fields["TOOL_DUPLICATE_REGISTRATION_STRICT"]
     assert field.default is False
@@ -350,16 +350,15 @@ def test_staging_override_pins_it_off() -> None:
 def test_project_spec_g14_records_the_landing() -> None:
     """只在 **G14 小节内**核修复状态。
 
-    审查登记项 N4：此前断言的是"整篇 PROJECT_SPEC 里出现 `已落地`"，而该串在
-    全文出现二十多次——把 G14 状态改回"未落地"，这条用例照样绿。核对范围必须
-    跟着被核对象走，否则守卫只是在测"文件里有人说过已落地"。
+    核对范围必须跟着被核对象走：只断言"整篇文档里出现过某个状态词"，会退化成在测
+    "文件里有人说过这件事"，把 G14 这一节改回未修复状态也照样绿。
     """
     text = (PROJECT_ROOT / "docs/项目实现手册.md").read_text(encoding="utf-8", errors="replace")
     start = text.index("**G14 ·")
     end = text.index("**G9 勘误", start)
     section = text[start:end]
     assert "TOOL_DUPLICATE_REGISTRATION_STRICT" in section, "G14 小节里要写清严格模式开关"
-    assert "已落地收口" in section, "G14 的修复状态要写清楚，别让下一个人按旧结论办事"
+    assert "已实现收口" in section, "G14 的修复状态要写清楚，别让下一个人按旧结论办事"
 
 
 # ---------------------------------------------------------------------------
@@ -373,14 +372,13 @@ P129_COUNT_CLAIM = re.compile(r"p129 共 (\d+) 条")
 #: 会复述本文件用例数的文档。**为什么要有守卫**：2026-10-26 独立审查登记的一般项
 #: N3——套件总数有 `TestTestCountHasSingleSource` 盯着，单文件条数没有，于是同一
 #: 个数字在五处手抄（README / CHANGELOG / PROJECT_SPEC / runtime-guardrails /
-#: roadmap），改一条用例就要靠人记得改五处。纪律 7 说"被当核对基准的表必须是生成物"，这里把数字交给本轮
+#: roadmap），改一条用例就要靠人记得改五处。约定 7 说"被当核对基准的表必须是生成物"，这里把数字交给本轮
 #: 真实采集面现算。
 DOCS_CLAIMING_P129_COUNT = (
     "README.md",
     "CHANGELOG.md",
     "docs/项目实现手册.md",
     "docs/architecture/运行时护栏.md",
-    "docs/design/性能与优化路线图.md",
 )
 
 

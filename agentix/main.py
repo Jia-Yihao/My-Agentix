@@ -504,7 +504,7 @@ async def _embedding_prewarm_worker() -> None:
     两个刻意的实现选择：① 预热本体是**同步**的（sqlite + 同步 http 客户端），必须经
     ``asyncio.to_thread`` 下放，否则冷启动那段批量请求会把事件循环按住；
     ② ``run_prewarm_from_settings`` 自己已经 fail-open，这里再兜一层是因为**导入它**这件事
-    也可能炸（依赖缺失、循环导入），而启动路径没有任何理由因为预热失败而中断（纪律 2）。
+    也可能炸（依赖缺失、循环导入），而启动路径没有任何理由因为预热失败而中断（约定 2）。
     """
     try:
         from agentix.retrieval.infra.embedding.prewarm import run_prewarm_from_settings
@@ -522,13 +522,13 @@ async def _embedding_prewarm_worker() -> None:
                 report.get("embedded"),
                 report.get("elapsed_ms"),
             )
-    except Exception as exc:  # noqa: BLE001 - 预热是加速件：失败只留痕，不影响服务可用性（纪律 2）
+    except Exception as exc:  # noqa: BLE001 - 预热是加速件：失败只留痕，不影响服务可用性（约定 2）
         logger.warning("embedding cache prewarm task failed: {}", exc)
 
 
 # T19（审批恢复规划 · Q9 已裁决：到期自动拒绝）：审批时限扫描任务句柄。
 # 与上面两条同因：asyncio 只持弱引用，句柄必须存模块级，否则"偶发没扫"最难查。
-# `HITL_APPROVAL_DEADLINE_S <= 0`（默认）= 一个任务都不创建（纪律 1）。
+# `HITL_APPROVAL_DEADLINE_S <= 0`（默认）= 一个任务都不创建（约定 1）。
 _hitl_deadline_task: Optional[asyncio.Task] = None
 # T19 第 2 轮返工：起任务时用的那台桥（持有扫描租约）。关停要靠它**让出**租约——
 # 进程走了还攥着租约，另一个 worker 得等到 TTL 到期才接手，这段时间没人扫。
@@ -538,7 +538,7 @@ _hitl_deadline_bridge: Any = None
 
 # T22：checkpointer 降级后的升级重试任务句柄。同因必须存模块级——asyncio 只持弱引用，
 # 不存句柄的任务可能被 GC 掉，表现成「重试偶发没跑」。
-# `CHECKPOINTER_RETRY_INTERVAL_S <= 0`（默认 0 = 关）= 一个任务都不创建（纪律 1）。
+# `CHECKPOINTER_RETRY_INTERVAL_S <= 0`（默认 0 = 关）= 一个任务都不创建（约定 1）。
 _checkpointer_upgrade_task: Optional[asyncio.Task] = None
 
 
@@ -558,7 +558,7 @@ async def _hitl_deadline_sweeper(bridge: Any, deadline_s: float, interval_s: flo
 
     ``expire_overdue`` 自己已 fail-open（读库失败返回空、单行失败跳过），这里再兜
     一层宽 except 是因为**取消之外的一切异常都不该让"没人再扫"**：扫描任务死了
-    就等于超时语义静默失效，那比多打一条 warning 严重得多（纪律 2）。
+    就等于超时语义静默失效，那比多打一条 warning 严重得多（约定 2）。
     """
     while True:
         try:
@@ -573,9 +573,9 @@ async def _hitl_deadline_sweeper(bridge: Any, deadline_s: float, interval_s: flo
 def _start_hitl_deadline_sweeper(bridge: Any) -> bool:
     """起审批时限扫描任务；返回是否真的起了任务（``False`` = 无任务可取消）。
 
-    **四条按序判定都在这里、且只在这里**（纪律 6 ④：同一个判定不许两个源）：
+    **四条按序判定都在这里、且只在这里**（约定 6 ④：同一个判定不许两个源）：
     ① ``HITL_APPROVAL_DEADLINE_S <= 0``（默认）⇒ 直接返回，**一个任务都不创建、
-       一行日志都不打**（纪律 1 的"默认路径不多一个任务"）；
+       一行日志都不打**（约定 1 的"默认路径不多一个任务"）；
     ② deadline>0 但 ``HUMAN_REVIEW_ENABLED`` 为假 ⇒ **没有桥、也没有 pending**
        （接线只在 ``install_executor_hook`` 里发生），扫描无从谈起，**显式告警
        一次**后返回；
@@ -603,7 +603,7 @@ def _start_hitl_deadline_sweeper(bridge: Any) -> bool:
 
     # 惰性 import：让 main 顶部不无条件拉起桥模块（它连带 HITL 配置面与闸门面）。
     # 诚实说明：本函数启动时**必走到**这一行，所以这里省下的是"main 顶部多一个
-    # 模块级依赖"，不是"flag-off 时零 import"。纪律 1 的可观测面是
+    # 模块级依赖"，不是"flag-off 时零 import"。约定 1 的可观测面是
     # 「deadline=0 ⇒ 无任务、不读库、不连库」——这一行只完成一次 import，
     # 不建任务、不碰库。
     from agentix.policies.hitl.hitl_bridge import resolve_approval_deadline_s
@@ -653,7 +653,7 @@ def _start_hitl_deadline_sweeper(bridge: Any) -> bool:
 def _wire_graph_checkpointer(ckpt: Any) -> None:
     """把 checkpointer 装进模块级图并留痕——启动期与升级重试的**唯一**装配点。
 
-    抽成函数的理由（纪律 6 ④）：T22 的升级重试要把新的 AsyncRedisSaver 换进正在服务的
+    抽成函数的理由（约定 6 ④）：T22 的升级重试要把新的 AsyncRedisSaver 换进正在服务的
     图；若重试循环另写一份 ``build_graph`` / ``build_supervisor_graph`` 调用，「图当前
     挂哪个 saver」就出现了两个源，改一处漏一处。顺带让 Phase 19 的「supervisor 拓扑
     共用同一 checkpointer」这条约束也不必在第二处重复声明。
@@ -690,7 +690,7 @@ async def _checkpointer_upgrade_loop(interval_s: float, max_attempts: int) -> No
 
     「要不要重试」只读 ``checkpointer.is_upgrade_retryable()``——判定在
     `checkpointer.py` 的降级分支里生成（唯一源），本循环只负责**节奏**与**次数**
-    （纪律 6 ④：不在 main 里按配置键或降级原因字符串重判一遍）。
+    （约定 6 ④：不在 main 里按配置键或降级原因字符串重判一遍）。
 
     节奏刻意是定间隔而非指数退避：重试目标是同进程的一个 Redis 连接，退避换不来
     成功率，只让运维多一套要记的口径——间隔就是 `CHECKPOINTER_RETRY_INTERVAL_S`。
@@ -700,7 +700,7 @@ async def _checkpointer_upgrade_loop(interval_s: float, max_attempts: int) -> No
     装配失败即本轮尝试失败（saver / 原因 / 指标全留在 checkpointer 模块内处置），
     循环继续下一轮；本函数不另写 `_saver` / `_degraded_reason`（那会立第二个源）。
 
-    失败姿态 fail-open（纪律 2）：任何一次尝试异常都只留痕并继续下一轮；次数用尽打
+    失败姿态 fail-open（约定 2）：任何一次尝试异常都只留痕并继续下一轮；次数用尽打
     一条**明确**的 warning（含已尝试次数与最后一次失败原因）并复位标记，避免任何后续
     调用再判一次「还能升级」而重复刷同一条日志。
     """
@@ -719,7 +719,7 @@ async def _checkpointer_upgrade_loop(interval_s: float, max_attempts: int) -> No
             # 装配回调直接传唯一装配点本身（模块全局查找，不另包一层）：循环因此不持有
             # 第二份「图怎么编」的知识，也不能自己提交 saver。
             upgraded = await retry_upgrade_checkpointer(_wire_graph_checkpointer)
-        except Exception as exc:  # noqa: BLE001 - 重试是辅助件：留痕后继续下一轮，主链不受影响（纪律 2）
+        except Exception as exc:  # noqa: BLE001 - 重试是辅助件：留痕后继续下一轮，主链不受影响（约定 2）
             logger.warning(
                 "checkpointer upgrade attempt {}/{} raised (retrying next tick): {}",
                 attempts,
@@ -748,9 +748,9 @@ async def _checkpointer_upgrade_loop(interval_s: float, max_attempts: int) -> No
 def _start_checkpointer_upgrade() -> bool:
     """起 checkpointer 升级重试任务；返回是否真的起了任务（``False`` = 无任务可取消）。
 
-    **三道判定按序都在这里、且只在这里**（纪律 6 ④）：
+    **三道判定按序都在这里、且只在这里**（约定 6 ④）：
     ① ``CHECKPOINTER_RETRY_INTERVAL_S <= 0``（默认 0 = 关）⇒ 直接返回，**不建任务、
-       不打日志、不 import checkpointer 模块**（纪律 1 的"默认路径不多一个任务"）；
+       不打日志、不 import checkpointer 模块**（约定 1 的"默认路径不多一个任务"）；
     ② ``checkpointer.is_upgrade_retryable()`` 为假（显式 memory / 包未安装 / 已升级 /
        fail-closed）⇒ 返回——「能不能重试」的判据在 checkpointer.py 生成，这里不另判；
     ③ ``CHECKPOINTER_RETRY_MAX_ATTEMPTS <= 0`` ⇒ 显式告警一次后返回：配了节奏却给
@@ -811,7 +811,7 @@ def _on_task_queue_worker_done(task: asyncio.Task) -> None:
     炸掉时若无本回调，异常没有任何消费者——只剩 asyncio 的 "Task exception was
     never retrieved" 栈，不算可观测。取回异常这件事本身也消掉那条提示。
     被取消（``_shutdown`` 走的正是取消路径）与正常结束都不记 ERROR：前者是预期
-    关停、后者不是失败。回调自身 fail-open（纪律 2）：观测设施的失败绝不外抛，
+    关停、后者不是失败。回调自身 fail-open（约定 2）：观测设施的失败绝不外抛，
     免得搅乱事件循环上正在跑的其它任务。
     """
     try:
@@ -825,7 +825,7 @@ def _on_task_queue_worker_done(task: asyncio.Task) -> None:
             type(exc).__name__,
             exc,
         )
-    except Exception as cb_exc:  # noqa: BLE001 - 回调自身失败只降级为一条 WARNING 留痕，不外抛（纪律 2）
+    except Exception as cb_exc:  # noqa: BLE001 - 回调自身失败只降级为一条 WARNING 留痕，不外抛（约定 2）
         logger.warning(
             "task queue worker done-callback failed: err_type={} err={}",
             type(cb_exc).__name__,
@@ -839,11 +839,11 @@ def _start_task_queue_worker() -> bool:
     ``False`` 的含义：未留下可取消的任务句柄（赋值前失败或 flag-off）；赋值后失败同样
     返回 ``False``，但句柄已落位、关停照常取消（详见下方台账表 E G5 的注释分段说明）。
 
-    **「要不要跑」的判定只有这里一处**（纪律 6 ④）：``TASK_QUEUE_WORKER_ENABLED``
+    **「要不要跑」的判定只有这里一处**（约定 6 ④）：``TASK_QUEUE_WORKER_ENABLED``
     为假（默认）⇒ 直接返回，**不建任务、不建连接、不打一行日志、不 import 队列模块**
-    （纪律 1：flag-off 与基线逐位等价）。``TaskQueue.start_worker`` 自己不读 flag。
+    （约定 1：flag-off 与基线逐位等价）。``TaskQueue.start_worker`` 自己不读 flag。
 
-    **构造/启动失败 fail-open**（纪律 2）：队列消费是后台件，起不来只 ERROR 留痕，
+    **构造/启动失败 fail-open**（约定 2）：队列消费是后台件，起不来只 ERROR 留痕，
     绝不阻断服务启动——Web 面（chat / 检索 / 审批）不依赖它。日志里带异常类型，
     避免「只看到一句失败、不知道是 import 坏了还是没事件循环」。
 
@@ -863,7 +863,7 @@ def _start_task_queue_worker() -> bool:
         # 先 import 业务 handler 模块（它在模块级 `queue = get_task_queue()` 上挂
         # `@queue.register(...)`）：不先注册就起消费，每条消息都只会走
         # 「No handler for task type」分支——任务被 ack 成 FAILED，比不启动更误导。
-        # 这一行只在 flag-on 路径上执行，flag-off 零副作用（纪律 1）。
+        # 这一行只在 flag-on 路径上执行，flag-off 零副作用（约定 1）。
         import agentix.application.services.task_handlers  # noqa: F401 - 注册 TaskQueue 业务 handler
         from agentix.application.services.task_queue import get_task_queue
 
@@ -886,7 +886,7 @@ def _start_task_queue_worker() -> bool:
             queue.consumer_group,
             queue.consumer_name,
         )
-    except Exception as exc:  # noqa: BLE001 - 后台消费起不来不阻断启动：ERROR 留痕后降级为"不消费"（纪律 2）
+    except Exception as exc:  # noqa: BLE001 - 后台消费起不来不阻断启动：ERROR 留痕后降级为"不消费"（约定 2）
         logger.error(
             "task queue worker start failed (queue consumption disabled): err_type={} err={}",
             type(exc).__name__,
@@ -955,7 +955,7 @@ async def _startup_crash_recovery() -> None:
     """启动期崩溃恢复：扫描 + 有界并发恢复，整体受 ``RECOVERY_TOTAL_BUDGET_S`` 约束。
 
     预算耗尽时 ``wait_for`` 取消仍在跑的续跑协程：它们停在未完成步、不写终态，
-    下一次启动或 ops 面还能接手。恢复失败一律只留痕，不阻断启动（纪律 2）。
+    下一次启动或 ops 面还能接手。恢复失败一律只留痕，不阻断启动（约定 2）。
     """
     from agentix.application.services.breakpoint_resume import get_checkpoint_recovery
     from agentix.orchestration.langgraph import lg_builder
@@ -1061,7 +1061,7 @@ def _install_drain_signal_handlers() -> bool:
     """把 SIGTERM/SIGINT 接到 drain 协调器，返回是否至少装上一个。
 
     开关在函数内判：`RUN_CONTROL_ENABLED` 关 = 直接返回 False，一个处理器都不装
-    （调用方无需各自复制判据，纪律 6 ④）。
+    （调用方无需各自复制判据，约定 6 ④）。
     """
     if not settings.RUN_CONTROL_ENABLED:
         return False
@@ -1076,7 +1076,7 @@ def _install_drain_signal_handlers() -> bool:
             signal.signal(signum, _make_drain_signal_handler(coordinator, previous))
         except (ValueError, OSError) as exc:
             # 非主线程 / 平台不支持：fail-open——关停退回「uvicorn 自己退 + 启动恢复」
-            # （纪律 2：辅助能力装不上不得阻断启动）。
+            # （约定 2：辅助能力装不上不得阻断启动）。
             logger.warning("drain signal handler not installed for {}: {}", signum, exc)
             continue
         _drain_prev_handlers[int(signum)] = previous
@@ -1185,7 +1185,7 @@ async def _startup() -> None:
 
     # E4：embedding 缓存启动预热（EMBEDDING_CACHE_PREWARM_ENABLED，默认关）。
     # 放在配置校验之后：预热要读 EMBEDDING_* 端点配置，配置本身非法时先让校验那条日志说话。
-    # flag 关 ⇒ 一个任务都不创建（纪律 1：默认路径与基线逐位等价，包括"没有多余任务"）。
+    # flag 关 ⇒ 一个任务都不创建（约定 1：默认路径与基线逐位等价，包括"没有多余任务"）。
     from agentix.retrieval.settings import settings as _retrieval_settings
 
     if _retrieval_settings.EMBEDDING_CACHE_PREWARM_ENABLED:
@@ -1213,7 +1213,7 @@ async def _startup() -> None:
     # 覆盖模块级默认图。降级路径在 init_checkpointer 内部处理（包未装/
     # 显式 memory 配置/Redis 失败 → MemorySaver），此处仅需兜底防御。
     # T22：装配动作收口到 `_wire_graph_checkpointer`——启动与「降级后升级重试」
-    # 走同一段重编译逻辑，避免"图该挂哪个 saver"出现两个源（纪律 6 ④）。
+    # 走同一段重编译逻辑，避免"图该挂哪个 saver"出现两个源（约定 6 ④）。
     try:
         from agentix.infrastructure.persistence.checkpointer import init_checkpointer
 
@@ -1232,7 +1232,7 @@ async def _startup() -> None:
     # HUMAN_REVIEW_ENABLED=false ⇒ 不接线 ⇒ ToolExecutor 保持
     # hook=None 的零变化路径（Strangler 字节等价）。
     # T19：`bridge` 在块外先置 None，扫描任务的**起停判定**才能统一收口在
-    # `_start_hitl_deadline_sweeper` 一处（纪律 6 ④）——install 失败时它收到 None，
+    # `_start_hitl_deadline_sweeper` 一处（约定 6 ④）——install 失败时它收到 None，
     # 自己告警并返回 False；这里若把整段调用都塞进 try，失败时连"配了却没生效"
     # 都不会有人告警。
     bridge: Any = None
@@ -1240,7 +1240,7 @@ async def _startup() -> None:
         try:
             from agentix.policies.hitl.hitl_bridge import install_executor_hook
 
-            # install_executor_hook 内含 restore_pending 的同步 SQLAlchemy 读库，经 to_thread 下放线程，不在事件循环里跑（纪律 6 ②，与 RUN_STATE_PERSIST_ENABLED 口径一致）。
+            # install_executor_hook 内含 restore_pending 的同步 SQLAlchemy 读库，经 to_thread 下放线程，不在事件循环里跑（约定 6 ②，与 RUN_STATE_PERSIST_ENABLED 口径一致）。
             bridge = await asyncio.to_thread(install_executor_hook)
             logger.info("HITL bridge hook installed (HUMAN_REVIEW_ENABLED=true)")
         except Exception as exc:  # noqa: BLE001 - 接线失败不影响启动（闸门仍 fail-closed）

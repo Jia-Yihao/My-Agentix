@@ -10,7 +10,7 @@
 schema 从 A 库拉、SQL 却在 B 库跑，报出来的错会指向不存在的那张表。
 
 默认（``TEXT2SQL_DATABASE_URL`` 留空）= 回退 ``DATABASE_URL`` = 与接线前
-逐位等价（纪律 1）。
+逐位等价（约定 1）。
 """
 
 from __future__ import annotations

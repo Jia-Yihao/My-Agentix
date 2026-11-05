@@ -3,7 +3,7 @@
 分层：本模块属 ``agentix.agent``，可 import ``agentix.capabilities``（向上）；
 capabilities 永不反向 import 本包。
 
-两段式纪律：
+两段式
 - **静态段**：``catalog_block()`` 返回元数据目录（供 ``build_instructions``
   flag-on 注入，flag-off 字节不变）；
 - **轨迹段**：``read_skill(name)`` 按注册表查 name → 磁盘读正文，

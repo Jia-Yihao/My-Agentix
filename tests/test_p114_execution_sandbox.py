@@ -136,7 +136,7 @@ def test_ladder_is_ordered_from_least_to_most_isolated() -> None:
 def test_unimplemented_rungs_are_exactly_the_future_items(monkeypatch) -> None:
     """差集可见：⑮/⑰ 没落地这件事在代码里就能被查出来，不靠文档一句话。
 
-    ⚠️ ⑮ 落地后这条**仍以 flag-off 为准**（纪律 1：关着时与 ⑭ 逐位等价），所以这里
+    ⚠️ ⑮ 落地后这条**仍以 flag-off 为准**（约定 1：关着时与 ⑭ 逐位等价），所以这里
     显式把 `TOOL_SANDBOX_SUBPROCESS_ENABLED` 钉成 False 再断言——不钉的话，本机 .env
     或 CI 变量一改，这条守卫就从"差集可见"退化成"看运气"。开着的差集另测一条。
     """
@@ -151,7 +151,7 @@ def test_enabling_the_subprocess_tier_narrows_the_gap_to_container_only(
 ) -> None:
     """⑮ 的开着的形态：差集只剩 `container`，且 `subprocess` 可被解析到实现。
 
-    这条与上一条**成对**存在：只有"关着为空、开着收窄"两侧都可查，纪律 1 的
+    这条与上一条**成对**存在：只有"关着为空、开着收窄"两侧都可查，约定 1 的
     「新开关默认关」才不是一句口头承诺。
     """
     monkeypatch.setattr(settings, "TOOL_SANDBOX_SUBPROCESS_ENABLED", True)

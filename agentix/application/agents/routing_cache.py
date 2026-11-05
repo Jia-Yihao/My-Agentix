@@ -41,7 +41,7 @@
   ⑤ 档位路由的**输入值指纹**（``LLM_TIER_ROUTING_ENABLED`` flag 位 + 原样
   ``LLM_ROLE_TIER_MAP`` + 三档模型名 ``LLM_MODEL_FAST`` / ``LLM_MODEL_STANDARD`` /
   ``LLM_MODEL_REASONING``）——并的是配置值本身、**不复刻档位判定**（复刻等于在
-  缓存侧另立第二个判定源，纪律 6 ④）；代价是未接线角色改档位值也会多换一次代，
+  缓存侧另立第二个判定源，约定 6 ④）；代价是未接线角色改档位值也会多换一次代，
   方向保守（只多算、不会少算）。
   任一变化 ⇒ 键变了 ⇒ 旧条目再也命中不到（随后被 LRU / TTL 回收）。
   **注意值侧的边界**：缓存里**不存**单层参数（``kb_route`` / ``kb_tools``），
@@ -70,7 +70,7 @@
 时**本模块连加载都不会发生**（用例读 ``sys.modules`` 钉死）。
 
 读写与重建的异常一律由调用点捕获，``logger.warning`` 留痕后**当作未命中**
-（AGENTS.md 纪律 2）：缓存是加速器，它坏掉绝不能把一次问答弄挂。
+（工程约定 2）：缓存是加速器，它坏掉绝不能把一次问答弄挂。
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ def generation_token() -> str:
     :func:`ablation.is_enabled`、另两段经既有路由判定取值（提示词文本与 router
     类名，见下）；CRC32 在约 2KB 提示词上耗时微秒级，远低于一次
     LLM 调用。反过来把令牌缓存在进程里，会让"开关/提示词变了但令牌没变"这种
-    静默失配变成新的故障模式（纪律 6 ④：判定只有一个源，不要多造一个快照）。
+    静默失配变成新的故障模式（约定 6 ④：判定只有一个源，不要多造一个快照）。
 
     九段的取值**全部复用既有判定的唯一来源**（``_exec_flags`` /
     ``_router_prompt_text`` / ``_router_class`` / ``settings`` / ``ablation``），
@@ -147,7 +147,7 @@ def generation_token() -> str:
         # 庚-3 γ（台账表 G G7）：档位路由的输入值并入令牌——router 实际用的模型可能是
         # 档位模型（``llm_factory._apply_tier_routing`` 命中时改写 profile），只并 ③ 的
         # ``LLM_MODEL`` 就会「该配置下换模型不换代」。并的是配置值指纹，不复刻档位判定
-        # （复刻等于在缓存侧另立一个判定源，纪律 6 ④）。代价：未接线角色改档位值也会
+        # （复刻等于在缓存侧另立一个判定源，约定 6 ④）。代价：未接线角色改档位值也会
         # 多换一次代，方向保守（只多算、不会少算）。
         "1" if bool(getattr(settings, "LLM_TIER_ROUTING_ENABLED", False)) else "0",
         str(getattr(settings, "LLM_ROLE_TIER_MAP", "") or ""),

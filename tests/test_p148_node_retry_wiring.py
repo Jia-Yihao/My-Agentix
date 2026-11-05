@@ -7,7 +7,7 @@
    结果为成功且**恰好执行两次**（框架侧重试，不在业务节点里写循环）。
 2. **``execute_task`` / ``code_agent`` 的注册里没有 ``retry_policy``**——整节点重跑会
    重放工具副作用，属指导文档铁律，本文件把它钉成用例（flag-on 时仍为 ``None``）。
-3. **flag-off 逐位等价**（``AGENTS.md`` 纪律 1）：``NODE_RETRY_ENABLED=false``（默认）时
+3. **flag-off 逐位等价**（``CONTRIBUTING.md` 的工程约定` 约定 1）：``NODE_RETRY_ENABLED=false``（默认）时
    注册处**完全不传** ``retry_policy``，十个业务节点读到的策略全为 ``None``。
 
 ## 一条必须登记的不利事实（LG-1-2 已收口）
@@ -83,11 +83,11 @@ def _retry_policies_of(compiled, node_name: str) -> tuple:
 
 
 class TestFlagOffIsBitIdentical:
-    """纪律 1：默认关 ⇒ 十个节点读到的策略全为 ``None``（完全不传）。"""
+    """约定 1：默认关 ⇒ 十个节点读到的策略全为 ``None``（完全不传）。"""
 
     def test_default_flag_is_off(self):
         assert settings.NODE_RETRY_ENABLED is False, (
-            "NODE_RETRY_ENABLED 默认必须为 False（AGENTS.md 纪律 1）；"
+            "NODE_RETRY_ENABLED 默认必须为 False（工程约定 1）；"
             "若确有理由改成 True，须先改本用例并说明部署面"
         )
 

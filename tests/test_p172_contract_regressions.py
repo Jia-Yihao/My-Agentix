@@ -1,6 +1,6 @@
 """p172——T13「回填前四类契约回归」：检索逐位 / 意图输出 / 状态机 / SSE 帧序列。
 
-任务卡：``docs/design/审批与中断恢复优化规划.md`` §4.3 T13（第 521-535 行）。
+本文件是四类契约回归的行为基线。
 本文件是**行为基线**，不是新能力的验收：任何回填/优化（T17 的 A/B 取证等）
 动工之前，先把四类契约的现状钉死，让"改动改变了什么"在测试里可读、可归因。
 
@@ -873,7 +873,7 @@ class TestSseFrameSequence:
 
 class TestLlmCallsSavedReasonBound:
     """``record_llm_calls_saved`` 的 reason 形状限界：词表内逐字透传、空串落
-    ``unknown``、越界形态落 ``other``（基数有界，纪律 3）。"""
+    ``unknown``、越界形态落 ``other``（基数有界，约定 3）。"""
 
     @staticmethod
     def _count(reason: str) -> float:

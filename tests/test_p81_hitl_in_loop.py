@@ -826,7 +826,7 @@ class TestWiringLocks:
         assert 'config["configurable"]["hitl_in_loop"] = 1' in text
 
     def test_ops_router_has_no_top_level_langgraph_import(self):
-        """p66 纪律：langgraph 依赖留在 lg_builder，路由只做惰性调用。"""
+        """p66 langgraph 依赖留在 lg_builder，路由只做惰性调用。"""
         src = (REPO / "agentix/interfaces/http/ops_router.py").read_text(
             encoding="utf-8"
         )

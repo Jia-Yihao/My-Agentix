@@ -407,7 +407,7 @@ async def list_hitl_approvals() -> Dict[str, Any]:
 
     bridge = get_hitl_bridge()
     # T18 返工：flag-on 时 pending() 会并库读（list_unresolved 是同步 SQLAlchemy
-    # 会话），不下放线程会阻塞事件循环——与桥内写/回捞/裁决三路径同口径（纪律：
+    # 会话），不下放线程会阻塞事件循环——与桥内写/回捞/裁决三路径同口径（
     # CPU/IO 阻塞调用经 asyncio.to_thread 下放）。stats() 纯内存不动。
     return {
         "pending": await asyncio.to_thread(bridge.pending),
@@ -464,7 +464,7 @@ async def decide_hitl_approval(
         "gate_recovered": decision.gate_recovered,
     }
     # T18 验收⑤：库闭合失败对运维可见（error 日志之外的 API 面标记）。
-    # **只在非空时出现该键** ⇒ flag-off / 无故障响应与基线逐键一致（纪律 1）。
+    # **只在非空时出现该键** ⇒ flag-off / 无故障响应与基线逐键一致（约定 1）。
     if decision.persist_error:
         body["persist_error"] = decision.persist_error
     return body
@@ -556,7 +556,7 @@ async def invalidate_schema_cache_endpoint(
 
     与 `/memory/clear-user` 的差别是刻意的：清除用户数据失败要显式 500（结果
     必须如实可信），而清缓存失败**不改变正确性**（缓存迟早会自己过期或重建），
-    所以按纪律 2 返回 200 + 可读报告，绝不把辅助设施的抖动打成运维事故。
+    所以按约定 2 返回 200 + 可读报告，绝不把辅助设施的抖动打成运维事故。
     """
     from agentix.application.services import schema_cache
 

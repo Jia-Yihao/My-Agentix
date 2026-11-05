@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 _RERANK_BREAKER_NAME = "rerank_service"
 
 # T9（approval-recovery-optimization §T9）：上游异常判定集合——"什么算一次失败的
-# 上游调用"的唯一真源（纪律 6 ④：同一个判定不许两个源）：分批/单次两条路径的
+# 上游调用"的唯一真源（约定 6 ④：同一个判定不许两个源）：分批/单次两条路径的
 # 失败记账与 rerank_documents_with_status 外层 fail-open 捕获的都**直接是本常量**，
 # 不得再另写字面量元组。
 _RERANK_UPSTREAM_ERRORS = (httpx.HTTPError, KeyError, TypeError, ValueError)
 
-# T9 检索侧计数器（验收②/纪律 3）。零 label ⇒ 基数恒为 1，天然不受
+# T9 检索侧计数器（验收②/约定 3）。零 label ⇒ 基数恒为 1，天然不受
 # tests/test_p100_genai_observability.py 的 ALLOWED_METRIC_LABELS 守卫影响——
 # 该守卫实测枚举的是默认 REGISTRY 全部 collector 的 label 名（p100:284-305），
 # 无 label 的指标不在它的对照面上，故不为其新增白名单项。
@@ -79,7 +79,7 @@ except ImportError:  # pragma: no cover - 与 observability/metrics.py 同款兜
 def _observe_rerank_call(duration_s: float, ok: bool) -> None:
     """T9 记账一次上游调用（耗时 + 成败）。
 
-    观测出错绝不影响主链检索（纪律 2）：捕获后 warning 留痕并跳过——
+    观测出错绝不影响主链检索（约定 2）：捕获后 warning 留痕并跳过——
     指标可以缺，rerank 结果不能炸。
     """
     try:
@@ -159,7 +159,7 @@ async def _call_rerank_batch_rows(endpoint: str, payload: dict) -> list[dict]:
     """单批上游调用，返回原始 rows（``index`` 为批内局部下标）。
 
     响应校验刻意**复刻** ``_call_rerank`` 的口径而不是重构共用：``_call_rerank``
-    是 flag-off 的基线路径，纪律 1 要求它的调用形状零改动（reviewer 最硬核对项
+    是 flag-off 的基线路径，约定 1 要求它的调用形状零改动（reviewer 最硬核对项
     是逐位等价），共用重构会把分批的变更面掺进基线，反而更难核对。
     """
     from agentix.infrastructure.http import acquire_http_client

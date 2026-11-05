@@ -1,6 +1,6 @@
 """Phase 25 — multi-agent 运行时防线（Ch10 §10.17 六失败模式 + 控制平面准入）。
 
-覆盖（对齐 docs/migration/Phase21-26_规划.md Phase 25 DoD）：
+覆盖：
 
 1. 六失败模式**运行时防线**（离线 fake peer，不依赖 LLM/Redis/Docker）：
    deadlock / livelock / echo_chamber / budget_bleed / infinite_escalation /

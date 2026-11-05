@@ -1,6 +1,6 @@
 """P170（T22）：checkpointer 降级后按可配节奏重试升级，以及降级/升级切换的可观测面。
 
-对应规划 `docs/design/审批与中断恢复优化规划.md` T22 卡的**剩余**三条验收
+T22 的**剩余**三条验收
 （①「待恢复线程由 checkpointer 派生」已由 LG-2-1 落地，本文件不复测 ①）：
 
 ② Redis 不可用降级 `MemorySaver` 后，按可配节奏**重试升级**（不是单例粘死）；
@@ -29,7 +29,7 @@
 7. 失败路径资源收口（台账 §8.2 表 D G2）：三条失败臂各自丢弃的 Redis client 必须
    被恰好关闭一次且显式断开池（`TestFailurePathClosesClient` A1–A3）；升级成功路径
    不许关闭在用 client（A4，防回归钉）；关闭动作自身失败只留 warning、不改原失败
-   语义（A5，纪律 2）。
+   语义（A5，约定 2）。
 
 **不连真 Redis、只用毫秒级真实 sleep（不注入时钟，理由已述）**：`redis.asyncio.Redis` 与
 `_try_import_async_redis_saver` 两个既有接缝（`tests/test_p132_checkpointer_fail_closed.py`
@@ -149,7 +149,7 @@ def _clean_retry_handle(monkeypatch):
 
 
 class TestDefaultsAreBaseline:
-    """验收①（纪律 1）：默认配置下不建任务、不加日志，与基线逐位等价。"""
+    """验收①（约定 1）：默认配置下不建任务、不加日志，与基线逐位等价。"""
 
     def test_field_defaults(self):
         """两个新键的**字段默认值**（读 model_fields，不吃宿主 .env 污染）。"""
@@ -361,7 +361,7 @@ class TestFailurePathClosesClient:
     - A4 升级成功路径 ⇒ **不**关闭在用 client（所有权移交 saver；防止把
       「关掉在用 client」这种新 bug 当成修复——本条在改前即绿，是防回归钉）；
     - A5 关闭动作自身抛异常 ⇒ 原失败语义不变（仍降级 / 仍 `return False`），
-      只多一条 warning 留痕（纪律 2：关闭失败不得升格成异常或改写原失败）。
+      只多一条 warning 留痕（约定 2：关闭失败不得升格成异常或改写原失败）。
     """
 
     @pytest.mark.asyncio
@@ -448,7 +448,7 @@ class TestFailurePathClosesClient:
 
     @pytest.mark.asyncio
     async def test_a5_close_failure_keeps_original_semantics(self, monkeypatch, warning_logs):
-        """A5：aclose 自身抛 ⇒ 原失败语义逐位不变，只多一条 warning 留痕（纪律 2）。"""
+        """A5：aclose 自身抛 ⇒ 原失败语义逐位不变，只多一条 warning 留痕（约定 2）。"""
 
         async def _boom(*_a: Any, **_k: Any) -> None:
             raise RuntimeError("aclose exploded")
@@ -575,7 +575,7 @@ class TestStartAndShutdown:
 
 
 class TestSingleSourceWiring:
-    """纪律 6 ④：装配与「要不要重试」都只有一个源（静态守卫，不靠运行时碰运气）。"""
+    """约定 6 ④：装配与「要不要重试」都只有一个源（静态守卫，不靠运行时碰运气）。"""
 
     def test_startup_wires_graph_through_single_helper(self):
         from agentix import main
@@ -646,7 +646,7 @@ class TestSingleSourceWiring:
         ):
             assert (
                 forbidden not in source
-            ), f"重试判定不许在 main 里重判一遍（纪律 6 ④）：{forbidden}"
+            ), f"重试判定不许在 main 里重判一遍（约定 6 ④）：{forbidden}"
 
     def test_saver_swap_and_reason_reset_live_in_checkpointer(self):
         """升级的三件写入（saver / 原因 / 标记）都在 checkpointer 模块内部完成。"""

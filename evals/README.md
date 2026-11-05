@@ -150,7 +150,7 @@ kb dict `{document_id, source}`。
 >
 > ⚠️ **空真（vacuous truth）口径**：期望为空的条目在宏平均中贡献免费满分。
 > R2-3 扩充后 102 条 golden 中 56 条无引用要求 ⇒ 全量均值地板 = 56/102 ≈ 0.549。
-> 自批次 7 起，`summary.json` 额外暴露以下字段用于区分两个口径（逐条打分不变）：
+> `summary.json` 额外暴露以下字段用于区分两个口径（逐条打分不变）：
 >
 > | 字段 | 含义 |
 > |---|---|
@@ -356,7 +356,7 @@ python evals/hybrid_eval.py --help
    内网名解析不到 ⇒ 每条 kb 问题都在观测面撞 `Error 11001`，录出来是一份
    「全是兜底答案」的基线。装配项含：模型一律指向 LM Studio、知识库指向
    `local_kb_demo` seed 过的 SQLite+FAISS、`TEXT2SQL_DATABASE_URL` 从 compose 的
-   `mysql` 服务推导、主机端口从 compose 的 `ports` 推导（**不抄表**，纪律 7）、
+   `mysql` 服务推导、主机端口从 compose 的 `ports` 推导（**不抄表**，约定 7）、
    以及 `KB_SCOPE_DESCRIPTION` 的**语料换域声明**（出厂 scope 是「测试数据集」口径，
    KB 子图 guardrails 会按旧域把真法条问题判成越界并 0 引用）。
 2. **录制前自检**——端点模型是否存在、知识库行数、Neo4j 节点数、Text2SQL
@@ -398,13 +398,13 @@ python evals/hybrid_eval.py --help
 
 * **落盘值为 0.0 的键不写**（分母为 0 或分母不为 0 都算，**先 `round(…, 4)` 再判**——
   恒 PASS 的形态由写进文件的那个数决定，`0.00004` 折成 `0.0` 同样是常绿灯）。
-  `*_applicable` 在本轮没有
+  `*_applicable` 在本次没有
   适用样本时给出 `0.0`；录制中断时可评测样本还会**全落在缺预测区间**，于是分母 34
   的 `citation_correctness_applicable` 也是 `0.0`（2026-10-25 实测）。把 `0.0` 当
   基线写进去等于宣布该指标恒 PASS（`0.0 ≥ 0.0 × 0.98` 恒真），而且这条**连
   `--force` 都越不过**——它与录制完整与否无关，是「这个键没有可把关的下界」。
   宁可让这个键**红**：2026-10-26 起门禁对缺键是 `NOT-ARMED` + 退出码 2（旧口径是
-  NOT-ENFORCED + 建档 + 绿灯），所以「本轮有键归档不了」会直接体现在 CI 上，处置只有两条
+  NOT-ENFORCED + 建档 + 绿灯），所以「本次有键归档不了」会直接体现在 CI 上，处置只有两条
   可评审的路——补录一份五键都能归档的 summary，或把该指标从 `ci.yml` 的 `METRICS` 里显式摘掉。
 * **缺预测不为零时拒绝建档**（`--force` 才能覆盖）：录制未跑完时缺预测按失败计，
   基线被系统性压低，此后真劣化会藏在噪声里。
@@ -412,9 +412,9 @@ python evals/hybrid_eval.py --help
   门禁按键取值，多余键忽略。
 
 > **生成器只保证「写出的键是对的」，拦不住「已入库的键被人删掉」——这条 2026-10-26 已由门禁侧封住。**
-> 旧口径下 `quality_gate.py` 对「基线里没有这个键」的处理是 NOT-ENFORCED + **把本轮值写回去建档**
+> 旧口径下 `quality_gate.py` 对「基线里没有这个键」的处理是 NOT-ENFORCED + **把本次值写回去建档**
 > + 退出码 0：单独看这一步是"响亮地没把关"，但配合删键就成了**静默降级**——那一轮不比对，
-> 下一轮起拿本轮值当新地板。2026-10-25 审查按此复现（删
+> 下一轮起拿本次值当新地板。2026-10-25 审查按此复现（删
 > `citation_correctness_applicable` ⇒ `rc=0` 并把它写了回去）。现在的三条钉子：
 >
 > 1. **缺输入即阻断，且拒绝路径上不写文件**（`evals/quality_gate.py`）：基线文件不存在、
@@ -422,7 +422,7 @@ python evals/hybrid_eval.py --help
 >    `NOT_ARMED_EXIT_CODE = 2`（**刻意不等于 FAIL 的 1**：1 意思是"指标劣化了"，这里是
 >    "什么都没比对"，混在一个码上日志里就分不开）。首跑建档退成必须显式声明的
 >    `--allow-bootstrap`（保留旧 NOT-ENFORCED 语义 + 写回 + rc 0），`ci.yml` 的 `eval-offline`
->    **不带**这一行，只有 `perf-baseline.yml` 的 nightly 带——那里"本轮无基线"是常态。
+>    **不带**这一行，只有 `perf-baseline.yml` 的 nightly 带——那里"本次无基线"是常态。
 > 2. **基线值本身**：`test_committed_baseline_is_a_real_gate_not_an_empty_archive` 把下界收严成
 >    **开区间**（`0.0 < value ≤ 1.0`，0.0 基线直接红），`test_committed_baseline_covers_every_ci_gate_metric`
 >    要求 committed 基线**覆盖** ci.yml 的 `METRICS` 每个键（键清单复用
@@ -444,7 +444,7 @@ python evals/hybrid_eval.py --help
 > | 删门禁基线文件 | p124 三条（真门 / 覆盖每个键 / README 数字一致）+ p41 两条文档路径守卫 | 5 |
 > | 删 `evals/baseline_predictions.jsonl` | `test_committed_predictions_cover_the_golden_set_exactly` | 1 |
 >
-> 删预测文件那一条是**本轮新增的内容守卫**：过去它「192 条一条都不红」——p41 的 `_PATH_EXT`
+> 删预测文件那一条是**本次新增的内容守卫**：过去它「192 条一条都不红」——p41 的 `_PATH_EXT`
 > 刻意不含 `jsonl`，`test_ci_gate_contract` 又只断言 ci.yml **正文**提到这个文件名。现在守卫判的是
 > 存在 · 非空 · **题数与金标同源**（不与 `legal_golden.jsonl` 行数相等就红，不写死 102）·
 > id 唯一 · id 集合与金标**双向相等**。为什么值得单独一条：CI 的 `eval-offline` 在预测文件缺失时
@@ -716,7 +716,7 @@ python evals/hybrid_eval.py --help
   | `reject_accuracy_applicable` | 1.0000 | 13 | 0.9800 | **0 条** |
 
   双向取证（2026-10-26 对着门禁新默认值复跑过一遍）：同值五个指标逐个走**真比对 PASS**
-  （输出里既没有 `NOT-ENFORCED` 也没有 `NOT-ARMED`——后者是本轮新增的"缺输入即阻断"态，
+  （输出里既没有 `NOT-ENFORCED` 也没有 `NOT-ARMED`——后者是本次新增的"缺输入即阻断"态，
   见上），注入 −5pp 五个全部 FAIL、退出码 1。**这段是历史测量记录**：输入文件已于
   2026-10-26 删除，CI 的 `eval-offline` 机位同步下线，门禁当前处于「未武装」状态。
 * ⚠️ **武装后的门禁把关的是「打分口径 + 基线文件」，不是线上运行时质量**。
@@ -762,7 +762,7 @@ python evals/hybrid_eval.py --help
 |---|---|
 | **事实来源** | 公开数据集 **C-Eval**（HF `ceval/ceval-exam`，revision `617524a0…`），**不是**人工标注 |
 | **许可** | **CC BY-NC-SA 4.0 —— 非商用**。商用前须另行取得授权（见 `evals/ceval_golden.manifest.json`） |
-| **规模** | 156 行 = 52 个学科 × 3 题（分层抽样，种子固定 ⇒ 可复现）；**题数的唯一真源是 `evals/ceval_golden.manifest.json` 的 `rows` 字段**（由 `scripts/eval/ceval_to_golden.py` 生成，用例 `test_manifest_records_license_and_provenance` 钉 `rows>0` 且 `verification.rows_checked == rows`）。除本行（唯一声明处）外，对 `evals/README.md`、`README.md`、`docs/migration/现有目录树.md`、`docs/migration/PhaseJ_*.md` 跑 `grep -n "156"` 的**每一处命中都是本行的抄本快照**：本文件卷首 ✅ 横幅 `:16`、§1 目录用途块内的目录行 `:30`、§9 当前状态说明 `:683`、§10.5 跑批预算 `:819` 与 `:831`；`README.md:378`、`docs/migration/现有目录树.md:21`、`docs/migration/PhaseJ_评测活证据与叙事收口规划.md` 的 `:16`/`:17`/`:78`/`:97`/`:98`/`:112`/`:158`。登记面即上述四个文件的 `grep -n "156"` 命中；`CHANGELOG.md` 内的「156」是既有条目或行号引用，不属本登记面（该文件 `:35` 已就地说明）。**唯一例外**：本文件 `:103` 的「第 156–159 行」是 `agentix/application/agents/router.py` 的**行号引用**，不是题数抄本。对账跑 `wc -l evals/ceval_golden.jsonl` 并与 manifest 的 `rows` 比对（纪律 7：手抄数不留成第二基准） |
+| **规模** | 156 行 = 52 个学科 × 3 题（分层抽样，种子固定 ⇒ 可复现）；**题数的唯一真源是 `evals/ceval_golden.manifest.json` 的 `rows` 字段**（由 `scripts/eval/ceval_to_golden.py` 生成，用例 `test_manifest_records_license_and_provenance` 钉 `rows>0` 且 `verification.rows_checked == rows`）。除本行（唯一声明处）外，对 `evals/README.md`、`README.md`、`docs/migration/现有目录树.md`、`docs/migration/PhaseJ_*.md` 跑 `grep -n "156"` 的**每一处命中都是本行的抄本快照**：本文件卷首 ✅ 横幅 `:16`、§1 目录用途块内的目录行 `:30`、§9 当前状态说明 `:683`、§10.5 跑批预算 `:819` 与 `:831`；`README.md:378`、`docs/migration/现有目录树.md:21`、`docs/migration/PhaseJ_评测活证据与叙事收口规划.md` 的 `:16`/`:17`/`:78`/`:97`/`:98`/`:112`/`:158`。登记面即上述四个文件的 `grep -n "156"` 命中；`CHANGELOG.md` 内的「156」是既有条目或行号引用，不属本登记面（该文件 `:35` 已就地说明）。**唯一例外**：本文件 `:103` 的「第 156–159 行」是 `agentix/application/agents/router.py` 的**行号引用**，不是题数抄本。对账跑 `wc -l evals/ceval_golden.jsonl` 并与 manifest 的 `rows` 比对（约定 7：手抄数不留成第二基准） |
 | **用途** | 跑一次**多 agent 系统的性能测量**：正确率 / 延迟 / 模型调用次数 / supervisor 出口契约 |
 | **不是** | 不是 CI 门禁、不是质量基线；扁平拓扑已全量实测（§10.6），多 agent 拓扑仅部分样本；不替换 §1 那条已停用删除的旧 KG/RAG 评测线 |
 
@@ -817,7 +817,7 @@ python scripts/eval/mcq_report.py --golden evals/ceval_golden.jsonl \
 
 跑法同 §10.3，只把金标集换成 3 行切片，模型走**本机** LM Studio（`--local-llm` 录制档默认
 `qwen/qwen3-8b` @ `127.0.0.1:1234/v1`，不外送提示词）。**A/B 全量（156 题 × 多 agent 开 / 关）未跑**——
-维护者裁决本轮不跑评测，本节只登记冒烟读数与跑之前必须先补的口子。
+维护者裁决本次不跑评测，本节只登记冒烟读数与跑之前必须先补的口子。
 
 - **接线通了**：`--local-llm` 的录制前自检（`evals/recording_env.py::preflight_local_recording`）
   全条 OK——两个模型 id 在列、知识库 / Neo4j / Text2SQL / Redis 可达；`run_eval.py --live --record`
@@ -831,7 +831,7 @@ python scripts/eval/mcq_report.py --golden evals/ceval_golden.jsonl \
   外推，156 题 × 2 臂**串行**约 3.5–5 小时；两臂不得并行——LM Studio 单实例并行会互相抢 CPU，
   把延迟读数污染成不可比。
 - ⚠️ **跑 A/B 前必须先修的一处**（**措辞修正**：此处此前记的「录制侧把 `perf.llm_steps` / `perf.llm_latency_ms`
-  写成了**常量 0**」**不准确**——本轮沿代码复核证明**没有任何一处写死 0**，真缺口是三层接线：
+  写成了**常量 0**」**不准确**——本次沿代码复核证明**没有任何一处写死 0**，真缺口是三层接线：
   ① 整条 ask 被包成**一次** Runtime 步骤，类型 `EXECUTING`（`agentix/application/services/chat_service.py:869`–`870`，
   `agentix/runtime/runtime.py:185` / `:199` 同样只用 `StepType.EXECUTING`）⇒ 轨迹里没有 LLM 粒度的步骤；
   ② `StepType` 里**没有 LLM / MODEL 成员**（`agentix/domain/runtime/steps.py:21`–`31`；`GENERATE = "generate"`
@@ -841,7 +841,7 @@ python scripts/eval/mcq_report.py --golden evals/ceval_golden.jsonl \
   `.tmp/smoke_preds.jsonl` 三行的 `llm_steps` 键**存在**，值 0 表示「步骤列表取到了、其中没有一条算 LLM 步」，
   是"真的没采到"而非"填了个 0"。**结论不变**：「模型调用次数」这项指标当前**不可用**，跑 A/B 前要先修仪表接线
   （在执行链里登记 LLM 步 + 报告侧判据与真源同源），照现在跑 A/B 会产出一份"两臂每题都调用了 0 次模型"的报告。
-- 非商用许可（CC BY-NC-SA 4.0）不变；本轮 3 题只作本地测量，未再分发题目。
+- 非商用许可（CC BY-NC-SA 4.0）不变；本次 3 题只作本地测量，未再分发题目。
 
 ### 10.6 全量实测（2026-11-05，本机 qwen3-8b）
 

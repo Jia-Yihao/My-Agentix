@@ -1,9 +1,8 @@
 """P165（T19）：审批等待 deadline，到期自动拒绝。
 
-对应规划 `docs/design/审批与中断恢复优化规划.md` T19 卡（Q9 已裁决：到期自动拒绝）
-与本卡验收标准①–④：
+验收标准①–④：
 
-① `HITL_APPROVAL_DEADLINE_S` **缺省 = 现行为**（无独立 deadline，纪律 1）：
+① `HITL_APPROVAL_DEADLINE_S` **缺省 = 现行为**（无独立 deadline，约定 1）：
    默认 0 时**不建扫描任务、不读库**，`stats()` 键集合与基线逐字相同；
 ② 配置后到期自动拒绝，且归因为「超时拒」，与「人工拒」在**可查询字段**上可区分：
    `BridgeDecision.reason == "auto_reject_timeout"`、库行 `decided_by ==
@@ -100,7 +99,7 @@ from agentix.tools.gateway.human_review import (
 )
 
 #: flag-off 基线 stats 键集合。照抄 `test_p136_hitl_pending_persistence.py:63` 的
-#: 断言方式（同一份字面量，逐字相同）——纪律 1 的判据就是"键集合不变"。
+#: 断言方式（同一份字面量，逐字相同）——约定 1 的判据就是"键集合不变"。
 BASELINE_STATS_KEYS = {
     "enabled", "mode", "created", "approved", "rejected", "edited", "resumed",
     "auto", "bypass", "not_found", "pending", "decided", "rejection_rate",
@@ -306,7 +305,7 @@ class _StubStore:
 
 class TestConfigSurface:
     def test_default_is_zero(self):
-        """纪律 1：新键默认关（0 = 不建任务、不读库、键集合不变）。"""
+        """约定 1：新键默认关（0 = 不建任务、不读库、键集合不变）。"""
         assert Settings.model_fields["HITL_APPROVAL_DEADLINE_S"].default == 0.0
 
     @pytest.mark.parametrize("value", [-1, -0.5, -86400])
@@ -1032,7 +1031,7 @@ class TestDeadlineIndependentOfGraphClock:
 
 
 # ---------------------------------------------------------------------------
-# 5. deadline=0 / store=None（验收①，纪律 1 逐位等价）
+# 5. deadline=0 / store=None（验收①，约定 1 逐位等价）
 # ---------------------------------------------------------------------------
 
 
@@ -1091,7 +1090,7 @@ class TestFlagOffEquivalence:
 
         桥单例与扫描任务必须经同一个函数取值——一处改分辨率、另一处还在自己拼
         `getattr(settings, ...)`，就会出现"装配的 deadline 与扫描的 deadline 不是
-        同一个数"这种只有运维才查得出来的漂移（纪律 6 ④）。
+        同一个数"这种只有运维才查得出来的漂移（约定 6 ④）。
         """
         from agentix import main
         from agentix.policies.hitl import hitl_bridge as bridge_module
@@ -1108,7 +1107,7 @@ class TestFlagOffEquivalence:
 
 
 # ---------------------------------------------------------------------------
-# 6. 失败隔离（单行不阻断 / 读库 fail-open，纪律 2）
+# 6. 失败隔离（单行不阻断 / 读库 fail-open，约定 2）
 # ---------------------------------------------------------------------------
 
 

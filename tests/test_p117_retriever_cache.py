@@ -107,7 +107,7 @@ def test_default_flag_is_off_and_bounded_in_source():
     assert (
         'RETRIEVAL_RETRIEVER_CACHE_ENABLED = _bool_env("RETRIEVAL_RETRIEVER_CACHE_ENABLED", "false")'
         in src
-    ), "新开关默认必须为 false（AGENTS.md 纪律 1）"
+    ), "新开关默认必须为 false（工程约定 1）"
     assert 'os.getenv("RETRIEVAL_RETRIEVER_CACHE_MAX_ENTRIES", "8")' in src
 
 

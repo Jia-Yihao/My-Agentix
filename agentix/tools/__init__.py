@@ -57,7 +57,7 @@ def list_tool_specs() -> List[Dict[str, Any]]:
     按注册表全集导出 ⇒ 必须过一遍 LLM 可见面的唯一判定
     （``agentix/tools/definitions.py::llm_visible_specs``）：不进 LLM 可见
     工具面的工具（``code_execute``）不能出现在这里——它由 ``code_agent``
-    节点直接调用，不交给模型自由挑选（口径见 ``.qoder/rules/code-exec.md`` §4）。
+    节点直接调用，不交给模型自由挑选（口径见 ``docs/architecture/adr/0007-执行沙箱端口.md`` §4）。
     """
     return [spec.as_openai_function() for spec in llm_visible_specs(registry.get_specs())]
 

@@ -12,7 +12,7 @@
 - **行为差异消除**：恢复路径此前回落框架默认 25——统一后 ``MAX_ITERATIONS=3``
   时进环恢复真的在第 3 步撞 ``GraphRecursionError``（此前会多跑一倍多）；
 - **静态守卫**：三个调用方都经 ``thread_config`` 构造，且不再出现把
-  ``recursion_limit`` 当 dict 字面量键的写法（纪律 6 ④：同一个判定不许两个源）。
+  ``recursion_limit`` 当 dict 字面量键的写法（约定 6 ④：同一个判定不许两个源）。
 """
 
 from __future__ import annotations

@@ -64,10 +64,10 @@ from agentix.orchestration import capabilities, node_registry
 # `agentix/application/agents/research_handler.py` 的 `create_research_plan`）；
 # `route_query` 是同步壳，真身与其余 handler 同在 application。
 #
-# 签名纪律：壳的参数名/kind（含 keyword-only 的 `config`）必须与真身逐字一致——
+# 签名壳的参数名/kind（含 keyword-only 的 `config`）必须与真身逐字一致——
 # langgraph 的 config 注入按签名判定（去掉 `config` 形参则注入不到），节点名按
 # `__name__` 推断。返回注解**刻意不抄**：抄一份就是第二份契约源（AGENTS.md
-# 纪律 6 ④），签名一致性由 tests/test_p180_builder_shells.py 用
+# 约定 6 ④），签名一致性由 tests/test_p180_builder_shells.py 用
 # inspect.signature 运行时对比兜底。
 
 
@@ -83,7 +83,7 @@ def route_query(state: AgentState):
 
 # 条件边的**静态枚举面**补注：langgraph 的 `BranchSpec.from_path` 按 path 函数返回
 # 注解里的 `Literal` 推断分支终点集合；壳刻意不在源码里**书写**这份 Literal（抄一份
-# 字面量 = 第二份契约源，AGENTS.md 纪律 6 ④），而是在定义期把真源 `router.route_query`
+# 字面量 = 第二份契约源，工程约定 6 ④），而是在定义期把真源 `router.route_query`
 # **求值后的注解对象**挂回壳上——值不在本文件落地，图的条件下拉枚举面与改造前逐位
 # 一致（等价基准：`tests/test_p178_node_registry.py` 的 EXPECTED_GRAPH_EDGES，18 条边；
 # 挂接失效时条件边塌成 `analyze_and_route_query → __end__`，该守卫当场变红，
@@ -335,7 +335,7 @@ async def resume_in_loop(thread_id: str, resume_value: Any) -> Any:
     # 此前缺这个键，会落到框架默认 25，与主链路的 MAX_ITERATIONS 各说一套。
     config = thread_config(thread_id)
     # PhaseK 任务 6：进环恢复点落 span。thread_id 判据只从 config 取（唯一真源，
-    # 纪律 6 ④）；fail-open 由 helper 保证（无 span/异常 ⇒ no-op，纪律 2）。
+    # 约定 6 ④）；fail-open 由 helper 保证（无 span/异常 ⇒ no-op，约定 2）。
     record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))
     # LG-3-3：第四个恢复入口（进环 HITL 裁决）。计数点是「向图发起续跑」。
     record_graph_resume("hitl_in_loop")
@@ -350,7 +350,7 @@ def _node_timeout_kwargs() -> Dict[str, Any]:
     """LG-3-2：主图节点的原生超时实参；**未启用时返回空 dict**。
 
     返回空 dict 而不是 ``{"timeout": None}`` 是本项的口径：开关为 0 时
-    ``add_node`` 完全不传该形参，注册出来的节点与基线逐位等价（纪律 1）。
+    ``add_node`` 完全不传该形参，注册出来的节点与基线逐位等价（约定 1）。
     策略对象只从 ``policies.node_timeout`` 出（LG-0-3 集中点，且
     ``tests/test_p147_policy_centralization.py`` 按实参来源判违规）。
 
@@ -366,7 +366,7 @@ def _node_error_handler_kwargs() -> Dict[str, Any]:
     """LG-3-5：有副作用节点的原生错误补偿实参；**未启用时返回空 dict**。
 
     返回空 dict 而不是 ``{"error_handler": None}`` 是本项的口径：开关关闭时
-    ``add_node`` 完全不传该形参，注册出来的图与基线逐位等价（纪律 1）。
+    ``add_node`` 完全不传该形参，注册出来的图与基线逐位等价（约定 1）。
     handler 本体由 ``policies.node_error_handler`` 构造（LG-0-3 集中点）。
 
     只挂 ``execute_task`` / ``code_agent``：它们是**有副作用**的节点，失败时
@@ -390,7 +390,7 @@ def build_graph(checkpointer=None):
     """
     builder = StateGraph(AgentState, input=InputState)
     # LG-1-1：只读节点的原生重试。flag-off ⇒ 下面是**空 dict**，add_node 完全不传
-    # `retry_policy` ⇒ 与基线逐位等价（纪律 1）；策略实参来自 policies.py（LG-0-3 集中点），
+    # `retry_policy` ⇒ 与基线逐位等价（约定 1）；策略实参来自 policies.py（LG-0-3 集中点），
     # 不在本文件内联构造。覆盖面只有 6 个只读节点，`execute_task` / `code_agent` 永不挂
     # （整节点重跑会重放工具副作用）。
     readonly_retry_kwargs = (
@@ -398,13 +398,13 @@ def build_graph(checkpointer=None):
     )
     # LG-3-2：节点级原生超时（langgraph 1.x 的 `add_node(timeout=)`）。flag-off
     # （`NODE_TIMEOUT_SECONDS=0`，默认）⇒ 下面是**空 dict** ⇒ add_node 完全不传
-    # `timeout` ⇒ 与基线逐位等价（纪律 1）。超时是**每次节点尝试**的墙钟上限，
-    # 靠 asyncio 协作式取消生效（纪律 6 ②：不让出事件循环的节点杀不掉）；
+    # `timeout` ⇒ 与基线逐位等价（约定 1）。超时是**每次节点尝试**的墙钟上限，
+    # 靠 asyncio 协作式取消生效（约定 6 ②：不让出事件循环的节点杀不掉）；
     # `NodeTimeoutError` 已在领域分类里判为不可重试，不会与上面的 retry_policy
     # 叠成「超时→重试→再超时」（LG-3-2 验收第 ④ 条）。
     node_timeout_kwargs = _node_timeout_kwargs()
     # LG-3-5：有副作用节点的原生错误补偿（langgraph 1.x 的 `add_node(error_handler=)`）。
-    # flag-off（默认）⇒ 空 dict ⇒ 完全不传该形参（纪律 1）；开时仅在
+    # flag-off（默认）⇒ 空 dict ⇒ 完全不传该形参（约定 1）；开时仅在
     # execute_task / code_agent 上挂 handler（见 _node_error_handler_kwargs 的边界说明）。
     node_error_handler_kwargs = _node_error_handler_kwargs()
     # 策略形参口径（LG-0-3）：下面这些 add_node 若要挂 retry_policy / cache_policy /

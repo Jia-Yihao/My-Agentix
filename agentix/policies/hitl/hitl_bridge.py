@@ -184,7 +184,7 @@ class HitlBridge:
         self._breakpoints = breakpoints
         self._mode = PermissionMode(permission_mode)
         #: T18（Q7 裁决：库为真源）pending 落库面（``HitlPendingStore`` 鸭子型）。
-        #: None = 纯内存基线——**flag-off 时装配判定保证它是 None**（纪律 1 逐位等价）；
+        #: None = 纯内存基线——**flag-off 时装配判定保证它是 None**（约定 1 逐位等价）；
         #: 库侧未决上限 200 与内存 FIFO 同数（口径唯一真源见 hitl_pending_store 模块注释），
         #: 溢出显式拒绝、不静默挤行。
         self._pending_store = pending_store
@@ -225,12 +225,12 @@ class HitlBridge:
         }
         if pending_store is not None:
             # 故障计数键**只在库面装配时存在**：flag-off 的 stats() 键集合必须与
-            # 基线逐位相同（纪律 1），所以不预先塞 0。
+            # 基线逐位相同（约定 1），所以不预先塞 0。
             self._counts["persist_errors"] = 0
             self._counts["restore_errors"] = 0
         if self._approval_deadline_s > 0:
             # 同上：超时拒的计数键**只在 deadline>0 时存在**。deadline=0（默认）连
-            # 这个键都不出现，stats() 键集合与基线逐字相同（纪律 1）。
+            # 这个键都不出现，stats() 键集合与基线逐字相同（约定 1）。
             self._counts[AUTO_REJECT_TIMEOUT_REASON] = 0
 
     # -- 栈A → 栈B：挂起 --------------------------------------------------
@@ -320,7 +320,7 @@ class HitlBridge:
         persist_error = ""
         if self._pending_store is not None:
             try:
-                # 同步 repo（本包 CRUD 惯例）经 to_thread 下放，不卡事件循环（纪律 6 ②）
+                # 同步 repo（本包 CRUD 惯例）经 to_thread 下放，不卡事件循环（约定 6 ②）
                 await asyncio.to_thread(
                     self._pending_store.save_pending,
                     sidecar=side_req.to_public_dict(),
@@ -560,7 +560,7 @@ class HitlBridge:
         self._counts[bucket[result.action]] += 1
         if attribution:
             # 前提：``attribution`` 只由扫描侧（:meth:`expire_overdue`）传入，而桥的
-            # ``approval_deadline_s > 0`` 时这个计数键才存在（纪律 1：deadline=0 的
+            # ``approval_deadline_s > 0`` 时这个计数键才存在（约定 1：deadline=0 的
             # ``stats()`` 键集合必须与基线逐字相同）。键缺失 = 桥配置与扫描侧不一致
             # （例如 deadline=0 的桥被外部强行驱动了扫描），**不能静默跳过**：那会让
             # "超时拒"这一桶永远停在 0 而无人察觉。
@@ -700,7 +700,7 @@ class HitlBridge:
         T19：``rejected`` **含**超时拒（到期自动拒绝也是拒绝）；``auto_reject_timeout``
         是其中按归因拆出的**子集**，不进 ``decided`` 求和（否则同一次裁决数两遍）；
         ``rejection_rate = rejected/decided`` 因此不因超时拒被稀释。该键只在
-        ``deadline>0`` 时存在（纪律 1：deadline=0 的键集合与基线逐字相同）。
+        ``deadline>0`` 时存在（约定 1：deadline=0 的键集合与基线逐字相同）。
         """
         decided = sum(
             self._counts[k]
@@ -748,7 +748,7 @@ class HitlBridge:
         T23：流内审批帧要告诉前端"这条 pending 该往哪儿裁决"，而
         ``POST /ops/hitl/approvals/{sidecar_request_id}`` 收的是桥自己的 id。
         这里只是把桥内既有的 ``sidecar → gate`` 映射反过来读一次，**不新建映射**
-        （纪律 6 ④：同一事实不许两个源）。查不到返回 ``None``——调用方据此
+        （约定 6 ④：同一事实不许两个源）。查不到返回 ``None``——调用方据此
         决定不写该字段，而不是编一个假 id 让裁决打到空气里。
         """
         if not gate_request_id:
@@ -921,13 +921,13 @@ class HitlBridge:
     ) -> List[BridgeDecision]:
         """把超过审批时限仍未决的 pending 逐条**自动拒绝**（fail-closed）。
 
-        语义分层（``.qoder/rules/code-exec.md`` §7）：到期拒是**治理层终局**——
+        语义分层（``docs/architecture/adr/0007-执行沙箱端口.md`` §7）：到期拒是**治理层终局**——
         闸门落 ``reject`` 后执行点拿到的是"没批准"，不重开执行、不重试、不还原图
         （挂起车道本来就没让图停住：hook 2 秒超时后 executor 已返回 blocked）。
 
         **必须复用 :meth:`decide`**：拒绝路径只有一条（闸门 reject + sidecar 收口 +
         清内存 + 指标 + 库闭合 + 断点解除）。在超时扫描里另写一遍，等于把"什么算
-        一次拒绝"变成两个源（纪律 6 ④：改一处漏一处）。
+        一次拒绝"变成两个源（约定 6 ④：改一处漏一处）。
 
         **并发模型（T19 第 2 轮返工；多 worker 部署 ``--workers 2`` 是默认形态）**：
 
@@ -949,7 +949,7 @@ class HitlBridge:
            按 ``created_at`` 升序取数而挡住后面的到期行。故按 :meth:`decide` 批准分支
            同一做法补建闸门记录，再走同一条 :meth:`decide`。
 
-        失败姿态（纪律 2 fail-open，与既有读路径同一取舍）：
+        失败姿态（约定 2 fail-open，与既有读路径同一取舍）：
         - 租约不可得（读/写库异常）⇒ ``logger.warning`` + 返回 ``[]``——fail-open
           的正确方向是"这轮不拒"（pending 保留待下轮），而不是"没有租约也照拒"；
         - 读库失败 ⇒ ``logger.warning`` + 返回 ``[]``（已处理部分保留，主链不受影响）；
@@ -990,7 +990,7 @@ class HitlBridge:
             return []
 
         try:
-            # 同步 repo 经 to_thread 下放，不卡事件循环（纪律 6 ②）
+            # 同步 repo 经 to_thread 下放，不卡事件循环（约定 6 ②）
             rows = await asyncio.to_thread(
                 self._pending_store.list_expired, cutoff, limit=limit
             )
@@ -1116,7 +1116,7 @@ class HitlBridge:
             # 打过 ``decision="rejected"``——六值封闭集不动，不给超时另造 decision 值；
             # 这里补的是"这次拒绝属超时归因"。``target_type="tool"`` 与挂起/桥路径
             # 逐字一致（已在 p100 白名单内，零新增 label）。打点故障不倒灌审批链
-            # （纪律 2，与 ``_record_decision`` 同取舍）。
+            # （约定 2，与 ``_record_decision`` 同取舍）。
             try:
                 record_approval_timeout("tool")
             except Exception as exc:  # noqa: BLE001 - 指标故障不影响审批链
@@ -1357,9 +1357,9 @@ def _resolve_pending_store() -> Optional[Any]:
     """T18 装配判定**唯一源**：flag-off（默认）恒 ``None``。
 
     flag-off 时连 store 模块都不 import——不触 sqlalchemy、不建池、不建表、
-    不读写新表（纪律 1 的"逐位等价"要求装配点本身零新副作用，而不是"建了但不用"）。
+    不读写新表（约定 1 的"逐位等价"要求装配点本身零新副作用，而不是"建了但不用"）。
     flag 判据只在这里读一次；``get_hitl_bridge`` 与测试 monkeypatch 共用本函数，
-    不许第二个判点（纪律 6 ④）。
+    不许第二个判点（约定 6 ④）。
     """
     from agentix.config import settings
 
@@ -1396,7 +1396,7 @@ def get_hitl_bridge() -> HitlBridge:
     T18：pending 库面按 :func:`_resolve_pending_store` 装配——flag-off 得到
     ``None``，与基线构造逐位等价。
     T19：审批时限按 :func:`resolve_approval_deadline_s` 装配——默认 0 时
-    ``stats()`` 连 ``auto_reject_timeout`` 键都不会出现（纪律 1）。
+    ``stats()`` 连 ``auto_reject_timeout`` 键都不会出现（约定 1）。
     """
     global _bridge
     if _bridge is None:

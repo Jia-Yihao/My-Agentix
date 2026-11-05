@@ -99,7 +99,7 @@ class TestLightRAGQueryNodeContract:
     async def test_query_failure_is_captured_not_raised(self):
         """底层查询抛异常时，节点必须捕获并写入 errors，绝不向上冒泡。
 
-        这是 LangGraph 节点的基本纪律：一个子节点的失败不应炸穿整张图。
+        这是 LangGraph 节点的基本一个子节点的失败不应炸穿整张图。
         """
         node = create_lightrag_query_node()
         fake = self._FakeAPI(exc=RuntimeError("embedding service down"))

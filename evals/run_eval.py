@@ -1892,7 +1892,7 @@ def run_live(
     每条依赖，不齐就退出（不等两小时后发现基线是兜底答案）；③ 套用本地模型的
     两处演示层适配（结构化输出方式按能力探测 + router 超时余量），适配本体来自
     ``scripts/demo/local_kb_demo.py``，不新造第二套口径。关闭时不 import、
-    不 patch、不打印（纪律 1）。
+    不 patch、不打印（约定 1）。
     """
     golden_path = Path(golden_path)
     predictions_path = Path(predictions_path)
@@ -1906,7 +1906,7 @@ def run_live(
 
     # 本地录制档必须在 agentix 导入链之前落地：① 环境变量（settings 与
     # database.engine 是导入期对象）；② 模型适配（router profile 也是导入期对象）。
-    # 关闭时一行都不执行——录制路径与不传本开关时逐字节等价（纪律 1）。
+    # 关闭时一行都不执行——录制路径与不传本开关时逐字节等价（约定 1）。
     if local_llm:
         # 双路径导入（与文件头 claim_check 同一口径）：`python evals/run_eval.py`
         # 直跑时 sys.path[0]=evals/，pytest 以文件路径加载时走包名 `evals.`。

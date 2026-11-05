@@ -9,7 +9,7 @@
 再按 ``STREAM_HITL_HEARTBEAT_S`` 发心跳，裁决落地后把决定交回节点
 （``approve`` ⇒ 落批准后重试一次；其余 fail-closed，与非流式同一套语义）。
 
-**判定不在这里**（纪律 6 ④：同一个判定不许两个源）：
+**判定不在这里**（约定 6 ④：同一个判定不许两个源）：
 
 - "要不要审批"由执行点的风险闸与闸门 ``preflight`` 判：只有
   ``reason="review_required"`` 的失败才会走到本模块的 ``request()``；
@@ -17,7 +17,7 @@
   ``bridge.decide``（``/ops/hitl/approvals/{id}``）与 T19 到期自动拒绝都闭合**同一行**；
   本地闸门簿记（``get_review_gate().get(request_id).decision``）是同一事实的
   **进程内快路径**。因此本模块的判定顺序是「**本地闸门优先、未决时回捞库**」——
-  两处读的是**同一条库记录**，不是两份裁决（纪律 6 ④）。回捞是给 ``--workers 2``
+  两处读的是**同一条库记录**，不是两份裁决（约定 6 ④）。回捞是给 ``--workers 2``
   （``docker-compose.yml`` 的默认形态）兜底：裁决落在**另一个 worker** 时，本进程
   只能从库里看见终态；只读本地闸门会让等流永久停在 PENDING，最后由 ``AGENT_TIMEOUT``
   以"处理请求超时"收口——那不是治理终局。本模块只读，不另建裁决缓存。
@@ -67,7 +67,7 @@ HEARTBEAT_FRAME_TYPE = "heartbeat"
 #: 裁决轮询间隔（秒）。**模块常量而非配置项**：闸门簿记是内存字典查询，改它不影响
 #: 正确性，但**不是没有运维语义**——它同时是裁决的**可见延迟上界**（与
 #: ``stream_gate.COALESCE_WINDOW_S`` 同一取舍），以及 persist 开启时等待流对
-#: ``hitl_pending_approvals`` 的**读频率**：未决时每拍回捞一次库行。不为此新增配置键（纪律 4）。
+#: ``hitl_pending_approvals`` 的**读频率**：未决时每拍回捞一次库行。不为此新增配置键（约定 4）。
 DECISION_POLL_S = 0.25
 
 #: 库行终态 → 流内裁决（两值：``review_interrupt`` 只认 ``approve`` / ``reject``）。
@@ -103,7 +103,7 @@ def _warn_once(key: str, message: str, *args: Any) -> None:
 
 
 def build_stream_hitl(config: Dict[str, Any]) -> Optional["StreamHitlChannel"]:
-    """按 flag 装配流内审批通道；``None`` = 不介入（与基线逐位等价，纪律 1）。
+    """按 flag 装配流内审批通道；``None`` = 不介入（与基线逐位等价，约定 1）。
 
     flag 链（全开才装配，缺一即 ``None`` 且**不碰 config**）：
 
@@ -401,7 +401,7 @@ class StreamHitlChannel:
     async def _gate_decision(self, request_id: Any) -> Optional[str]:
         """裁决判定：**本地闸门快路径 → 未决时回捞 T18 库行**。
 
-        **判定只有一个源**（纪律 6 ④）：裁决事实写在 T18 的
+        **判定只有一个源**（约定 6 ④）：裁决事实写在 T18 的
         ``hitl_pending_approvals`` 行上——``bridge.decide`` 与 T19 到期拒都闭合
         同一行；本地闸门簿记是同一事实的**进程内快路径**。所以先读快路径，
         未决（仍是 ``PENDING``／本进程压根没有这条记录）时按 ``sidecar_request_id``
@@ -443,7 +443,7 @@ class StreamHitlChannel:
     async def _store_decision(self, request_id: Any) -> Optional[str]:
         """回捞 T18 库行：本进程看不见的那次跨 worker 裁决只有库里是终态。
 
-        失败姿态（纪律 2 fail-open）：库面不可用 / 行读不出来 / 映射不到
+        失败姿态（约定 2 fail-open）：库面不可用 / 行读不出来 / 映射不到
         ``sidecar_request_id`` ⇒ **当作未命中**（返回 ``None``，本地闸门照旧轮询），
         ``logger.warning`` 留痕；绝不把异常抛进取事件循环，也绝不因此提前收口——
         回捞只是快路径的补充，不是等待的收口条件。
@@ -473,7 +473,7 @@ class StreamHitlChannel:
     def _resolve_store(self) -> Optional[Any]:
         """T18 库面（回捞用）：判据唯一源是 ``hitl_bridge.resolve_pending_store``。
 
-        惰性解析一次并缓存：本模块**不另读 flag**（纪律 6 ④）。flag-off 时那个
+        惰性解析一次并缓存：本模块**不另读 flag**（约定 6 ④）。flag-off 时那个
         函数连 store 模块都不 import（不触 sqlalchemy、不建池、不建表）⇒ 这里拿到
         ``None`` 是"本卡没开落库"这个合法结果，不是故障。
         """

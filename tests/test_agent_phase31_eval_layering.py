@@ -1,6 +1,6 @@
 """Phase 31 评估二期验收（分层 golden + 声称一致性 + 敏感性/隐私 + Best@k）。
 
-全部离线、零外部服务；对应 ``docs/migration/Phase28-31_优化规划.md`` §4 Phase 31 DoD：
+全部离线、零外部服务。DoD：
 
 * 旧 golden（无新字段）全量可跑，**既有 summary 键与基线快照逐位等价**；
   新键只落在 ``difficulty_*`` / ``privacy_*`` / ``best_at_k*`` / ``claim_consistency`` /

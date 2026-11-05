@@ -17,21 +17,21 @@
 ## 三条不可让的设计口径
 
 1. **fail-closed**：未注册的 name 一律抛 `NodeNotRegistered`，不返回 `None`、不做
-   内联兜底实现、不 `try/except` 降级。`AGENTS.md` 硬性纪律 2 的 fail-open 只适用于
+   内联兜底实现、不 `try/except` 降级。`CONTRIBUTING.md` 的工程约定 2 的 fail-open 只适用于
    指标/记忆/指令/预算这类**辅助**子系统；注册表是主链路，静默兜底等于让「装配没跑」
    伪装成「跑通了」——而且只会在全链路回归里以更难定位的形态暴露。异常文本因此必须
    自带 `application wiring not loaded` 这个可定位短语。
 2. **provider 是零参 thunk**（`lambda: router_mod.execute_task`），返回**当前模块属性**
    而非 import 期快照。这样测试对 application 模块属性的 patch 仍然生效；`resolve`
    **每次都走 thunk**、不缓存，否则一次 patch 之后注册表会把旧实现钉死。
-3. **`awaits` / `takes_config` 的唯一判据源是注册表项本身**（`AGENTS.md` 纪律 6 ④：
+3. **`awaits` / `takes_config` 的唯一判据源是注册表项本身**（`CONTRIBUTING.md` 的工程约定 6 ④：
    同一个判定不许两个源）。消费者只读 `entry(name)`，不得各自再算一遍
    `iscoroutinefunction(...)`。异步与否的**判据**本身取「调用后能否拿到可 await 的
    结果」（`is_awaitable_result`）——按 `iscoroutinefunction` 字面判会把类形式的
    `async __call__` 误判成同步。注意：本 helper 与 `agentix/orchestration/executor.py:68`
    的内联判据目前是**同式两源**（两份字面实现、零相互引用），不是同源；executor 侧改指
    本 helper 属后续批次，该二源债已登记入台账（`docs/design/审批与中断恢复优化规划.md` §8 的
-   M3-1 行待追认列与 §8.2 表 R 的 R1 行）；闭合前 `AGENTS.md` 纪律 6 ④ 仍未闭合。
+   M3-1 行待追认列与 §8.2 表 R 的 R1 行）；闭合前 `CONTRIBUTING.md` 的工程约定 6 ④ 仍未闭合。
 
 ## 命名与形态的先例
 
@@ -142,7 +142,7 @@ def is_awaitable_result(result: Any) -> bool:
     """异步判据的实现：调用后拿到可 await 的结果即为异步。
 
     刻意用 `__await__` 探测而不是 `iscoroutinefunction`：后者的字面判据对「类形式
-    `async def __call__`」为 False，会把异步节点登记成同步（`AGENTS.md` 纪律 6 ④）。
+    `async def __call__`」为 False，会把异步节点登记成同步（`CONTRIBUTING.md` 的工程约定 6 ④）。
     与 `executor.py:68` 的既有写法**同式两源**（两份 `hasattr(result, "__await__")`
     字面实现，互不引用），**不是**同源；executor 侧的内联判据须在后续批次改指本 helper，
     届时本 helper 才成为唯一实现。该二源债已登记入台账（同上指针：规划 §8 的 M3-1 行待追认列

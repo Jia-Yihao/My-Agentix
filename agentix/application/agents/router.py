@@ -185,7 +185,7 @@ _ACK_META = re.compile(
 
 #: fast-path 命中的 reason **封闭枚举（单源）**：``llm_calls_saved_total{reason}``
 #: 的取值由这里定义，``agentix/observability/metrics.py`` 的 ``LLM_CALLS_SAVED``
-#: 注释与用例都引用本常量——**不许在别处再抄一份 reason 名单**（纪律 6 ④）。
+#: 注释与用例都引用本常量——**不许在别处再抄一份 reason 名单**（约定 6 ④）。
 FASTPATH_REASONS: frozenset[str] = frozenset(
     {"chit_chat", "statute_direct", "capability_meta", "identity_meta", "ack_meta"}
 )
@@ -200,7 +200,7 @@ _REASONING_MARKERS = (
     "情形", "情况", "分别", "还是", "以及", "和", "与",
 )
 
-# 本函数的 fastpath 规则与测试侧样本同源维护（纪律 6 ④：同一个判定不许两个源）。封闭
+# 本函数的 fastpath 规则与测试侧样本同源维护（约定 6 ④：同一个判定不许两个源）。封闭
 # 句式族的逐字集在 ``tests/test_p173_routing_cache.py`` 的 ``_FASTPATH_EXPANSION_HITS``
 # （应短路）与 ``_FASTPATH_EXPANSION_NEAR_MISSES``（近似但不该短路）：改本函数任一规则，
 # 须同批改这两份样本；反之改样本也要回看规则——否则规则与用例各说一套。用符号名而非行号
@@ -284,7 +284,7 @@ ALLOWED_TYPES: Set[str] = {
 def _record_router_fallback(reason: str) -> None:
     """路由兜底计数（R-P3）：把"静默兜底"变成可归因指标。
 
-    fail-open（AGENTS.md 纪律 2）：指标子系统出错只留痕，绝不改路由结果——
+    fail-open（工程约定 2）：指标子系统出错只留痕，绝不改路由结果——
     这条路径本身已经是降级路径，再抛异常就等于把降级变成故障。
     """
     try:
@@ -330,7 +330,7 @@ def _exec_flags() -> Tuple[bool, bool, bool]:
 
     单独提出来是因为现在有**三处判定共用**这一个来源——结构化输出 schema、
     路由提示词、以及缓存换代令牌（``routing_cache.generation_token``）。
-    各写一份 ``bool(getattr(settings, ...))`` 就是"同一个判定两个源"（纪律 6 ④）。
+    各写一份 ``bool(getattr(settings, ...))`` 就是"同一个判定两个源"（约定 6 ④）。
     """
     return (
         bool(getattr(settings, "TASK_EXEC_ENABLED", False)),
@@ -364,7 +364,7 @@ async def _lookup_routing_cache(question_text: str) -> Tuple[Optional[Router], O
     复用，一次请求只算一枚令牌（庚-3 卡 β1，台账表 G G6）。``except`` 臂带 ``None``
     （没算出来就别让人复用），miss 臂与重建失败臂都带上已算出的那枚。
 
-    fail-open（纪律 2）：令牌计算、读缓存、重建三处任一抛异常都只 ``warning``
+    fail-open（约定 2）：令牌计算、读缓存、重建三处任一抛异常都只 ``warning``
     留痕并落 ``routing_cache_total{result="error"}``，绝不让一次问答失败——缓存
     是加速器，不是链路上的新故障点。
 
@@ -597,11 +597,11 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
     sanitized_router = router_cls(**sanitized_kwargs)
 
     # PhaseK 任务 4：路由决策值上 span 的**两个落点之一**——白名单校验通过后的最终
-    # route（有界枚举，纪律 3；理由文本不落）。缓存命中分支也调本 helper：同在函数体级、
+    # route（有界枚举，约定 3；理由文本不落）。缓存命中分支也调本 helper：同在函数体级、
     # 先于 route.cache_hit 子 span 打开，两处同层级落在当前环境 span 上。
     # 两处同走 record_route_decision 单源，不另立第二份判据。兜底出口另有
     # _record_router_fallback 指标归因；纯 Python 分派的 route_query() 不调（它不返回
-    # route_type）。fail-open 由 helper 自身保证（无 span/异常 ⇒ no-op，纪律 2）。
+    # route_type）。fail-open 由 helper 自身保证（无 span/异常 ⇒ no-op，约定 2）。
     record_route_decision(sanitized_router.type)
 
     # T8：**成功拿到白名单内结果**才写缓存（兜底出口刻意不写，见 _store_routing_cache）。

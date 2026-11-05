@@ -109,7 +109,7 @@ class _RetrievalSettingsCompat:
     # `LOG_JSON_ENABLED` / `LOG_LEVEL` / `TRAJECTORY_DIR` 已删——它们是通用可观测性配置、
     # 不属检索域，真源上提到 `agentix/config/settings.py`（口径见
     # docs/architecture/分层架构与依赖规则.md §7.4）。这里刻意**不留第二份定义**：
-    # 留着就是同一个判定两个源（AGENTS.md 纪律 6 ④，改一处漏一处必然漂移）。
+    # 留着就是同一个判定两个源（工程约定 6 ④，改一处漏一处必然漂移）。
     # 删后这三个键经 `_RetrievalSettingsCompat.__getattr__` 自动委托统一 settings
     # ⇒ 全仓任何 `from agentix.retrieval.settings import settings` 读它们仍然可用。
 
@@ -197,14 +197,14 @@ class _RetrievalSettingsCompat:
     EMBEDDING_CACHE_PATH = os.getenv("EMBEDDING_CACHE_PATH", "").strip()
     EMBEDDING_CACHE_MAX_ENTRIES = int(os.getenv("EMBEDDING_CACHE_MAX_ENTRIES", "200000"))
     # E4 · 启动预热（docs/design/性能与优化路线图.md §2 E4）。三个键默认关/空：
-    # 开着它就是在每次启动打一批端点调用，属于行为变更，不作出厂形态（纪律 1）。
+    # 开着它就是在每次启动打一批端点调用，属于行为变更，不作出厂形态（约定 1）。
     EMBEDDING_CACHE_PREWARM_ENABLED = _bool_env("EMBEDDING_CACHE_PREWARM_ENABLED", "false")
     # 清单分隔符：`;`／`；`／换行（**不含半角逗号**——英文问句里的逗号会造出假问法）。
     # 默认空串 ⇒ 即便 flag 开着也只是响亮跳过（reason=empty_list），不打端点。
     EMBEDDING_CACHE_PREWARM_QUERIES = os.getenv("EMBEDDING_CACHE_PREWARM_QUERIES", "")
     EMBEDDING_CACHE_PREWARM_MAX = int(os.getenv("EMBEDDING_CACHE_PREWARM_MAX", "32"))
     # E7 · 召回级语义结果缓存（docs/design/性能与优化路线图.md §2 E7）。默认关：
-    # 命中的代价是"复用另一问法的检索结果"，属行为变更 ⇒ 新开关默认关（纪律 1）。
+    # 命中的代价是"复用另一问法的检索结果"，属行为变更 ⇒ 新开关默认关（约定 1）。
     SEMANTIC_CACHE_ENABLED = _bool_env("SEMANTIC_CACHE_ENABLED", "false")
     # τ：余弦相似度下限。0.95 是路线图风险段给的保守值；τ 调到 0.5 就等于把"无关问法"
     # 也算命中——那是串答，不是缓存。
@@ -237,7 +237,7 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_HYBRID_RERANK = _bool_env("RETRIEVAL_HYBRID_RERANK", "true")
     RETRIEVAL_RERANK_CANDIDATES = int(os.getenv("RETRIEVAL_RERANK_CANDIDATES", "20"))
     # T9（approval-recovery-optimization §T9）：rerank 候选分批，降低单请求上游负载。
-    # <=0 = 关（默认）⇒ 单次全候选调用，与基线逐位等价（纪律 1）；>0 = 每批候选数，
+    # <=0 = 关（默认）⇒ 单次全候选调用，与基线逐位等价（约定 1）；>0 = 每批候选数，
     # 分批调用并按全局 relevance_score 降序融合（同分按原始下标升序，见 rerank.py）。
     # 键沿检索域惯例只同步字段本体 + .env.example 注释块（Q5 保守边，其余三处缺口
     # 已登记台账待追认），不入 配置管理.md / p41 名单 / selfcheck。

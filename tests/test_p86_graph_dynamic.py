@@ -121,13 +121,6 @@ class TestKeyGovernance:
         for key in _KEYS:
             assert f'"{key}"' in text, key
 
-    def test_rag_optimization_annotation_present(self):
-        text = _read(PROJECT_ROOT / "docs" / "design" / "检索增强深度优化.md")
-        assert "R-P2-3 Graph 动态化已落地" in text
-        assert "R-P2-5 混合检索归因报告已落地" in text
-        assert "P2×5 全部落地" in text
-
-
 class TestSchemaAwareGeneration:
     def test_flag_off_returns_raw_schema(self, monkeypatch):
         from agentix.application.agents.kg_sub_graph.agentic_rag_agents.components.utils.utils import (

@@ -176,7 +176,7 @@ def _retrieval_cache_key(
 
     E7：``question_norm=None`` ⇒ 产出**不含问法**的作用域段（摘要位写成字面量 ``sem``）。
     语义缓存的隔离范围必须由这个函数与精确键**共同**决定——自己拼一份"租户+kb+权限"
-    字符串就是给权限隔离造第二个源（纪律 6 ④），而第二源出错的方式是跨权限命中。
+    字符串就是给权限隔离造第二个源（约定 6 ④），而第二源出错的方式是跨权限命中。
     字面量 ``sem`` 与真实摘要（24 位十六进制）不可能相撞 ⇒ 精确键与语义作用域互不污染。
     """
     digest = (
@@ -591,7 +591,7 @@ async def retrieve_scoped_docs_cached(
         if semantic_peek is not None and semantic_peek.match is not None:
             try:
                 docs = _deserialize_docs_from_cache(semantic_peek.match.payload.encode("utf-8"))
-            except Exception as exc:  # noqa: BLE001 - 坏载荷按未命中处理，照常检索（纪律 2）
+            except Exception as exc:  # noqa: BLE001 - 坏载荷按未命中处理，照常检索（约定 2）
                 logger.warning(f"semantic recall payload rejected; falling back to search: {exc}")
                 docs = None
             if not docs:
@@ -718,7 +718,7 @@ async def retrieve_scoped_docs_cached(
                 logger.info(f"retrieval cache set failed: {e}")
         # E7 回写：把这次真检索的结果按**本次 peek 带出来的那个向量**存进语义层。
         # 不重新嵌入一次是有原因的：重新嵌入等于"用来判命中的向量"与"存进去的向量"
-        # 分两次取，中间若换了端点/模型，条目就会与自己的判定口径对不上号（纪律 6 ④）。
+        # 分两次取，中间若换了端点/模型，条目就会与自己的判定口径对不上号（约定 6 ④）。
         # peek 为 None（flag 关 / 拿不到向量 / 空输入）⇒ 这里天然什么都不做。
         if semantic_peek is not None and docs:
             from agentix.retrieval.infra.rag.semantic_cache import semantic_remember

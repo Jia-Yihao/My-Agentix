@@ -5,7 +5,7 @@ v1 逐端点鉴权依赖（接口审查批次 2026-09-27）。
 - 用户面（chat / sessions / upload 写操作）：``V1_REQUIRE_JWT`` 开启时要求有效
   Bearer JWT（只验签 + 过期 + type=access，不查库——v1 是轻量域，区别于
   retrieval 域的 ``get_current_user`` 需查 User 行）。默认关 = 匿名行为不变
-  （strangler 纪律：flag-off 字节等价）。
+  （strangler flag-off 字节等价）。
 - 机器面（events / ops）：复用既有 ``verify_api_key``（``REQUIRE_API_KEY`` 开启
   时校验 x-api-key，与全局 ``APIKeyMiddleware`` 同口径）——为**未挂中间件的
   装配面**（轻量 app、嵌入式挂载）兜底；中间件覆盖的请求则双保险。

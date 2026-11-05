@@ -393,7 +393,7 @@ class CheckpointRecovery:
             from agentix.infrastructure.persistence.checkpointer import get_checkpointer
 
             return get_checkpointer()
-        except Exception as exc:  # noqa: BLE001 - 取不到与「未初始化」同义：降级并留痕（纪律 2）
+        except Exception as exc:  # noqa: BLE001 - 取不到与「未初始化」同义：降级并留痕（约定 2）
             logger.warning("checkpointer lookup failed: {}", exc)
             return None
 
@@ -401,7 +401,7 @@ class CheckpointRecovery:
         """按 checkpoint 时间倒序枚举线程 id（去重、翻页有界）。
 
         只读 alist 元组的 config——这里回答的是「哪些线程有 checkpoint」；线程是否
-        未完成由调用方用图状态判定（纪律 6 ④：判据与执行链同源）。
+        未完成由调用方用图状态判定（约定 6 ④：判据与执行链同源）。
         """
         checkpointer = self._resolve_checkpointer()
         if checkpointer is None:
@@ -452,7 +452,7 @@ class CheckpointRecovery:
         """取线程最新快照；无 checkpoint 或状态为空 ⇒ None。
 
         这是「该线程有没有可续跑状态」的唯一判据：/ops/threads/resume 的 404 与
-        resume_thread 的前置检查都走它（纪律 6 ④，不许两处各判一遍）。
+        resume_thread 的前置检查都走它（约定 6 ④，不许两处各判一遍）。
         """
         config = thread_config(thread_id)
         try:
@@ -470,7 +470,7 @@ class CheckpointRecovery:
         """列出线程当前待执行的 task；线程不存在 ⇒ None（端点 404）。
 
         task 只从图自己的快照取（``snapshot.tasks``），不另造 task 概念——
-        与执行链同源（纪律 6 ④）。已完成线程返回空表。
+        与执行链同源（约定 6 ④）。已完成线程返回空表。
         """
         snapshot = await self.get_thread_snapshot(thread_id, graph)
         if snapshot is None:
@@ -545,7 +545,7 @@ class CheckpointRecovery:
 
         数据源是 checkpointer 自己的历史（``get_state_history``），不读 Redis
         元数据、不另造一份轨迹：端点看到的步骤序列与图实际走过的超级步同源
-        （纪律 6 ④）。方法只调读接口，不写任何状态。
+        （约定 6 ④）。方法只调读接口，不写任何状态。
 
         Args:
             thread_id: 目标线程。
@@ -586,7 +586,7 @@ class CheckpointRecovery:
             config = thread_config(thread_id)
             try:
                 snapshot = await _state_snapshot(graph, config)
-            except Exception as exc:  # noqa: BLE001 - 单线程读失败不拖垮整轮扫描（纪律 2）
+            except Exception as exc:  # noqa: BLE001 - 单线程读失败不拖垮整轮扫描（约定 2）
                 logger.warning(
                     "state snapshot unavailable for thread {}: {}", thread_id, exc
                 )
@@ -674,7 +674,7 @@ class CheckpointRecovery:
 
             try:
                 metadata = await self.get_checkpoint_metadata(thread_id) or {}
-            except Exception as exc:  # noqa: BLE001 - 元数据只补日志，读不到不影响续跑（纪律 2）
+            except Exception as exc:  # noqa: BLE001 - 元数据只补日志，读不到不影响续跑（约定 2）
                 logger.warning(
                     "checkpoint metadata unavailable for thread {}: {}", thread_id, exc
                 )
@@ -687,8 +687,8 @@ class CheckpointRecovery:
             )
 
             # PhaseK 任务 6：断点续跑恢复点落 span。thread_id 判据只从 config 取
-            # （唯一真源，纪律 6 ④；thread_id = session_id，见 application/services/
-            # chat_service.py）；fail-open 由 helper 保证，绝不影响恢复主链路（纪律 2）。
+            # （唯一真源，约定 6 ④；thread_id = session_id，见 application/services/
+            # chat_service.py）；fail-open 由 helper 保证，绝不影响恢复主链路（约定 2）。
             record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))
 
             # LG-3-3：计数点是「向图发起续跑」（含随后抛错的），不是续跑成功——

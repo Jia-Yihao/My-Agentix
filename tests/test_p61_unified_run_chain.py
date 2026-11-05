@@ -1,6 +1,6 @@
 """A1 统一执行链批次（p61+）——Run source 统一 / 单 owner / 退出契约 / Run API 上移 / metadata 死重过滤。
 
-覆盖（对应 docs/migration/架构重构_统一执行链方案_v2.md Stage A · A1）：
+覆盖：
 
 1. **A1a** ControlPlane：``spawn(run_id=...)`` 外部指定 ID + 重复拒绝；
    ``bind`` 单 owner（活任务不改绑、终了可改绑）；流式路径

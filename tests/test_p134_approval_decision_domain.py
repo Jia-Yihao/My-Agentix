@@ -8,7 +8,7 @@
   ``PermissionMode.BYPASS`` 下 ``hitl_bridge.py:211``→``:223`` 也写同一 label）。
   本文件里的 ``ALLOWED_DECISIONS`` 是这张表在**测试侧**的唯一真源，并与
   ``agentix/observability/metrics.py`` 的 docstring/help 文案逐字对照
-  （纪律 6 ④：同一个判定不许两个源）。
+  （约定 6 ④：同一个判定不许两个源）。
 - 守卫是**静态**的（读源码 AST，不跑生产代码）：计划 148 行明写"不靠跑一遍才有值"，
   而 CI 上恒真的守卫等于没写。行为用例只会钉住它跑到的那几条分支，静态守卫一次
   钉住全部四个写入点：
@@ -254,7 +254,7 @@ def _innermost_scope(node: ast.AST, parents: dict, tree: ast.AST) -> ast.AST:
 
     为什么按最内层归因而非"遍历各作用域各自 walk"：BFS 顺序会让同一个调用点先被
     **外层**函数走一遍，于是包装体内那行转发调用被外层判成"越界取值"——同一个判定
-    两个结论，正是纪律 6 ④ 反对的形态。最内层归因是唯一确定的那个作用域。
+    两个结论，正是约定 6 ④ 反对的形态。最内层归因是唯一确定的那个作用域。
     """
     cur = parents.get(id(node))
     while cur is not None:
@@ -408,7 +408,7 @@ def test_guard_actually_bites_on_planted_violations(snippet: str, expect_hit: bo
 
     没有这一条，"绿"就分不清是"没问题"还是"检测不出问题"——计划 149 行那句
     "CI 上恒真的守卫等于没写"针对的正是这个。判定函数与真文件用的是同一个
-    （``_violations_for``），不另立第二套判据（纪律 6 ④）。
+    （``_violations_for``），不另立第二套判据（约定 6 ④）。
     """
     _values, bad = _violations_for("synthetic.py", snippet)
     if expect_hit:
@@ -507,14 +507,14 @@ def _fold(src: str) -> str:
     - help 文案是隐式拼接的（``"...auto/"`` 紧跟 ``""bypass; ..."``），不接就会把
       ``bypass`` 判成"文档里没有"——而它明明在；
     - docstring 里的 ``{approved, ..., auto,\\n bypass}`` 会因换行断字而"肉眼一致、
-      字面不等"——这正是纪律 6 ④ 要防的漂移形态，判据本身不能靠运气对齐排版。
+      字面不等"——这正是约定 6 ④ 要防的漂移形态，判据本身不能靠运气对齐排版。
     """
     joined = re.sub(r'"\s*"', "", src)
     return " ".join(joined.split()).replace("`", "")
 
 
 def test_metrics_vocabulary_matches_guard_single_source():
-    """值域表与指标定义逐字一致（纪律 6 ④：同一个判定不许两个源）。
+    """值域表与指标定义逐字一致（约定 6 ④：同一个判定不许两个源）。
 
     ``record_approval_decision`` 的 docstring 与 ``APPROVAL_DECISIONS`` 的 help 文案
     是这张表对外唯一可查之处。历史上正是它写着 ``approved / rejected`` 两值、而桥侧
@@ -559,7 +559,7 @@ def test_allowed_domain_is_reachable_in_source():
 
 
 def test_in_loop_metric_never_silent_on_failure() -> None:
-    """进环打点必须 fail-open 且留痕（纪律 2），但**绝不吞掉裁决语义**。
+    """进环打点必须 fail-open 且留痕（约定 2），但**绝不吞掉裁决语义**。
 
     钉三点：① ``_record_in_loop_decision`` 体内 catch 宽异常并 ``logger.debug``；
     ② 带 ``# noqa: BLE001 - <理由>``（理由说明降级去向）；③ 函数只打点、不返回值
@@ -581,7 +581,7 @@ def test_in_loop_metric_never_silent_on_failure() -> None:
     assert not returns, "进环打点函数不得返回任何值：一旦有返回值就可能被拿去做放行判定"
 
     handlers = [n for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler)]
-    assert handlers, "打点必须有 except（纪律 2：观测故障不得影响主链）"
+    assert handlers, "打点必须有 except（约定 2：观测故障不得影响主链）"
     for h in handlers:
         assert (
             h.type is None or ast.unparse(h.type) == "Exception"

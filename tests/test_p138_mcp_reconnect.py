@@ -1,13 +1,13 @@
 """P138：MCP 子进程断连的有界重连自愈（T25）。
 
-覆盖（口径见 docs/design/审批与中断恢复优化规划.md T25 卡，验收标准①–③）：
+覆盖（验收标准①–③）：
 - ① 子进程异常后有界重连：单次触发的 spawn 尝试上限 = reconnect_max_attempts
   （模块常量 MCP_RECONNECT_MAX_ATTEMPTS=3），指数退避 base*2**(n-1)（默认 0.5s 起步，
   即 0.5 / 1.0 / 2.0），用例以假 sleep 记录时序，不做真实等待；
 - ② 重连成功（INFO）与耗尽（ERROR）均可观测（日志留痕）；
 - ③ 耗尽后明示降级：MCPReconnectExhaustedError（data.degraded=True）+ 冷却窗口内
   即刻拒绝且不再反复 spawn（防重连风暴）、调用不挂起；handler 异常经 ToolExecutor
-  统一落 ToolResult(success=False)，不抛穿主链（纪律 2）；
+  统一落 ToolResult(success=False)，不抛穿主链（约定 2）；
 - 不变语义保留：超时（MCPTimeoutError）不触发重连（保守边）；未 start 的调用仍抛
   RuntimeError("client not started")。
 
@@ -323,7 +323,7 @@ async def test_degraded_cooldown_window_rejects_fast_without_new_spawns(monkeypa
 
 
 async def test_exhausted_mcp_error_does_not_break_main_chain(monkeypatch):
-    """纪律 2：耗尽的 MCP 故障经 ToolExecutor 统一落 ToolResult(success=False)，不抛穿主链。"""
+    """约定 2：耗尽的 MCP 故障经 ToolExecutor 统一落 ToolResult(success=False)，不抛穿主链。"""
     # 第一次调用正常应答，之后进程死亡；重连上限 1 次且桩队列已空 ⇒ 快速耗尽
     srv1 = _ScriptedServer(die_after_n_calls=1)
     client, _, _ = _build_client(monkeypatch, [srv1], max_attempts=1)

@@ -6,7 +6,7 @@
 ``error_handler`` / ``timeout``（0.2 线的 ``retry=`` 已废）。一旦各注册点各自
 ``RetryPolicy(...)`` 内联构造，"哪个节点重试几次、退避多久"就散成 N 份字面量：
 改一次要同步 N 处，而漏掉的那处不会报错，只会静默按旧值跑——这正是
-``AGENTS.md`` 纪律 6 ④ 说的"同一个判定不许两个源"。集中到本模块后，
+``CONTRIBUTING.md` 的工程约定` 约定 6 ④ 说的"同一个判定不许两个源"。集中到本模块后，
 注册处只点名策略、不描述策略，守卫
 （``tests/test_p147_policy_centralization.py``）据"实参来源"判定违规。
 
@@ -126,12 +126,12 @@ def node_timeout(
 
     返回 ``None`` 是接口的一部分：LG-3-2 的口径是"开关为 0 时**完全不传**
     ``timeout`` 形参"，而不是传 ``None``。调用方据此 ``if (policy := node_timeout(...))``
-    决定是否带上实参，flag-off 路径才能与基线逐位等价（纪律 1）。
+    决定是否带上实参，flag-off 路径才能与基线逐位等价（约定 1）。
 
     非正值（``<= 0``）一律视为"关"⇒ ``None``：配置里的 ``0`` 是默认关的取值，
     不该在框架侧变成另一个语义。
 
-    边界说明（``AGENTS.md`` 纪律 6 ②，LG-3-2 验收第 ③ 条会把它钉在用例里）：
+    边界说明（``CONTRIBUTING.md` 的工程约定` 约定 6 ②，LG-3-2 验收第 ③ 条会把它钉在用例里）：
     超时依赖 asyncio 协作式取消——同步阻塞、不释放事件循环的节点**杀不掉**。
     """
     if (run_timeout is None or run_timeout <= 0) and (idle_timeout is None or idle_timeout <= 0):
@@ -205,7 +205,7 @@ def node_error_handler(
     入口 state 是失败节点拿到的那份输入。本 handler 只做两件事：
 
     1. 写补偿记录（复用 ``hitl_pending_approvals`` 真源，见
-       ``_write_compensation_record``）；写库失败按纪律 2 fail-open——记
+       ``_write_compensation_record``）；写库失败按约定 2 fail-open——记
        ``logger.warning`` 后继续收尾，**绝不让补偿动作本身把整轮再打挂**
        （handler 自己抛错 = 整轮失败，框架不做二次兜底）。
     2. 返回 ``Command``：往 ``messages`` 追加一条如实的失败回执，并路由到
@@ -234,7 +234,7 @@ def node_error_handler(
             target_store = resolved_store
             if target_store is None:
                 # 不在这里兜底建表：要不要读写 hitl_pending_approvals 只由
-                # hitl_bridge._resolve_pending_store 一个判据决定（纪律 6 ④）。
+                # hitl_bridge._resolve_pending_store 一个判据决定（约定 6 ④）。
                 store_missing = True
                 logger.warning(
                     "node_error_handler: compensation store 未装配"
@@ -252,7 +252,7 @@ def node_error_handler(
                     node=node,
                     exc=exc,
                 )
-        except Exception as store_exc:  # noqa: BLE001 - 纪律 2：补偿记录写失败只降级为告警，失败收尾照常
+        except Exception as store_exc:  # noqa: BLE001 - 约定 2：补偿记录写失败只降级为告警，失败收尾照常
             recorded = False
             logger.warning(
                 "node_error_handler: compensation record write failed "

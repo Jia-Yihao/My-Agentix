@@ -14,7 +14,7 @@
 ``_task``（asyncio 任务不可序列化）。
 
 **为什么模型不进 ``db/models/__init__.py`` 聚合**：聚合会被 ``init_db(create_all=True)``
-全量建表——而纪律 1 要求 flag-off（默认）连表都不建。建表只经 store 的
+全量建表——而约定 1 要求 flag-off（默认）连表都不建。建表只经 store 的
 ``ensure_ready()``（``CREATE TABLE IF NOT EXISTS`` 幂等）在 flag-on 的装配点发生，
 与 T18 的 ``hitl_pending`` 同一套口径。
 

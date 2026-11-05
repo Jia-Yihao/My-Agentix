@@ -1,13 +1,13 @@
-"""E4 · embedding 缓存启动预热的守卫（路线图 `docs/design/性能与优化路线图.md` §2 E4 的剩余半段）。
+"""E4 · embedding 缓存启动预热的守卫。
 
 验收口径（三条，逐条对应用户级纪律）
 ------------------------------------
-1. **默认关**（AGENTS.md 纪律 1）：`EMBEDDING_CACHE_PREWARM_ENABLED=False` 时
+1. **默认关**（工程约定 1）：`EMBEDDING_CACHE_PREWARM_ENABLED=False` 时
    `run_prewarm_from_settings()` 必须**一条网络请求都不发、一个 embeddings 实例都不构造**——
    "等价"不是靠措辞声明，而是把 `create_embeddings` 换成"一被调用就 raise"的桩来证伪。
-2. **辅助子系统 fail-open**（纪律 2）：预热失败只留 `logger.warning` 与报告里的 `error` 字段，
+2. **辅助子系统 fail-open**（约定 2）：预热失败只留 `logger.warning` 与报告里的 `error` 字段，
    绝不把异常递给启动路径——预热的作用是让第一次查询更快，它自己没有"必须成功"的资格。
-3. **计数面不新造 label**（纪律 3）：hit/miss 计数复用 `CachedEmbeddings.embed_documents`
+3. **计数面不新造 label**（约定 3）：hit/miss 计数复用 `CachedEmbeddings.embed_documents`
    里既有的 `record_cache_hit/miss("embedding")` 接线；本模块**不许**出现新的 `record_cache_*`
    调用（新 label 必须先进 `test_p100` 的 `ALLOWED_METRIC_LABELS`，本批刻意不走那条路）。
 
@@ -180,7 +180,7 @@ def test_different_model_keys_do_not_share_vectors(tmp_path) -> None:
 
 
 # --------------------------------------------------------------------------
-# 3. fail-open（纪律 2）
+# 3. fail-open（约定 2）
 # --------------------------------------------------------------------------
 
 
@@ -223,7 +223,7 @@ def _boom_on_construction(monkeypatch) -> None:
 
 
 def test_flag_off_constructs_nothing_and_says_why(monkeypatch) -> None:
-    """纪律 1 的正身：开关关 ⇒ 连实例都不构造（不是"构造了但不调用"）。"""
+    """约定 1 的正身：开关关 ⇒ 连实例都不构造（不是"构造了但不调用"）。"""
     _patch(
         monkeypatch,
         EMBEDDING_CACHE_PREWARM_ENABLED=False,
@@ -291,7 +291,7 @@ def test_run_prewarm_swallows_construction_failures(monkeypatch) -> None:
 
 
 def test_new_prewarm_keys_exist_and_default_off() -> None:
-    """纪律 1：新增 flag 一律 `False`/`0`/空串起步（观测类"默认开"的例外不适用于会打网络的预热）。"""
+    """约定 1：新增 flag 一律 `False`/`0`/空串起步（观测类"默认开"的例外不适用于会打网络的预热）。"""
     source = (REPO / "agentix" / "retrieval" / "settings.py").read_text(encoding="utf-8")
     for key in _PREWARM_KEYS:
         assert hasattr(retrieval_settings, key), f"{key} 未在检索域配置层定义"
@@ -323,7 +323,7 @@ def test_the_keys_live_on_exactly_one_settings_surface() -> None:
     """键只许存在于**一个**配置面：它们属于 `agentix/retrieval/settings.py` 的 `EMBEDDING_CACHE_*` 家族。
 
     统一配置层（`agentix/config/settings.py`，pydantic）再放一份同名键，就是"同一个开关两个源"
-    （纪律 6 ④），而且会当场红在 p41 的双向守卫上——那张手写清单只覆盖 pydantic 字段，
+    （约定 6 ④），而且会当场红在 p41 的双向守卫上——那张手写清单只覆盖 pydantic 字段，
     所以这条钉子负责把"为什么不放那边"变成有主的事实，而不是每个批次重新解释一次。
     """
     unified = (REPO / "agentix" / "config" / "settings.py").read_text(encoding="utf-8")
@@ -337,11 +337,11 @@ def test_the_keys_live_on_exactly_one_settings_surface() -> None:
 
 
 def test_prewarm_reuses_the_existing_hit_miss_counter_and_adds_no_new_label() -> None:
-    """纪律 3：新 label 必须先进 p100 白名单。本批刻意不新增指标——计数面早已在缓存层。"""
+    """约定 3：新 label 必须先进 p100 白名单。本批刻意不新增指标——计数面早已在缓存层。"""
     source = PREWARM_PY.read_text(encoding="utf-8")
     assert "record_cache" not in source, (
         "预热自己不该再打一份 hit/miss 计数：`CachedEmbeddings.embed_documents` 已经打过，"
-        "再打一次就是同一个事实两个源（纪律 6 ④）；要新增指标请先把它登记进 ALLOWED_METRIC_LABELS"
+        "再打一次就是同一个事实两个源（约定 6 ④）；要新增指标请先把它登记进 ALLOWED_METRIC_LABELS"
     )
 
 
@@ -356,7 +356,7 @@ def test_prewarm_reuses_the_existing_hit_miss_counter_and_adds_no_new_label() ->
 # ② 把 `_shutdown` 里的 `_embedding_prewarm_task.cancel()` 换成 `pass`
 #    ⇒ 改前 25 条全绿；改后 1 failed（本组第 3 条）。原因：同一个函数里滞后采样那段
 #    也有 `.cancel()`，子串判据分不清"取消的是谁"。
-# 这正是纪律 6 ④ 说的那件事：守卫的判据必须与它声称守护的**结构**同源，
+# 这正是约定 6 ④ 说的那件事：守卫的判据必须与它声称守护的**结构**同源，
 # 而不是与"文档里提到了这个词"同源。
 # --------------------------------------------------------------------------
 
@@ -478,12 +478,6 @@ def test_prewarm_runs_off_the_event_loop() -> None:
 # --------------------------------------------------------------------------
 # 7. 文档面：别让"未做"这句话活到已做之后
 # --------------------------------------------------------------------------
-
-
-def test_roadmap_no_longer_declares_prewarm_missing() -> None:
-    text = (REPO / "docs" / "design" / "性能与优化路线图.md").read_text(encoding="utf-8")
-    assert "启动预热仍未做" not in text, "路线图的状态列还在说 E4 未落地"
-    assert "EMBEDDING_CACHE_PREWARM_ENABLED" in text
 
 
 def test_project_spec_declares_the_prewarm_keys() -> None:

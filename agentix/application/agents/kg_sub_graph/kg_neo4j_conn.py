@@ -155,7 +155,7 @@ def invalidate_neo4j_schema() -> bool:
 
     返回 ``False`` = 当前没有实例可标记，且**不顺手建连**：调用这枚入口的通常是
     "刚导完数据"的脚本或运维面，把建连开销与建连失败塞进它们的调用栈毫无必要，
-    而"返回 True 但其实没刷"更是假告警（纪律 6 ④）。
+    而"返回 True 但其实没刷"更是假告警（约定 6 ④）。
     """
     global _schema_stale
     with _graph_lock:

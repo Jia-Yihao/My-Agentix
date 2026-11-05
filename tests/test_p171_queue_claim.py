@@ -3,7 +3,7 @@
 覆盖面与验收口径（规划文档 §4.2 `#### T26` 卡）：
 - **① 死消费者 PEL 被有界认领**：``idle`` 阈值 ``_CLAIM_IDLE_MS`` / 周期
   ``_CLAIM_INTERVAL_S`` / 单轮条数 ``_CLAIM_MAX_PER_ROUND`` 三个模块常量生效；
-  认领到的消息走**同一份** ``_process_message``（不复制处理逻辑，纪律 6 ④）；
+  认领到的消息走**同一份** ``_process_message``（不复制处理逻辑，约定 6 ④）；
   单轮不超过上限；
 - **② 停机对在飞 run/流显式收口**：``main._start_task_queue_worker`` 起的任务在
   ``_shutdown`` 里被 ``stop_worker()`` + ``cancel()`` 收口、句柄归 ``None``；
@@ -16,7 +16,7 @@
 - ``XAUTOCLAIM`` 返回值形状由**服务端 Redis 版本**决定（6.2 两段 / 7.x 三段），
   归一化只在 ``_normalize_xautoclaim_response`` 一处；
 - flag 关（默认）⇒ ``_start_task_queue_worker()`` 返回 False、句柄 ``None``、
-  **零日志、零 import、零 ``get_task_queue()`` 调用**（纪律 1）；
+  **零日志、零 import、零 ``get_task_queue()`` 调用**（约定 1）；
 - 指标 ``result`` 是封闭枚举 ``{"ok","empty","error"}``，且 prometheus 不可用时的
   ``_NoopMetric`` 兜底表里有这一行（漏了会让指标在降级环境静默消失）；
 - 词表在生产侧的判据点（G3，台账 :1375）：越界 ``result`` **按原值**进 label 并留
@@ -173,7 +173,7 @@ class TestClaimNormalization:
           那条钉「降级到无条目」这个结果，本条钉「按臂命中守卫」这个判据）。
 
         三枚输入分三次调用、逐次核对 WARNING **增量计数**而非只看总数——只看总数时
-        "某一臂不再记日志"会糊过去（留痕是这条降级支路唯一的可观测面，纪律 2）。
+        "某一臂不再记日志"会糊过去（留痕是这条降级支路唯一的可观测面，约定 2）。
         """
         cases = (
             ("IndexError", ("7-0",)),
@@ -281,7 +281,7 @@ class TestClaimRound:
     ):
         """Z4（口径同源）：指标 `ok` 的逐条计数与 `claimed`（INFO 日志 `count=`
         取的就是它）在同一轮里必须相等——两处「认领到几条」的判定不许漂移
-        （纪律 6 ④）。用 4 条消息的一轮钉等式：改前形态下 ok 只有一枚、
+        （约定 6 ④）。用 4 条消息的一轮钉等式：改前形态下 ok 只有一枚、
         返回值却是 4，等式必红。"""
         entries = _entries(4)
         stub = _FakeRedis(claim_response=("0-0", entries))
@@ -407,7 +407,7 @@ class TestMetricVocabulary:
             metrics.record_task_queue_claimed("ok")
             assert _count("ok") == before + 1
             assert not [r for r in caplog.records if r.levelno >= logging.WARNING], (
-                "词表内取值不得新增日志（flag 语义外的噪声，纪律 1）"
+                "词表内取值不得新增日志（flag 语义外的噪声，约定 1）"
             )
 
             before = _count("bogus")
@@ -415,7 +415,7 @@ class TestMetricVocabulary:
             assert _count("bogus") == before + 1, "越界必须按原值进 label，不许改口成 other"
 
         warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-        assert len(warnings) == 1, "越界只留一条 warning，不抛异常也不静默（纪律 2）"
+        assert len(warnings) == 1, "越界只留一条 warning，不抛异常也不静默（约定 2）"
         assert "bogus" in warnings[0].getMessage()
 
         # G21（U-A）：不可散列实参（原形态在 ``not in`` 就抛 TypeError 上抛主链路）经守卫后
@@ -451,7 +451,7 @@ class TestStartWiring:
         assert main._task_queue_worker_task is None
         assert main._task_queue_worker is None
         assert called == [], "flag 关时连 get_task_queue 都不该被调用（不建连）"
-        assert records == [], "flag 关时一行日志都不该有（纪律 1）"
+        assert records == [], "flag 关时一行日志都不该有（约定 1）"
 
     @pytest.mark.asyncio
     async def test_flag_on_starts_task_and_shutdown_cancels_it(self, monkeypatch):
@@ -493,7 +493,7 @@ class TestStartWiring:
 
     @pytest.mark.asyncio
     async def test_start_failure_is_fail_open(self, monkeypatch):
-        """构造/启动失败只留痕，不阻断启动（纪律 2）；返回值 False 表示没有任务可取消。"""
+        """构造/启动失败只留痕，不阻断启动（约定 2）；返回值 False 表示没有任务可取消。"""
         from agentix import main
 
         monkeypatch.setattr(settings, "TASK_QUEUE_WORKER_ENABLED", True, raising=False)
@@ -562,7 +562,7 @@ class TestStartWiring:
 
 class TestSingleSourceOfDecision:
     def test_start_worker_does_not_read_the_flag(self):
-        """「要不要跑」只在 `_start_task_queue_worker` 判一次（纪律 6 ④）。"""
+        """「要不要跑」只在 `_start_task_queue_worker` 判一次（约定 6 ④）。"""
         source = inspect.getsource(tq.TaskQueue.start_worker)
         assert "TASK_QUEUE_WORKER_ENABLED" not in source
 

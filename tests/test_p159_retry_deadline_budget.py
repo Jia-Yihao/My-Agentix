@@ -12,7 +12,7 @@
   truncated 标记；
 - **deadline 的来源唯一**：``RequestScope.deadline_at``——application 在导入期
   把读取函数注册进 domain（依赖倒置），domain 不反向 import application；
-  provider 故障按「无 deadline」降级（纪律 2）。
+  provider 故障按「无 deadline」降级（约定 2）。
 """
 
 from __future__ import annotations

@@ -99,7 +99,7 @@ class RetryBackoff:
 # （含 deadline 的**存储**）的规范位已下沉 ``agentix/domain/request_scope.py``，
 # 但**写入与注册**（``set_remaining_provider(...)``）仍由 application 在导入期完成——
 # 「当前作用域从哪来」由写入方决定；本层只持有一个读取函数，退避算术只有一份
-# （纪律 6 ④：同一个判定不许两个源）。
+# （约定 6 ④：同一个判定不许两个源）。
 _remaining_provider: Optional[Callable[[], Optional[float]]] = None
 
 #: 「因 run 预算耗尽而放弃重试」打在最后抛出的异常上的属性名。

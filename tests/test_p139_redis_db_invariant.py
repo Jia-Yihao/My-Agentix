@@ -1,11 +1,11 @@
 """P139：Redis db0 不变式的运行时校验（规划文档 T7）。
 
-规格真源：docs/design/审批与中断恢复优化规划.md T7 卡。验收标准逐条对应：
+验收标准逐条对应：
 ① 运行时读到非约定 db ⇒ error 日志 + 可见告警（TestDbInvariantAlert 前两条）；
 ② **不新增拒绝路径**——告警照响，执行链照常走（TestNoNewRejectionPath 全部）；
 ③ 守卫用例覆盖"注入错误 db 能看到告警"（test_wrong_db_emits_error_alert）。
 
-判定同源纪律（AGENTS.md 硬性纪律 6 ④）：告警判据必须取**执行链建连时实际生效的
+判定同源纪律（工程约定 6 ④）：告警判据必须取**执行链建连时实际生效的
 db 号**（来自 init_checkpointer 构造好的 Redis client 连接池参数），不得另解析一遍
 settings.REDIS_CHECKPOINT_URL 立第二个判点——test_alert_reads_effective_db_not_url
 把这条钉死：URL 与 client 池参数故意不一致时，告警报的是 client 里的值。
@@ -119,10 +119,10 @@ class TestDbInvariantAlert:
 
     @pytest.mark.asyncio
     async def test_alert_reads_effective_db_not_url(self, monkeypatch):
-        """纪律 6 ④判同源钉桩：故意让 client 池参数与 URL 不一致，告警报的必须是池里的值。
+        """约定 6 ④判同源钉桩：故意让 client 池参数与 URL 不一致，告警报的必须是池里的值。
 
         若实现另解析一遍 settings.REDIS_CHECKPOINT_URL，这里会报 0（URL 侧）而不是 7（生效侧）
-        ——即两个判点漂移，正是纪律 6 ④ 禁止的形态。
+        ——即两个判点漂移，正是约定 6 ④ 禁止的形态。
         """
         import redis.asyncio as aioredis
 
@@ -154,7 +154,7 @@ class TestDbInvariantAlert:
 
     @pytest.mark.asyncio
     async def test_unreadable_client_shape_skips_alert_without_breaking_chain(self, monkeypatch):
-        """判据取不到（桩/异形 client）⇒ 跳过告警且绝不影响执行链——诊断不配让主链路买单（纪律 2）。"""
+        """判据取不到（桩/异形 client）⇒ 跳过告警且绝不影响执行链——诊断不配让主链路买单（约定 2）。"""
         import redis.asyncio as aioredis
 
         class _OpaqueClient:

@@ -27,7 +27,7 @@ code_handler）都不生产提示词——code_handler 自带的提示词只在 
   钉这一份**。
 - 模板被合法编辑时本守卫变红是**按设计**：它迫使改模板的人显式更新快照
   并署名，而不是让"逐字节相同"的承诺悄悄失效。更新快照属基线变更
-  （纪律 5），需要维护者确认。
+  （约定 5），需要维护者确认。
 
 不依赖网络/模型：沿用 test_p49 的替身 LLM 桩范式。
 """
@@ -142,7 +142,7 @@ class TestCodeExecFlagOffPromptGuard:
 
     def test_pinned_baseline_is_frozen_snapshot_of_template(self):
         # 基线冻结：生产模板必须与钉死的字节快照逐字节相同（UTF-8 3285 字节）。
-        # 改模板 ⇒ 本用例红 ⇒ 逼改动作显式更新快照（纪律 5 的基线变更）。
+        # 改模板 ⇒ 本用例红 ⇒ 逼改动作显式更新快照（约定 5 的基线变更）。
         assert ROUTER_SYSTEM_PROMPT == _PINNED_ROUTER_BASELINE
         assert (
             ROUTER_SYSTEM_PROMPT.encode("utf-8")

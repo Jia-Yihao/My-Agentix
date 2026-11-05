@@ -204,7 +204,7 @@ def fold_profile_card(
       单一稳定值进 ``user_constraints``；同键出现不同值 ⇒ **只标记
       conflicts、不覆写**原值（Ch3 §3.6 确定性约束检查）。
 
-    纪律：计数/极值/去重集合均满足交换律 ⇒ 增量折入与 ``derive_profile``
+    计数/极值/去重集合均满足交换律 ⇒ 增量折入与 ``derive_profile``
     重放折同一事件序列结果一致（幂等，见 DoD）。``conflicts``/领域列表
     每次折叠后统一排序 ⇒ 与输入次序无关。
     """

@@ -1,4 +1,4 @@
-"""T6：拆开 TTFT 混采并给兜底路径单独计量（真源：docs/design/审批与中断恢复优化规划.md T6 卡）。
+"""T6：拆开 TTFT 混采并给兜底路径单独计量。
 
 验收口径逐条对应：
 ① 主口径（``agent_ttft_seconds``）与兜底路径（``agent_ttft_fallback_seconds``）可分别查询、
@@ -6,14 +6,14 @@
 ② 白名单（``tests/test_p100_genai_observability.py::ALLOWED_METRIC_LABELS``）：本方案
    **零新增 label**，p100 全局守卫照常绿（本文件另钉死两直方图除桶位 ``le`` 外无标签）；
 ③ 桶边界零改动（Q2 未决，不细分）：``EXPECTED_TTFT_LE`` 钉死既有 le 取值集合，改桶即红；
-④ 无高基数标签（纪律 3）：同上，两个 TTFT 直方图均为零自定义标签。
+④ 无高基数标签（约定 3）：同上，两个 TTFT 直方图均为零自定义标签。
 
-判定同源（纪律 6 ④）：「是否走了兜底」由回退链**自己**导出——
+判定同源（约定 6 ④）：「是否走了兜底」由回退链**自己**导出——
 ``ModelGateway.ainvoke_with_fallback`` 在它的成败判定点调用 ``record_gateway_fallback``
 （model_gateway.py 既有分支），该调用顺带置位本流事实；发射器只读事实，不改写、不再判定。
 兜底事实的全部驱动都来自真实回退链（假 build_client/invoke），用例不依赖真实模型调用。
 
-fail-open（纪律 2）：record/事实槽异常 ⇒ 帧流照常交付，仅 ``logger.warning`` 留痕。
+fail-open（约定 2）：record/事实槽异常 ⇒ 帧流照常交付，仅 ``logger.warning`` 留痕。
 """
 from __future__ import annotations
 
@@ -172,7 +172,7 @@ class TestBucketAndCardinalityGuards:
         assert _bucket_le(TTFT_LATENCY_FALLBACK) == EXPECTED_TTFT_LE
 
     def test_both_ttft_histograms_add_no_labels(self):
-        # 纪律 3 / 验收②④：独立指标方案零新增 label ⇒ ALLOWED_METRIC_LABELS 无需扩容，
+        # 约定 3 / 验收②④：独立指标方案零新增 label ⇒ ALLOWED_METRIC_LABELS 无需扩容，
         # p100 全局守卫（含 FORBIDDEN 高基数名单）不受影响。
         from agentix.observability.metrics import TTFT_LATENCY, TTFT_LATENCY_FALLBACK
 
@@ -182,7 +182,7 @@ class TestBucketAndCardinalityGuards:
 
 
 class TestFailOpen:
-    """纪律 2：埋点异常绝不影响主链（帧流照常交付）。"""
+    """约定 2：埋点异常绝不影响主链（帧流照常交付）。"""
 
     def test_record_ttft_failure_does_not_break_frame_stream(self, monkeypatch):
         import agentix.observability.metrics as m

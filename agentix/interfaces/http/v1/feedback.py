@@ -105,7 +105,7 @@ async def submit_feedback(
         "rating": request.rating,
         "reason": reason,
         "user": caller,
-        # 事件时间戳是数据面 → aware UTC（p42 时间纪律：禁止 naive 时钟；
+        # 事件时间戳是数据面 → aware UTC（p42 时间禁止 naive 时钟；
         # 展示口径由读取方按 DISPLAY_TZ 换算）
         "ts": datetime.now(timezone.utc).isoformat(),
     }

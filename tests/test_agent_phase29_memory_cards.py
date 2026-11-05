@@ -1,6 +1,6 @@
 """Phase 29（Ch3 §3.5/§3.6 记忆结构化二期：JSON Cards + User as Code）落地测试。
 
-覆盖面（对齐 docs/migration/Phase28-31_优化规划.md Phase 29 DoD）：
+覆盖面：
 
 1. flag-off：`UserProfile.to_dict()` 序列化与基线字节等价（7 键精确相等，
    即使存储里已有 profile_card 也不写盘）；prompt 拼装无卡片区段。

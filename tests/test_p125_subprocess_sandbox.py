@@ -3,19 +3,19 @@
 这一档是阶梯上**第一个真的算隔离边界**的档位，所以本文件的断言重心不是"能跑通"，
 而是四件容易各说一套的事必须同时成立：
 
-1. **纪律 1**：``TOOL_SANDBOX_SUBPROCESS_ENABLED=false`` 时这一档**仍然不存在**
+1. **约定 1**：``TOOL_SANDBOX_SUBPROCESS_ENABLED=false`` 时这一档**仍然不存在**
    （差集里照旧有 ``subprocess``，声明它照旧在执行点被拒），且与 ⑭ 落地时逐位等价；
 2. **fail-closed 的形状**：本机落不下资源闸（Windows 没有 ``resource``）⇒ 响亮拒绝，
    **一次 handler 都不调用、一个子进程都不起**，绝不「那就进程内跑吧」；
 3. **判据单源**：环境变量白名单与 G2（MCP stdio）共用 ``domain/tool/exec_env.py``
    那一份——两处各写一份迟早只关一条；而两个受众的 ``extra_keys`` **不许互相放宽**；
-4. **墙只挡住它声明过的那几个维度**（纪律 6 ①）：资源闸、环境、可杀进程组、体积闸
+4. **墙只挡住它声明过的那几个维度**（约定 6 ①）：资源闸、环境、可杀进程组、体积闸
    各是一道**独立**的闸；文件权限与出网**不在**这一档的承诺里（属 ⑰），所以本文件
    不写「沙箱里读不到文件」这类它没承诺过的断言。
 
 分层（缺一层都算没验完）：
 
-- L1 默认姿态与开关面（含纪律 4 的五处同步、compose 转发、staging **不**钉开、矩阵生成器、
+- L1 默认姿态与开关面（含约定 4 的五处同步、compose 转发、staging **不**钉开、矩阵生成器、
   `SECURITY POSTURE` 清单**不**点名这两位）
 - L2 环境白名单单源 + 两个受众互不串供
 - L3 能力探测与 fail-closed（本机=Windows 必拒；探测不过 ⇒ 不起进程）
@@ -74,9 +74,9 @@ EXTRA_KEY = "TOOL_SANDBOX_SUBPROCESS_ENV_EXTRA_KEYS"
 #: **本文件不许有第二个"这台机器是不是 POSIX"的判点**（第 3 轮独立审查的一般项）：
 #: 旧写法在模块顶部另立 `POSIX = os.name == "posix"`，与探测各算各的——探测的 posix
 #: 判据一旦加宽（例如要求同时有 `resource`），下面那几处 `if POSIX` 就会与主判点分家，
-#: 而纪律 6 ④要的正是「诊断口径与执行链的判定同源」。所有 POSIX 判定一律读 `_CAPS`。
+#: 而约定 6 ④要的正是「诊断口径与执行链的判定同源」。所有 POSIX 判定一律读 `_CAPS`。
 _CAPS = probe_subprocess_caps()
-#: **skip 判据必须与执行点的判定同源**（纪律 6 ④："诊断口径必须与执行链的判定同源"）。
+#: **skip 判据必须与执行点的判定同源**（约定 6 ④："诊断口径必须与执行链的判定同源"）。
 #: 旧写法是 `not POSIX`——在"POSIX 但解释器没有 `resource` 扩展"这种机器上，那批
 #: 专属用例不会 skip，而是各自撞上 `SandboxUnavailable` 变成**失败**：那不是代码缺陷，
 #: 是那台机器本来就兑现不了这一档承诺的隔离维度。判据换成 `probe_subprocess_caps()`
@@ -342,7 +342,7 @@ def test_flag_off_keeps_the_tier_out_of_the_registry(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_tier_off_refuses_exactly_like_pre_tier(monkeypatch, spawn_tracker) -> None:
-    """纪律 1 的反证形态：端口开着、**档位关着** ⇒ 与 ⑮ 不存在时逐位相同的拒绝。
+    """约定 1 的反证形态：端口开着、**档位关着** ⇒ 与 ⑮ 不存在时逐位相同的拒绝。
 
     与 p114 的 ``test_declaration_is_inert_when_the_flag_is_off`` 同族但钉的是另一侧：
     那条钉"端口关着声明惰性（照旧在进程内跑）"，这条钉"端口开着而档位关着时，
@@ -393,7 +393,7 @@ async def test_port_off_declarations_stay_inert_with_the_tier_on(
 
 
 def test_new_keys_are_synced_in_the_five_places() -> None:
-    """纪律 4 的五处同步（settings / selfcheck / ``.env.example`` / 配置文档 / p41 手清单）。
+    """约定 4 的五处同步（settings / selfcheck / ``.env.example`` / 配置文档 / p41 手清单）。
 
     这里**逐处现读**，而不是信任 p41：p41 只保证「文档提到过」，本条还保证 selfcheck 的
     忽略清单与 ``.env.example`` 的赋值行都在——少一处就是「下一位加键的人照着一份
@@ -463,7 +463,7 @@ P125_COUNT_CLAIM = re.compile(r"p125 共 (\d+) 条")
 #: 会复述本文件用例数的文档。**为什么要有守卫**：2026-10-25 第 3 轮独立审查登记的一般项——
 #: 套件总数有 `TestTestCountHasSingleSource` 盯着，**单文件条数没有**，于是本文件从 74 涨到
 #: 77 时，README / CHANGELOG / runbook / PROJECT_SPEC / ADR 里那六处手抄数字同时腐烂，
-#: 而全量回归一个字都没红。纪律 7 的口径是"被当核对基准的表必须是生成物，不是抄本"，
+#: 而全量回归一个字都没红。约定 7 的口径是"被当核对基准的表必须是生成物，不是抄本"，
 #: 这条就是把它落到用例计数上：数字由**这次真实的采集**现算，文档只能写成同一个数。
 DOCS_CLAIMING_P125_COUNT = (
     "README.md",
@@ -484,7 +484,7 @@ def _collected_file_name(item: object) -> str:
     `D:\Code\…\tests\x.py`、采集侧路径却是 `/repo/tests/x.py` ⇒ 两者分家。更要命的是
     POSIX 上反斜杠**不是**分隔符，`Path(r"D:\…\x.py").name` 返回**整条字符串**，于是本文件
     被数成 0 条：守卫红在"取证流程"上，而不是它本该核的"文档"上。
-    `nodeid` 由 pytest 用 `/` 拼出、相对 rootdir，两平台同形 ⇒ 只有一个身份源（纪律 6 ④）。
+    `nodeid` 由 pytest 用 `/` 拼出、相对 rootdir，两平台同形 ⇒ 只有一个身份源（约定 6 ④）。
     """
     return PurePosixPath(str(item.nodeid).split("::", 1)[0]).name  # type: ignore[attr-defined]
 
@@ -522,7 +522,7 @@ def test_docs_declaring_this_files_case_count_match_the_live_collection(
 
     取值口径刻意不依赖 `-rs` 的输出，也不另跑一遍 `--collect-only` 子进程：
     `session.items` 就是产出终端那行"N passed / M skipped"的同一份清单，
-    用它现算 ⇒ 文档核的是"执行链真用到的东西"，而不是第二套算法（纪律 6 ④）。
+    用它现算 ⇒ 文档核的是"执行链真用到的东西"，而不是第二套算法（约定 6 ④）。
 
     采集被人为缩窄时**响亮跳过**并说明原因：`-k` / 指定 nodeid / `--lf` / `--deselect`
     都会让 `session.items` 只剩局部，那种时候拿它当基准去核文档反而是错的
@@ -565,7 +565,7 @@ def test_docs_declaring_this_files_case_count_match_the_live_collection(
 
 
 def test_every_ladder_rung_is_still_declareable() -> None:
-    """纪律 6 ④：词汇表成员**可以声明**，可用性由注册表管——否则 ⑮ 落地当天要改一批声明。"""
+    """约定 6 ④：词汇表成员**可以声明**，可用性由注册表管——否则 ⑮ 落地当天要改一批声明。"""
     for kind in SANDBOX_LADDER:
         assert _spec(f"p125_declare_{kind}", sandbox=kind).sandbox == kind
 
@@ -619,7 +619,7 @@ def test_proxy_variables_cross_the_wall_and_can_carry_credentials() -> None:
     ``http://user:pass@corp:8080`` 形态本身就是凭据 ⇒ 它会跟着过界。
 
     这条是 2026-10-25 独立审查点名的一般项。处理口径刻意**不是**默默改写或剔除该值——
-    那会让"经鉴权代理出网"的既有部署当场坏掉，属行为变更（纪律 5 要先点头）；
+    那会让"经鉴权代理出网"的既有部署当场坏掉，属行为变更（约定 5 要先点头）；
     也刻意**不是**继续在注释里写"白名单不含凭据"（那就是与代码相反的声明）。
     现状：注释与文档（`docs/architecture/运行时护栏.md` §15.10、README §16）
     都按"已知边界"陈述，本条保证任何一侧偷偷漂移都会红——把代理键从白名单摘掉、
@@ -748,7 +748,7 @@ def test_probe_reports_its_own_basis_not_a_bare_boolean() -> None:
 def test_skip_predicate_is_the_probe_itself_not_a_second_guess() -> None:
     """skip 判据必须**就是**能力探测的真值，而不是另一份"看起来等价"的判断。
 
-    这条是纪律 6 ④在测试侧的样子：探测与执行点同源，测试的跳过判据也要同源。
+    这条是约定 6 ④在测试侧的样子：探测与执行点同源，测试的跳过判据也要同源。
     判据一旦分家（当年写的是 ``not POSIX``），就会出现"探测说跑不了、测试却当它能跑"
     的机器，于是那批 POSIX 专属用例从"响亮地跳过"退化成"各自失败"——失败会被误读成
     代码缺陷，而真因是那台机器兑现不了这一档承诺的隔离维度。
@@ -763,7 +763,7 @@ def test_skip_predicate_is_the_probe_itself_not_a_second_guess() -> None:
     ), "没有缺口却跳过（会误伤真的能跑那台机器），或缺口非空却照跑（会变成失败）"
 
 
-#: 「读一下就等于自算平台」的属性名：模块 → 属性。纪律 6 ④ 要的是"平台判定只有一个源"，
+#: 「读一下就等于自算平台」的属性名：模块 → 属性。约定 6 ④ 要的是"平台判定只有一个源"，
 #: 而源可以穿好几件马甲（别名导入 / getattr / from-import），所以这里按**模块+属性**二元组抓。
 _PLATFORM_MODULES: dict[str, set[str]] = {"os": {"name"}, "sys": {"platform"}}
 
@@ -852,7 +852,7 @@ def test_this_file_declares_no_second_platform_predicate() -> None:
     第 3 轮独立审查的一般项：模块顶部曾经另立 ``POSIX = os.name == "posix"``，与
     ``probe_subprocess_caps()`` 各算各的。今天两者恰好等值、没有假绿，但那是**巧合承重**：
     探测的 posix 判据一旦加宽（例如要求同时有 ``resource``），那几处 ``if POSIX`` 就会
-    与主判点分家——而纪律 6 ④要的正是「诊断口径与执行链的判定同源」。
+    与主判点分家——而约定 6 ④要的正是「诊断口径与执行链的判定同源」。
 
     判据从"人记得住"变成机器可判：AST 里没有任何"读平台属性"的动作 ⇒ 平台判定只可能来自
     探测。注释与 docstring 里提 POSIX 不算判点（它们不是被解析出来的表达式）。形态覆盖面
@@ -998,7 +998,7 @@ def test_the_two_nproc_branches_have_one_shape() -> None:
 
 
 def test_probe_and_worker_decide_the_process_gate_from_one_predicate() -> None:
-    """纪律 6 ④：这一闸的判定只许有一个源。
+    """约定 6 ④：这一闸的判定只许有一个源。
 
     父进程用它决定"探测里写什么"，子进程用它决定"落不落"。两份实现漂移的后果不是报错，
     而是**探测说这面墙有进程数闸、墙里其实没有**（或反过来把能落的机器判成不能落）——
@@ -1028,7 +1028,7 @@ async def test_a_missing_process_gate_is_warned_about_once(
 ) -> None:
     """墙里如实回报"这道闸没落" ⇒ 必须留下响的日志，但**不许每次调用刷一条**。
 
-    纪律 2 要的是"降级要留痕"；一次一百万调用的路径上留痕的方式如果是刷屏，
+    约定 2 要的是"降级要留痕"；一次一百万调用的路径上留痕的方式如果是刷屏，
     下一批人就会把那行日志删掉，于是痕迹和噪声一起消失。
     """
     monkeypatch.setattr(sandbox_module, "_GAP_WARNINGS", set())
@@ -1545,7 +1545,7 @@ async def test_child_stdout_over_the_response_cap_is_cut_off(
 
 
 def test_worker_module_level_imports_are_stdlib_only() -> None:
-    """墙内侧**先落闸再 import 业务代码** ⇒ worker 模块级不许出现 ``agentix``（纪律 6 ①）。"""
+    """墙内侧**先落闸再 import 业务代码** ⇒ worker 模块级不许出现 ``agentix``（约定 6 ①）。"""
     tree = ast.parse(
         (PROJECT_ROOT / "agentix/tools/subprocess_worker.py").read_text(encoding="utf-8")
     )
@@ -1821,7 +1821,7 @@ async def test_the_process_count_gate_bites_once_the_uid_is_dedicated(tier_on, m
         # spawned==0 且用的是共享 uid（宿主上有人在跑，例如 nobody/1000）时，"软限之内起不来"
         # 是**内核级计数**的结果，不是这道闸的功劳也不是它的过失：那条事实由 runbook 的取证
         # 步骤负责说清，这里不把它做成失败——环境属性不该让测试轮变红
-        # （纪律 6 ④「只告警不设卡」的同一条）。
+        # （约定 6 ④「只告警不设卡」的同一条）。
     else:
         with pytest.raises(SubprocessSandboxError, match=r"\[limits\].*uid drop"):
             await tier_on.run(probes.process_counter, {"attempts": 2})
@@ -1835,7 +1835,7 @@ async def test_threads_are_charged_to_the_ledger_the_gate_reads(tier_on, monkeyp
     为什么是差分而不是绝对值：``spawned == soft - 1`` 只在"这个 uid 在整个内核上独占"时
     成立，而那是**部署前提**、不是代码能保证的事（上一条的 ``spawned`` 下界因此取 0）。
     同一台机器上连跑两次做差，公共项（那一刻内核已经记了多少）自己消掉 ⇒ 断言钉的是
-    **计费单位**，在共用 uid 的机器上同样成立，不会因环境属性把测试轮变红（纪律 6 ④）。
+    **计费单位**，在共用 uid 的机器上同样成立，不会因环境属性把测试轮变红（约定 6 ④）。
 
     取证实测（2026-10-26，`p125_linux`，uid 60000，同一 uid 下 1 个进程起 5 个线程时
     /proc 报"进程 1 / 任务 6"）：(soft, 预起线程, fork 成功) = (8, 0, 7) / (8, 4, 3) /
@@ -1902,7 +1902,7 @@ def test_setting_the_uid_to_zero_declines_the_gate_instead_of_installing_an_empt
         assert "CAP_SYS_RESOURCE" in gate["reason"], "拒绝的理由必须说清是内核豁免"
         assert (
             "RLIMIT_NPROC" not in caps["rlimit_applied"]
-        ), "判定说不落，落闸面却记了它 ⇒ 两个源各说一套（纪律 6 ④）"
+        ), "判定说不落，落闸面却记了它 ⇒ 两个源各说一套（约定 6 ④）"
         assert caps["uid"] == 0, caps
     else:
         assert outcome["ok"] is False and outcome["stage"] == "limits", outcome

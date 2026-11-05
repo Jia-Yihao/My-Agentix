@@ -14,7 +14,7 @@ Card Schema（字段只增，旧序列化不动）：
   共用行结构 ``{"key": ..., "values": [...]}`` 与合并语义——values 按
   canonical 去重排序 ⇒ 与输入次序无关；读侧保留行内未知键（只增纪律）。
 
-纪律：纯函数、零第三方、零 I/O（可被 domain/agent/application 任意层引用）。
+纯函数、零第三方、零 I/O（可被 domain/agent/application 任意层引用）。
 """
 
 from __future__ import annotations

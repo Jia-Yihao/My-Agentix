@@ -1,6 +1,6 @@
 """P136（T18）：HITL 审批 pending 落库（Q7 已裁决：Postgres 为真源）。
 
-对应规划 `docs/design/审批与中断恢复优化规划.md` T18 卡（验收标准①–⑤）：
+验收标准①–⑤：
 
 ① 新建 pending 落库，裁决（approve/reject/edit/resume）更新**同库闭合**；
 ② 启动期 restore 把未决 pending 拉回内存可裁决（`install_executor_hook` 接线）；
@@ -58,7 +58,7 @@ from agentix.tools.gateway.human_review import (
     reset_review_gate,
 )
 
-#: flag-off 基线 stats 键集合（新增键只在 store 装配时出现——纪律 1 的判据之一）
+#: flag-off 基线 stats 键集合（新增键只在 store 装配时出现——约定 1 的判据之一）
 BASELINE_STATS_KEYS = {
     "enabled", "mode", "created", "approved", "rejected", "edited", "resumed",
     "auto", "bypass", "not_found", "pending", "decided", "rejection_rate",
@@ -196,13 +196,13 @@ class _StubStore:
 
 
 # ---------------------------------------------------------------------------
-# 1. 验收④：flag-off 逐位等价（纪律 1，reviewer 最硬核对项）
+# 1. 验收④：flag-off 逐位等价（约定 1，reviewer 最硬核对项）
 # ---------------------------------------------------------------------------
 
 
 class TestFlagOffEquivalence:
     def test_default_is_off(self):
-        """纪律 1：新 flag 一律 False 起步（静态判据，不依赖宿主 .env）。"""
+        """约定 1：新 flag 一律 False 起步（静态判据，不依赖宿主 .env）。"""
         # 与 test_p41:940 同法：从类上取 model_fields，避开实例访问的 pydantic 2.11 弃用
         assert type(settings).model_fields["HITL_PENDING_PERSIST_ENABLED"].default is False
 
@@ -446,7 +446,7 @@ class TestCrossInstanceDecide:
 
 
 # ---------------------------------------------------------------------------
-# 5. 验收⑤：落库失败显式可观测（纪律 2 的边界：本任务按⑤执行，不吞）
+# 5. 验收⑤：落库失败显式可观测（约定 2 的边界：本任务按⑤执行，不吞）
 # ---------------------------------------------------------------------------
 
 
@@ -571,7 +571,7 @@ class TestStoreSemantics:
             )
 
     def test_status_vocabulary_matches_bridge_buckets(self):
-        """口径同源：库状态词汇 = 桥裁决桶（纪律：同一概念一种叫法）。"""
+        """口径同源：库状态词汇 = 桥裁决桶（同一概念一种叫法）。"""
         assert DECIDED_STATUSES == {"approved", "rejected", "edited", "resumed"}
         assert STATUS_PENDING == "pending"
 
@@ -688,7 +688,7 @@ class TestOpsSurface:
             reset_review_gate()
 
     def test_flag_off_ops_body_keys_are_baseline(self, monkeypatch, client):
-        """flag-off：decide 响应键集合与基线逐键一致（纪律 1 的 API 面证据）。"""
+        """flag-off：decide 响应键集合与基线逐键一致（约定 1 的 API 面证据）。"""
         monkeypatch.setattr(bridge_module, "_resolve_pending_store", lambda: None)
         monkeypatch.setattr(settings, "HITL_PENDING_PERSIST_ENABLED", False, raising=False)
         reset_hitl_bridge()

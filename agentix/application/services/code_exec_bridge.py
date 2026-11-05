@@ -6,10 +6,10 @@
 - **实现**（墙内运行时）在 ``agentix/code_exec_runtime.py``；
 - 本模块只做接线：``register_handler``。
 
-三条接线纪律：
+三条接线
 
 1. **flag 关时直接返回**（``CODE_EXEC_ENABLED`` 缺省 false）⇒ 默认零注册、
-   与基线逐位等价（纪律 1）。
+   与基线逐位等价（约定 1）。
 2. **handler 必须是模块级函数**：墙内子进程按 ``module`` + ``qualname`` 重建
    handler（``agentix/tools/subprocess_worker.py`` 的 ``reconstruct``），闭包 /
    lambda / 绑定方法在另一个进程里不存在——所以这里**直接引用**
