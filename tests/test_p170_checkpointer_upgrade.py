@@ -26,7 +26,7 @@ T22 的**剩余**三条验收
 6. 单一源守卫：`_startup` 经 `_wire_graph_checkpointer` 装配图（不内联 build_graph），
    并在装配块之外调用 `_start_checkpointer_upgrade()`；「要不要重试」只由
    `checkpointer.is_upgrade_retryable()` 回答；
-7. 失败路径资源收口（台账 §8.2 表 D G2）：三条失败臂各自丢弃的 Redis client 必须
+7. 失败路径资源收口：三条失败臂各自丢弃的 Redis client 必须
    被恰好关闭一次且显式断开池（`TestFailurePathClosesClient` A1–A3）；升级成功路径
    不许关闭在用 client（A4，防回归钉）；关闭动作自身失败只留 warning、不改原失败
    语义（A5，约定 2）。
@@ -103,7 +103,7 @@ class _SwitchableSaver:
 def _patch_redis(monkeypatch, saver_cls: Any = _SwitchableSaver) -> Any:
     """钉住 Redis 路径的既有接缝：包导入 + `Redis.from_url`（同 p132 范式）。
 
-    返回 `_FakeRedis` 类本身：`TestFailurePathClosesClient`（台账 §8.2 表 D G2）
+    返回 `_FakeRedis` 类本身：`TestFailurePathClosesClient`
     要断言每次尝试新建 client 的 `aclose` 计数与参数，A5 还要把 `aclose`
     换成自身抛异常的版本。既有调用点不取返回值，形状只增不改。
     """
@@ -351,7 +351,7 @@ class TestRewireIsPartOfSuccess:
 
 
 class TestFailurePathClosesClient:
-    """台账 §8.2 表 D G2：失败路径丢弃的 Redis client 必须被关闭（池断开）恰好一次。
+    """失败路径丢弃的 Redis client 必须被关闭（池断开）恰好一次。
 
     「建池即负责，谁丢弃谁关闭」——每条把 client 丢弃掉的臂都要有钉：
 
@@ -614,7 +614,7 @@ class TestSingleSourceWiring:
             "起停调用的最近父级必须是函数体——被 try / if / with 包住时"
             f"装配失败会让自愈路径一起跳过（实际父级：{type(chain[1]).__name__}）"
         )
-        # 台账表 D G3：把「必须经唯一装配点」从纯子串升级为 AST 检出——上面的纯子串判据
+        # 把「必须经唯一装配点」从纯子串升级为 AST 检出——上面的纯子串判据
         # 只保证那行字面出现在源码任意位置，钉不住它确实在 _startup 体内、且先于后续关键
         # 语句执行。_startup 体内没有 return（读源码实测：函数体一路向下到末尾、无提前
         # 返回），故「先于后续关键语句」取紧随其后的起停调用 _start_checkpointer_upgrade

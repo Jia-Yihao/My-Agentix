@@ -6,7 +6,7 @@
 第 7 条钉的是**关系**不是**取值**：阈值该不该是这个数，仍属观测结论，测试管不到：
 
 1. 新规则存在，且既有 8 条规则一条都没被删/改名（T15 边界：只新增）；并逐条钉住
-   既有 8 条的 ``expr``/``for``/``severity`` 快照基线（台账表 A G2，2026-10-31 登记）；
+   既有 8 条的 ``expr``/``for``/``severity`` 快照基线（，2026-10-31 登记）；
 2. 每条新规则的 ``expr`` / ``for`` / ``labels.severity`` / ``annotations`` 齐全，
    ``for`` 是合法 Prometheus 时长、``severity`` 在用词表内；
 3. ``expr`` 里出现的每个指标名都**有出处**：要么被 ``agentix/observability/metrics.py``
@@ -15,14 +15,14 @@
    登记项必须同时满足：规则文件里写明出处的注释没被删（见用例 6）——
    判据与说明绑在一起，杜绝「编个指标名加规则、注释里什么也不说」；
 4. 阈值口径成文：``expr`` 里的阈值数字必须以**数字 token 词边界**形态出现在
-   ``annotations.description``（台账表 A G3：子串判据对 "0" 恒真），推导依据按
-   中英别名集判定、与措辞解耦（台账表 A G6），否则「阈值为什么是这个数」只活在提交信息里；
+   ``annotations.description``（子串判据对 "0" 恒真），推导依据按
+   中英别名集判定、与措辞解耦，否则「阈值为什么是这个数」只活在提交信息里；
 5. 无高基数 label：新规则的 ``labels:`` 键与 ``expr`` 里不许出现 run_id/session/user
    等可枚举爆炸的维度（硬性约定 3 的精神），描述里也不许把它们插值进告警文本；
 6. 外部指标的前置说明必须在**规则文件本身**里：删掉那段注释，本文件即失败；
    前置说明与部署现状（``docker-compose.yml`` 的 worker command）的**差额**也进断言
-   （台账表 A G5），文档与部署两头对不上即红灯。
-7. 容量算术同源（台账表 A G9，断言折在快照基线用例 ``test_legacy_alerts_baseline_shape``
+   ，文档与部署两头对不上即红灯。
+7. 容量算术同源（，断言折在快照基线用例 ``test_legacy_alerts_baseline_shape``
    体内）：钉两件等式——① ``阈值 == 串行波次 × 副本默认值 × concurrency``（副本与并发从
    ``docker-compose.yml`` **文本**解析，阈值从 Backlog 的 ``expr`` 经 ``_by_alert()`` 抽取）；
    ② ``My AgentixCeleryQueueNotDraining`` 的 ``for`` 换算秒数 ==
@@ -50,12 +50,12 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RULES_PATH = REPO_ROOT / "docker" / "monitoring" / "alert_rules.yml"
 METRICS_PY = REPO_ROOT / "agentix" / "observability" / "metrics.py"
-#: 部署现状的只读核对源（台账表 A G5）：worker 的 command 到底开没开 -E/--events
+#: 部署现状的只读核对源：worker 的 command 到底开没开 -E/--events
 COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
-#: 容量算术的第四枚真源（台账表 A G9）：单作业预算 ``INDEX_JOB_TIMEOUT_SECONDS`` 的默认值
+#: 容量算术的第四枚真源：单作业预算 ``INDEX_JOB_TIMEOUT_SECONDS`` 的默认值
 RETRIEVAL_SETTINGS_PATH = REPO_ROOT / "agentix" / "retrieval" / "settings.py"
 
-#: 队列阈值推导的「串行波次」乘数（台账表 A G9 显式化的**唯一人工量**）。
+#: 队列阈值推导的「串行波次」乘数（显式化的**唯一人工量**）。
 #: 这是**登记时点（2026-11-01）人工选定的口径**，不是从任何真源推出来的——规则文件的注释与
 #: 两条 description 写的都是「20 = 10 个串行波次 × 默认容量（副本 1 × 并发 2）」。
 #: 把它从注释里提出来写成常量，正是为了让「改 compose 副本/并发而不动阈值」必须红：
@@ -84,7 +84,7 @@ LEGACY_ALERTS = {
     "My AgentixGatewayFallbackCascade",
 }
 
-#: 快照式基线（登记时点 2026-10-31，台账表 A G2）：既有 8 条告警名 → (expr, for, severity)
+#: 快照式基线（登记时点 2026-10-31）：既有 8 条告警名 → (expr, for, severity)
 #: 三枚**现值**，取自 ``docker/monitoring/alert_rules.yml`` 实测；``expr``/``for`` 的比较口径
 #: 沿用本文件既有归一 ``" ".join(str(x).split())``，``severity`` 取 ``labels.severity``。
 #: 既有规则被有意改动时必须同批在这里显式登记，这是「改旧规则要过名」的抓手。
@@ -121,7 +121,7 @@ LEGACY_ALERTS_BASELINE: Dict[str, Tuple[str, str, str]] = {
     ),
 }
 
-#: 阈值推导依据的中英别名集（台账表 A G6：判据与措辞解耦）：键 = 推导依据键名，
+#: 阈值推导依据的中英别名集（判据与措辞解耦）：键 = 推导依据键名，
 #: 值 = 该键可接受的措辞别名集（命中其中任意一枚即算点名了该依据）。
 #: 中文别名是 description 改纯中文时的出路；现树实测（2026-10-31）：中文别名
 #: 「索引任务超时」「并发」在两条新规则 description 里 0 次出现，成文覆盖靠
@@ -197,7 +197,7 @@ _HIGH_CARDINALITY_TOKENS = (
 #: Prometheus 时长字面量：一个或多个 <数字><单位>
 _DURATION_RE = re.compile(r"^(?:\d+(?:ms|s|m|h|d|w|y))+$")
 
-# --- 容量算术的四处解析（台账表 A G9）-------------------------------------------
+# --- 容量算术的四处解析-------------------------------------------
 # 一律按**文本正则**，不 ``yaml.safe_load(compose)`` 重解析：compose 里 `${...}` 未展开的
 # 形态与本断言无关，正则只钉现树这一种真实写法（本批解析器不讲「封族不封例」——
 # 被钉的永远是那一枚实际生效的默认值，认不出就是认不出，必须红）。
@@ -307,7 +307,7 @@ def test_legacy_alerts_untouched():
 
 
 def test_legacy_alerts_baseline_shape():
-    """快照式基线（登记时点 2026-10-31，台账表 A G2）：既有 8 条的 expr/for/severity 逐条钉现值。
+    """快照式基线（登记时点 2026-10-31）：既有 8 条的 expr/for/severity 逐条钉现值。
 
     为什么钉三枚字段：T15 的边界是「只新增」，``test_legacy_alerts_untouched`` 只断言
     名字集合不消失——``expr`` 被顺手改窄/改松、``for`` 被拉长/清零、``severity`` 被降级，
@@ -315,7 +315,7 @@ def test_legacy_alerts_baseline_shape():
     一样致命、一样无声。本用例是**快照式基线**：现值逐字登记在
     ``LEGACY_ALERTS_BASELINE``，任何对既有规则的有意改动必须同批在这里显式登记。
 
-    本函数体内现在还钉**台账表 A G9 的容量算术同源**（阈值 == 波次 × 副本 × 并发，以及
+    本函数体内现在还钉**容量算术同源**（阈值 == 波次 × 副本 × 并发，以及
     NotDraining 的 ``for`` 换算秒数 == ``INDEX_JOB_TIMEOUT_SECONDS`` 默认值）。为什么折在
     这里而不是新开用例：新开用例会动收集面，按台账口径要触发第二次全量 re-cite；只加断言
     则 ``--collect-only`` 前后同为 14 items，代价为零，而两类红都指向同一件事——
@@ -348,7 +348,7 @@ def test_legacy_alerts_baseline_shape():
             f"{alert_name}: severity 与基线不符（基线 {base_severity!r}，实际 {severity!r}）"
         )
 
-    # --- 台账表 A G9：容量算术同源（追加在本函数体内，不新增用例）------------------
+    # --- 容量算术同源（追加在本函数体内，不新增用例）------------------
     # 先判解析面（③）再判等式（①②）：等式两边的数字必须是**从真源现读**的，不许是
     # 「解析失败后回落的某个默认」。四枚正则命中次数不是 1 就红——刻意不 return、
     # 不 pytest.skip、不 try/except：静默跳过等于把闸拆掉还留着绿，而这类闸一旦漏红
@@ -382,7 +382,7 @@ def test_legacy_alerts_baseline_shape():
         assert len(hits) == 1, (
             f"{factor}：在 {source} 上按 /{pattern}/ 解析实得 {len(hits)} 次（{hits}），"
             "必须恰命中 1 次——0 次＝那一处容量声明的写法变了、多次＝冒出第二处容量声明，"
-            "两种情况都无从判断乘积关系，判红而不是跳过（台账表 A G9）"
+            "两种情况都无从判断乘积关系，判红而不是跳过"
         )
 
     replicas = int(replicas_hits[0])
@@ -471,7 +471,7 @@ def test_metric_extractor_validated_on_legacy_rules():
             "要么抽取器有误，要么既有规则引用了不存在的东西"
         )
 
-    # 补自检盲区（台账表 A G7）：上面循环只跑 legacy 8 条，新增规则的 expr 从未被
+    # 补自检盲区：上面循环只跑 legacy 8 条，新增规则的 expr 从未被
     # 「抽取器能抽到东西」覆盖过——若新 expr 形态整体漏抽，只有
     # test_new_rules_only_use_declared_metrics 的 found 断言会撞见，而那条不判抽取器
     # 健康。这里只补判「抽得到东西」（非空），不判抽到的是否合法（合法性由那条负责，
@@ -515,7 +515,7 @@ def test_threshold_number_is_documented(alert_name: str):
     numbers = re.findall(r">\s*(\d+(?:\.\d+)?)", expr)
     assert numbers, f"{alert_name}: expr 里找不到显式阈值（> N）"
     threshold = numbers[-1]
-    # 台账表 A G3：旧判据 `threshold in description` 对 "0" 恒真——子串能命中 "10m"/"20"
+    # 旧判据 `threshold in description` 对 "0" 恒真——子串能命中 "10m"/"20"
     # 这类无关数字，阈值没成文也不红。改数字 token 词边界判据：命中前后都不许是数字或小数点。
     threshold_hit = re.search(rf"(?<![\d.]){re.escape(threshold)}(?![\d.])", description)
     if not threshold_hit and threshold == "0":
@@ -531,7 +531,7 @@ def test_threshold_number_is_documented(alert_name: str):
     )
 
     # 光有数字不够：必须点名它的推导依据（容量/超时），否则读者只能猜。
-    # 台账表 A G6：判据与措辞解耦——旧判据是四个英文键名的子串，description 改纯中文
+    # 判据与措辞解耦——旧判据是四个英文键名的子串，description 改纯中文
     # 会**误判成缺失**（真缺失与措辞变化两种红分不开）。改为逐键配中英别名集
     # （_THRESHOLD_BASIS_ALIASES），命中任一键的任一别名即算点名推导依据——与旧判据
     # 等强度（仍是「至少一枚依据」），只是不再绑死英文措辞；逐键的强制力由下方哨兵承担。
@@ -558,7 +558,7 @@ def test_threshold_number_is_documented(alert_name: str):
             "——别名集与成文脱节，主判据正在空转"
         )
 
-    # 逐规则逐键断言（WD-1 第 2 轮返工 S-1，台账表 A G6 的收紧项）：上面合并哨兵只判
+    # 逐规则逐键断言（WD-1 第 2 轮返工 S-1 的收紧项）：上面合并哨兵只判
     # 「合起来有没有」——单条 description 可退化到只剩一枚别名单词（其余推导依据全挤到
     # 另一条），主判据 basis_hit 与合并哨兵都不红。这里按 _THRESHOLD_BASIS_REQUIRED 里
     # **该规则自身的必需键集**、用**该规则自身的 description**（上方已归一的 description
@@ -656,7 +656,7 @@ def test_external_metric_prerequisite_is_documented():
     assert "prometheus.yml" in raw, "前置说明没指出要改哪个抓取配置"
     assert "--events" in raw or "-E" in raw, "前置说明漏了 worker 需发送事件这一条"
 
-    # 台账表 A G5：上面两行只对**前置说明正文**做子串判定，部署现状
+    # 上面两行只对**前置说明正文**做子串判定，部署现状
     # （docker-compose.yml 的 worker command 到底带不带 -E/--events）从不进断言——
     # 文档写着写着就绿，部署没跟上没人知道。下面钉的是「文档前置与部署现状的差额」，
     # 不是「事件已接通」。

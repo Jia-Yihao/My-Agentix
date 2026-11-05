@@ -66,8 +66,8 @@ from agentix.orchestration import capabilities, node_registry
 #
 # 签名壳的参数名/kind（含 keyword-only 的 `config`）必须与真身逐字一致——
 # langgraph 的 config 注入按签名判定（去掉 `config` 形参则注入不到），节点名按
-# `__name__` 推断。返回注解**刻意不抄**：抄一份就是第二份契约源（AGENTS.md
-# 约定 6 ④），签名一致性由 tests/test_p180_builder_shells.py 用
+# `__name__` 推断。返回注解**刻意不抄**：抄一份就是第二份契约源（工程约定 6 ④），
+# 签名一致性由 tests/test_p180_builder_shells.py 用
 # inspect.signature 运行时对比兜底。
 
 

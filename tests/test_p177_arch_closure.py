@@ -724,7 +724,7 @@ CLOSURE_BASELINE: dict[str, frozenset[str]] = {
 # §7.1 正文细项（守卫 #6 判据的一侧；三行**计数与括号细项名单**均解析文档正文）
 # ---------------------------------------------------------------------------
 
-#: 守卫 #6 已升级（M1 后续批计数侧 + 庚-2 G2-A 名单侧）：正文三行的**计数**由
+#: 守卫 #6 已升级（计数侧 + 名单侧）：正文三行的**计数**由
 #: ``_doc_snapshot_counts`` 解析、括号内的**细项名单**由 ``_doc_snapshot_lists`` 解析
 #: （均 fail-closed——抽不到即红）；来源都是 ``docs/architecture/分层架构与依赖规则.md``
 #: §7.1 实测快照块。本常量不再充当「待批改写文档的证据」，也不再是名单的独源：它保留的
@@ -824,7 +824,7 @@ def _doc_snapshot_counts() -> tuple[dict[str, int], list[str]]:
     return counts, missing
 
 
-#: 三行全角括号段的字面形态（庚-2 G2-A）。解析器**不**讲「封族不封例」——它必须正向
+#: 三行全角括号段的字面形态。解析器**不**讲「封族不封例」——它必须正向
 #: 钉住现树逐字存在的那套形态（行前缀与 ``_SNAPSHOT_LINES`` 同源，单位后紧跟全角
 #: ``（…）``），认不出即进 missing，绝不「抽不到就认为等于实测」。
 _SNAPSHOT_LIST_LINES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
@@ -1160,7 +1160,7 @@ def test_no_cross_package_relative_imports(scan: ScanResult) -> None:
 
 
 def test_doc_claims_match_matrix(scan: ScanResult) -> None:
-    """守卫 #6（M1 后续批升级计数侧、庚-2 G2-A 升级名单侧）：§7.1 实测快照块三行的
+    """守卫 #6（计数侧与名单侧均已升级）：§7.1 实测快照块三行的
     计数与括号细项名单 == 计算器实测 == ``DOC_CLAIMS``，三方两两相等。
 
     旧形态只核对测试侧常量 ``DOC_CLAIMS`` 与实测，**锁不住文档正文**——正文漂移
@@ -1227,7 +1227,7 @@ def test_doc_claims_match_matrix(scan: ScanResult) -> None:
     assert (
         DOC_CLAIMS["zero_out_packages"] == zero
     ), f"零出边包不符：声称={sorted(DOC_CLAIMS['zero_out_packages'])}，实测={sorted(zero)}"
-    # 名单侧同源（庚-2 G2-A）：正文括号细项名单本身被解析，与 DOC_CLAIMS／计算器实测
+    # 名单侧同源：正文括号细项名单本身被解析，与 DOC_CLAIMS／计算器实测
     # 三方两两相等；「改名单不改数字」另在正文内部被「名单长度 == 同一行加粗计数」钉住。
     doc_lists, list_missing = _doc_snapshot_lists()
     assert not list_missing, (

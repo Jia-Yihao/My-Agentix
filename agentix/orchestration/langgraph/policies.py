@@ -244,7 +244,7 @@ def node_error_handler(
                     thread_id or "-",
                 )
             else:
-                # 同步 SQLAlchemy I/O 不下放线程就会卡住事件循环（AGENTS.md 代码风格）。
+                # 同步 SQLAlchemy I/O 不下放线程就会卡住事件循环（代码风格要求）。
                 await asyncio.to_thread(
                     _write_compensation_record,
                     target_store,

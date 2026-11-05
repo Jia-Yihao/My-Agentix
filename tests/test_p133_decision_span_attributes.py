@@ -385,7 +385,7 @@ async def test_resume_paths_mark_checkpoint_attr(fake_span, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 庚-3 卡 β2（台账 §8.2 表 G G2 收口）：路由决策属性落点层级统一
+# 路由决策属性落点层级统一
 #
 # B2-1 是结构守卫：fake_span 是单枚替身、不模拟嵌套，任何行为用例都分不清
 # "属性挂在哪一层 span 上"——层级只能钉在 AST 结构上（同 test_p125 /
@@ -478,7 +478,7 @@ def test_b2_1_route_decision_recorded_outside_cache_hit_span():
 @pytest.mark.asyncio
 async def test_b2_2_both_route_legs_record_decision_exactly_once(fake_span, monkeypatch):
     """缓存命中腿与 LLM 成功腿各**恰好一次**写 ``agentix.route.decision``，
-    且值与返回的 ``router.type`` 同源（庚-3 卡 β2 行为对照）。
+    且值与返回的 ``router.type`` 同源（行为对照）。
 
     **鉴别力边界（诚实标注）**：``fake_span`` 接缝是单枚 FakeSpan，**不模拟嵌套**
     ⇒ 本用例分不清"属性挂在哪一层 span 上"——层级统一由 B2-1

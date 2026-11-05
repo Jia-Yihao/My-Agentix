@@ -144,7 +144,7 @@ def generation_token() -> str:
         router_module._router_class(task_exec_on, code_exec_on, single_layer_on).__name__,
         str(getattr(settings, "LLM_MODEL", "") or ""),
         "1" if ablation.is_enabled("router_enabled") else "0",
-        # 庚-3 γ（台账表 G G7）：档位路由的输入值并入令牌——router 实际用的模型可能是
+        # 档位路由的输入值并入令牌——router 实际用的模型可能是
         # 档位模型（``llm_factory._apply_tier_routing`` 命中时改写 profile），只并 ③ 的
         # ``LLM_MODEL`` 就会「该配置下换模型不换代」。并的是配置值指纹，不复刻档位判定
         # （复刻等于在缓存侧另立一个判定源，约定 6 ④）。代价：未接线角色改档位值也会

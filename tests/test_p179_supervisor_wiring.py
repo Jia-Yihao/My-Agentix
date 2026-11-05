@@ -38,7 +38,7 @@
 
 ## 验收口径
 
-- 对齐 `.qoder/rules/code-exec.md` 之外的项目级口径见
+- 对齐 `docs/architecture/adr/0007-执行沙箱端口.md` 之外的项目级口径见
   `docs/architecture/分层架构与依赖规则.md` §7.5 第②③步与
   `agentix/orchestration/node_registry.py` 模块 docstring 的三条设计口径
   （fail-closed / 零参 thunk 每次现取 / 形态声明唯一判据源）。

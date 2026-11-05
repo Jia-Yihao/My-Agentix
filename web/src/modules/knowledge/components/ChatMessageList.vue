@@ -218,7 +218,7 @@
  * T14 虚拟滚动：`virtual` prop **默认 false** ⇒ 零行为变化——模板里虚拟分支的两块
  * 占位节点不渲染、`listForRender` 就是 `displayMessages` 本身（同一引用，全量渲染）、
  * 折叠条下标恒为 `FOLD_HEAD_KEEP`，因此 flag-off 的 DOM 与基线逐位一致
- * （`AGENTS.md` 硬性纪律 1 的前端对应物）。只有装配方显式传 `virtual` 才走窗口渲染。
+ * （工程约定 1 的前端对应物）。只有装配方显式传 `virtual` 才走窗口渲染。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 
@@ -280,7 +280,7 @@ const props = withDefaults(
     sessionId?: string
     /**
      * T14：虚拟滚动开关。**默认 false**——关闭时模板与渲染结果与基线逐位一致
-     * （`AGENTS.md` 硬性纪律 1 的前端对应物：默认关的生产链路必须与基线等价）；
+     * （工程约定 1 的前端对应物：默认关的生产链路必须与基线等价）；
      * 打开时只渲染滚动窗口内的消息，窗口外用两个高度占位 div 撑起滚动条。
      */
     virtual?: boolean

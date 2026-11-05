@@ -25,11 +25,9 @@
 8. ``TestFastPathExpansion``——新增的助理元问题规则：命中 reason / 意图名 /
    近似不命中样本；reason 词表由 ``FASTPATH_REASONS`` 单源给出（不另抄名单），
    并钉住「扩面只落 general-query」这条边界。
-9. ``TestGenerationTokenSingleComputation``——换代令牌单点计算（庚-3 卡 β1，
-   台账表 G G6）：一次请求只算一枚令牌（查侧算、传写侧复用；查侧算不出时
+9. ``TestGenerationTokenSingleComputation``——换代令牌单点计算：一次请求只算一枚令牌（查侧算、传写侧复用；查侧算不出时
    写侧自算兜底），B1–B4 逐条钉计数、兜底与写入条目代前缀同源。
-10. ``TestTierRoutingGeneration``——档位路由输入并入换代令牌（庚-3 卡 γ，台账表
-    G G7）：档位模型名 / 角色档位表 / 档位 flag 任一改动 ⇒ 令牌换代（C1/C2/C4），
+10. ``TestTierRoutingGeneration``——档位路由输入并入换代令牌：档位模型名 / 角色档位表 / 档位 flag 任一改动 ⇒ 令牌换代（C1/C2/C4），
     端到端换档强制重新分类（C3，主症状的行为面），并同源守卫——指纹侧列出的
     档位键必须覆盖 ``model_gateway._TIER_SETTINGS_KEY`` 的全部键（C5，允许多列、禁止少列）。
 
@@ -216,7 +214,7 @@ class TestFlagOffEquivalence:
         assert model.calls == 1
         assert _CACHE_MODULE not in sys.modules, "flag-off 不得加载缓存模块"
 
-        # 台账表 G G10：上面的运行时判据对「惰性 import 被上提到模块顶部」零敏感——
+        # 上面的运行时判据对「惰性 import 被上提到模块顶部」零敏感——
         # 顶部 import 后模块早已进 sys.modules，本用例开头 pop 照样摘掉、flag-off 路径
         # 不再触发，运行时断言仍绿。补一条与运行时同源的静态 AST 守卫：routing_cache 的
         # import 节点不许出现在 router 的模块级语句里（含模块级 if/try 分支、try 的
@@ -566,7 +564,7 @@ class TestCacheUnit:
 
 
 # ===========================================================================
-# 换代令牌单点计算（庚-3 卡 β1，台账表 G G6：收口批复用一次）
+# 换代令牌单点计算（一次请求只算一枚）
 # ===========================================================================
 
 
@@ -716,7 +714,7 @@ class TestGenerationTokenSingleComputation:
 
 
 # ===========================================================================
-# 档位路由输入并入换代令牌（庚-3 卡 γ，台账表 G G7）
+# 档位路由输入并入换代令牌
 # ===========================================================================
 
 
