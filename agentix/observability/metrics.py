@@ -739,7 +739,7 @@ def record_task_queue_claimed(result: str) -> None:
     """T26：记一次 PEL 认领的结果（``ok``=逐条计数，一条消息已交给处理器即记一次 /
     ``empty``=轮级，本轮没有到期消息 / ``error``=轮级，XAUTOCLAIM 失败，异常已由
     调用点 warning 留痕）。"""
-    # G3（台账 :1375）：词表在此第一次成为生产侧判据。越界只留痕不改口——理由见
+    # G3：词表在此第一次成为生产侧判据。越界只留痕不改口——理由见
     # 本模块 ``TASK_QUEUE_CLAIM_RESULT_VALUES`` 之上的注释（指标层改口会把"调用点
     # 传错了"这件事一起吞掉）；留痕本身不抛异常（约定 2，指标不影响主链路）。
     # G21（U-A）：词表判定与计数一起进守卫——不可散列实参会先在 ``not in`` 抛，
@@ -756,7 +756,7 @@ def record_task_queue_claimed(result: str) -> None:
 #: ``router.FASTPATH_REASONS``（该文件明文不许外抄，本文件 ``LLM_CALLS_SAVED`` 的
 #: 声明注释只做指针），而 observability 的允许出边只有 {domain, config}
 #: （``tests/test_p177_arch_closure.py`` 的允许集），引它就是反向边、守卫判红。
-#: 故台账 :1415 的"统一"取**形状限界**：只接受 ``[A-Za-z0-9_]{1,32}`` 形态的字面值
+#: 故"统一"取**形状限界**：只接受 ``[A-Za-z0-9_]{1,32}`` 形态的字面值
 #: （真源五个值与 ``"unknown"`` 全部逐字通过），越界形态（含空格/标点/中文的运行时
 #: 串、超长串）落 ``"other"``。``\Z`` 而非 ``$``：尾随换行也算越界形态。
 _BOUNDED_TOKEN_RE = re.compile(r"[A-Za-z0-9_]{1,32}\Z")

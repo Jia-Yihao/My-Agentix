@@ -113,7 +113,7 @@ class CodeExecuteSchema(BaseModel):
 def validate_code_execute_args(args: Dict[str, Any]) -> Dict[str, Any]:
     """校验并规范化 ``code_execute`` 入参；非法输入抛 ``ValueError``。
 
-    **错误信息绝不回显代码正文**（AGENTS.md 执行边界 ③）：代码正文会进日志、
+    **错误信息绝不回显代码正文**（工程约定 6 ③）：代码正文会进日志、
     进轨迹、进模型上下文，把它抄进异常消息等于把它抄进三个本该没有它的位置。
     错误消息里只说"哪一项不合法"和"上限是多少"。
 

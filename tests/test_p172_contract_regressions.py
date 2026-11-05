@@ -29,7 +29,7 @@
    ``ChatService.stream_events`` 产出：本文件只负责"回放 LangGraph 事件 +
    读帧"，**不另造帧解析器**（沿用 ``tests/test_p65_unified_sse.py`` 的范式）。
 
-收口批另钉第五类指标契约（``TestLlmCallsSavedReasonBound``，台账 :1415）：
+收口批另钉第五类指标契约（``TestLlmCallsSavedReasonBound``）：
 ``record_llm_calls_saved`` 的 ``reason`` 按**形状**限界——``[A-Za-z0-9_]{1,32}``
 逐字通过、空串仍落 ``unknown``、越界形态落 ``other``；上面的"四类"编号保持 T13
 原始范围不动。
@@ -867,7 +867,7 @@ class TestSseFrameSequence:
 
 
 # ===========================================================================
-# 5) LLM_CALLS_SAVED reason 限界（台账 :1415）
+# 5) LLM_CALLS_SAVED reason 限界
 # ===========================================================================
 
 

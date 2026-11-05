@@ -361,7 +361,7 @@ async def _lookup_routing_cache(question_text: str) -> Tuple[Optional[Router], O
     返回 ``(router, generation)`` 二元组：第一枚是命中并用**当前请求原文重建**的
     ``Router``（未命中或任何异常为 ``None``，让主链路照常走 LLM 分类）；第二枚是
     **本次算出的换代令牌**——查侧在 ``try`` 里算出后传给写侧 ``_store_routing_cache``
-    复用，一次请求只算一枚令牌（庚-3 卡 β1，台账表 G G6）。``except`` 臂带 ``None``
+    复用，一次请求只算一枚令牌。``except`` 臂带 ``None``
     （没算出来就别让人复用），miss 臂与重建失败臂都带上已算出的那枚。
 
     fail-open（约定 2）：令牌计算、读缓存、重建三处任一抛异常都只 ``warning``
@@ -430,7 +430,7 @@ def _store_routing_cache(
     后续同问句。
 
     ``generation`` 允许由调用方（同一请求的查侧）传进来复用：一次请求只该算
-    一枚换代令牌（庚-3 卡 β1，台账表 G G6）。默认 ``None`` 保住"独立调用"
+    一枚换代令牌。默认 ``None`` 保住"独立调用"
     这一形态——拿不到时才自算兜底。传入的那一枚是**查侧那一刻**算出的令牌，
     条目因此按查侧那一代落键而非按写的那一刻的代落键；运行期的安全前提见写侧
     调用点注释（此处不复制论证）。
@@ -616,7 +616,7 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
         # （改前写法在该场景只吃一次普通未命中，严格更安全）。
         # 成立前提：当前生产形态下代别在请求内不可变——令牌的全部输入项取自 settings 直读、既有路由判定（提示词文本与 router 类名，经 `_exec_flags` / `_router_prompt_text` / `_router_class` 取，不另立源）与
         # ablation（其设计前提是进程环境不变），仓内无运行期改写点；故该反例今天不可达，属已知前提
-        # 而非已被证明的性质。庚-3 卡 γ 已把档位路由的输入值并入令牌（段数增加，前提不变：仍是 settings 直读 + 既有判定 + ablation）；
+        # 而非已被证明的性质。档位路由的输入值已并入令牌（段数增加，前提不变：仍是 settings 直读 + 既有判定 + ablation）；
         # 若将来引入运行期热改配置，本行写法需重新评估。
         _store_routing_cache(question_text, sanitized_router, cache_generation)
 

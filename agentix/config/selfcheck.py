@@ -99,7 +99,7 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         # `TRAJECTORY_DIR` **刻意不登记**：它在 `.env.example` 里是**注释行**——默认值是按
         # 仓库根推导的绝对路径，写一行活值（尤其空值）会把落盘根变成"当前工作目录"，
         # 与代码默认不等价。而 `parse_env_keys` 跳过 `#` 行 ⇒ 它压根不进 example_keys
-        # ⇒ 登记进来就是僵尸条目（`.qoder/rules/task-order.md` §5「登记不许腐化」）。
+        # ⇒ 登记进来就是僵尸条目（`CONTRIBUTING.md` 工程约定 1「登记不许腐化」）。
         "LOG_JSON_ENABLED",
         # 企业化 P0-3：限流开关与参数不设 = 用默认值（关闭/120rpm/240burst）
         "RATE_LIMIT_ENABLED",

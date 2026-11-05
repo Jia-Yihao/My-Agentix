@@ -1,6 +1,6 @@
 """P2（code exec）：flag-off 提示词逐字节守卫（T4）。
 
-钉住 ``.qoder/rules/code-exec.md`` §8「flag-off 等价性承诺」中的这一条：
+钉住 ``docs/architecture/adr/0007-执行沙箱端口.md`` 中「flag-off 等价性承诺」的这一条：
 ``CODE_EXEC_ENABLED=false`` 时**提示词与基线逐字节相同**。此前仓里没有
 用例钉住这条承诺（同款守卫仅 task 段 ``tests/test_p49_task_execution.py:145``）。
 

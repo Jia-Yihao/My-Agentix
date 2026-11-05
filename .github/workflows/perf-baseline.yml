@@ -200,8 +200,8 @@ jobs:
           set -o pipefail
           # 先清空报告目录：`actions/cache` 会把上一轮的 `perf-cache/business/*.json`
           # 一起恢复回来，而比对步骤是 `glob("*.json")` ⇒ 清单之外的陈旧报告会被当成
-          # "本轮当前值"参与比对。清目录而不是在比对脚本里再抄一份 slug 白名单——
-          # 白名单等于把端点清单拆成两个源（纪律 6 ④：同一个判定不许两个源）。
+          # "本次当前值"参与比对。清目录而不是在比对脚本里再抄一份 slug 白名单——
+          # 白名单等于把端点清单拆成两个源（工程约定 6 ④：同一个判定不许两个源）。
           rm -f perf-cache/business/*.json
           while IFS='|' read -r slug url; do
             [ -n "$slug" ] || continue

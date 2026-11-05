@@ -393,7 +393,7 @@ class TaskQueue:
         claimed = 0
         for message_id, data in entries:
             await self._process_message(message_id, data)
-            # 庚-3 ζ（台账 :1374 收口）：`ok` **逐条**记——一条成功交接即入账一次。
+            # `ok` **逐条**记——一条成功交接即入账一次。
             # 旧形态在整轮之后才记一枚，轮中 `_process_message` 抛出时本轮已交接的
             # 消息既不记 ok 也不记 error（穿出本函数后外层只 logger.error），恰好
             # 吞掉最该观测的「交接了一半就断了」。`empty`/`error` 保持轮级：它们

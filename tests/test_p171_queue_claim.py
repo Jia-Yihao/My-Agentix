@@ -19,7 +19,7 @@
   **零日志、零 import、零 ``get_task_queue()`` 调用**（约定 1）；
 - 指标 ``result`` 是封闭枚举 ``{"ok","empty","error"}``，且 prometheus 不可用时的
   ``_NoopMetric`` 兜底表里有这一行（漏了会让指标在降级环境静默消失）；
-- 词表在生产侧的判据点（G3，台账 :1375）：越界 ``result`` **按原值**进 label 并留
+- 词表在生产侧的判据点（G3）：越界 ``result`` **按原值**进 label 并留
   一条 ``logger.warning``——指标层不改口、不抛异常。
 
 **不连真 Redis**：``redis.asyncio.Redis`` 一律用本文件的 ``_FakeRedis`` 顶替；
@@ -230,7 +230,7 @@ class TestClaimRound:
 
         assert claimed == 3
         assert [mid for mid, _ in processed] == ["1-0", "2-0", "3-0"]
-        # Z2（庚-3 ζ，台账 :1374 收口）：`ok` 由轮级一枚改为**逐条**计数——
+        # Z2：`ok` 由轮级一枚改为**逐条**计数——
         # 这条原本钉住旧形态 `["ok"]`（三条消息只记一次），行为变更 ⇒ 断言
         # 同步更新到新形态，其余断言一字不动。
         assert claim_results == ["ok", "ok", "ok"]
@@ -245,7 +245,7 @@ class TestClaimRound:
     async def test_mid_round_failure_keeps_delivered_messages_counted(
         self, monkeypatch, claim_results
     ):
-        """Z1（庚-3 ζ RED 主力，台账 :1374 收口）：`ok` 必须**逐条**计数。
+        """Z1（RED 主力）：`ok` 必须**逐条**计数。
 
         一轮三条、前两条成功交接、第三条抛：抛之前已成功交接的两条**必须**
         已入账（`claim_results == ["ok", "ok"]`），且认领路径**不含** `error`
@@ -392,7 +392,7 @@ class TestMetricVocabulary:
         assert "TASK_QUEUE_CLAIMED = _NoopMetric()" in source
 
     def test_out_of_vocabulary_result_warns_but_records_verbatim(self, caplog):
-        """G3（台账 :1375）：词表在生产侧第一次成为判据——越界值**按原值**进 label
+        """G3：词表在生产侧第一次成为判据——越界值**按原值**进 label
         并有一条 warning 留痕；词表内取值不产生任何 warning（逐字等价于现树行为）。
         指标层不改口（不落成 ``"other"``）的理由见 ``metrics.py`` 中
         ``TASK_QUEUE_CLAIM_RESULT_VALUES`` 之上的注释。"""

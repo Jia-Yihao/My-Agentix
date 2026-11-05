@@ -108,7 +108,7 @@ def _check_checkpoint_db_invariant(redis_client) -> None:
     )
 
 
-#: G2（台账 §8.2 表 D）：关闭被丢弃 client 的唯一动作点——「谁丢弃谁关闭」的关闭
+#: G2：关闭被丢弃 client 的唯一动作点——「谁丢弃谁关闭」的关闭
 #: 判据只写这一枚，两个丢弃点（`_connect_redis_saver` 内部失败、
 #: `retry_upgrade_checkpointer` 的 rewire 失败臂）共用（约定 6 ④：同一个判定
 #: 不许两个源，两处各写一份必然漂移）。
@@ -169,7 +169,7 @@ async def _connect_redis_saver(AsyncRedisSaver):
     异常在这里刻意不翻译——「降级 / 拒绝启动 / 本轮重试失败」是三种不同处置，
     判定留在两个调用点（它们各自知道自己在哪条语义里）。
 
-    G2（台账 §8.2 表 D）：`from_url` 建池之后的每一步（不变式校验、构造 saver、
+    G2：`from_url` 建池之后的每一步（不变式校验、构造 saver、
     asetup）都纳入同一个 try——任一步抛即本次 client 被本函数丢弃，先尽力关闭
     再原样抛出（「失败原样抛出」的既有承诺不变，只补资源收口）。返回带上
     `redis_client` 而不从 saver 反查内部属性：属性名未经证实，不凭记忆发明；
@@ -367,7 +367,7 @@ async def retry_upgrade_checkpointer(rewire: Optional[Callable[[object], None]] 
         try:
             rewire(saver)
         except Exception as exc:  # noqa: BLE001 - 本轮失败要能被下一轮再试，绝不打断主链路
-            # G2（台账 §8.2 表 D）：此臂里 saver 已建连并 asetup 成功、整只因装配
+            # G2：此臂里 saver 已建连并 asetup 成功、整只因装配
             # 失败被丢弃 ⇒ 用解包出来的 redis_client 尽力关闭（saver 未被提交、
             # 没有任何人继续持有这只 client）。关闭排最前且自身不抛（helper 契约），
             # 不改变下面 `_degraded_reason` / 日志 / 指标 / `return False` 的取值与时机。

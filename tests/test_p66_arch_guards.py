@@ -182,8 +182,7 @@ SHIM_DIRS_ALLOWED: frozenset = frozenset()
 def _shim_dirs() -> Set[str]:
     """模块级 ``_TARGET = "..."`` 字符串赋值所在的目录集合（posix 相对路径）。
 
-    覆盖面只到此形态为止，这是**裁决而不是遗漏**（台账 §8.2 表 O 的 O1 行，
-    2026-11-01 庚-1 编排方裁决）：本判据认的仍是「模块级 ``_TARGET`` 字符串
+    覆盖面只到此形态为止，这是**裁决而不是遗漏**（2026-11-01 编排方裁决）：本判据认的仍是「模块级 ``_TARGET`` 字符串
     赋值」这一种形态；模块级**再导出**形态
     （``from x import (...)  # noqa: F401``，例如
     ``agentix/application/agents/kg_sub_graph/kg_tools_list.py``

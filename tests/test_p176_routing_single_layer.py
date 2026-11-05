@@ -4,7 +4,7 @@ T30 + 卡内 ⑦ 的
 A1–A7 归属表（已裁决：**只动 A1（L1 意图分类）与 A3（KB 检索路由）**，
 A2/A4a/A4b/A5/A7 保留原样，A6 未接线）。
 口径：``agentix/config/settings.py::ROUTING_SINGLE_LAYER_ENABLED``（默认关）、
-``.qoder/rules/task-order.md``（约定 1 flag-off 逐位等价）。
+``CONTRIBUTING.md`` 工程约定（约定 1：flag-off 逐位等价）。
 
 覆盖面与验收口径
 ----------------
