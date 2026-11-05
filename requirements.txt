@@ -70,7 +70,7 @@ pyahocorasick==2.1.0  # R2: 2.0.0 无 cp312 wheel（源码编译需 MSVC），2.
 regex==2026.7.19  # 完整性补齐：text2cypher 校验器/cypher 工具直连 import，原仅靠 tiktoken 传递
 
 # Web Scraping & Data Extraction
-beautifulsoup4==4.12.3
+beautifulsoup4==4.15.0
 lxml==6.1.0  # S1 安全批：5.1.0→6.1.0 修复 2 项 libxml CVE（python-docx 传递依赖，套件验证）
 fake-useragent==1.4.0
 playwright==1.40.0
