@@ -162,15 +162,15 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-    "pytest==7.4.4",
-    "pytest-asyncio==0.23.3",
-    "pytest-cov==4.1.0",
+    "pytest==9.2.0",
+    "pytest-asyncio==1.4.1.post1",
+    "pytest-cov==7.1.0",
 ]
 dev = [
-    "black==24.1.1",
-    "ruff==0.5.7",
+    "black==26.10.1",
+    "ruff==0.17.3",
     "flake8==7.0.0",
-    "mypy==1.8.0",
+    "mypy==2.4.1",
     "pre-commit==3.6.0",
     "types-PyYAML",
     "types-requests",
