@@ -462,7 +462,7 @@ P125_COUNT_CLAIM = re.compile(r"p125 共 (\d+) 条")
 
 #: 会复述本文件用例数的文档。**为什么要有守卫**：2026-10-25 第 3 轮独立审查登记的一般项——
 #: 套件总数有 `TestTestCountHasSingleSource` 盯着，**单文件条数没有**，于是本文件从 74 涨到
-#: 77 时，README / CHANGELOG / runbook / PROJECT_SPEC / ADR 里那六处手抄数字同时腐烂，
+#: 77 时，README / CHANGELOG / runbook / 项目实现手册 / ADR 里那六处手抄数字同时腐烂，
 #: 而全量回归一个字都没红。约定 7 的口径是"被当核对基准的表必须是生成物，不是抄本"，
 #: 这条就是把它落到用例计数上：数字由**这次真实的采集**现算，文档只能写成同一个数。
 DOCS_CLAIMING_P125_COUNT = (

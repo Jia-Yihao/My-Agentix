@@ -5,7 +5,7 @@
 Agent Core 主循环的**开放任务**描述（goal / context 锚点 / 终止条件），
 二者互补、不互相替代。
 
-设计原则（见 docs/migration/Agent_Core_2.0_规划.md）：
+设计原则：
 - Append-only：Observation / Plan 只追加，不原地改写；
 - 可序列化：全部 dataclass 字段为纯数据，便于 trajectory / checkpoint。
 

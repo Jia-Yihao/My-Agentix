@@ -91,7 +91,7 @@ def _observe_rerank_call(duration_s: float, ok: bool) -> None:
         logger.warning("rerank metrics observation skipped: %s", exc)
 
 
-# Phase H·W2（RERANK_DYNAMIC_SKIP_ENABLED，默认关）：动态跳过阈值。
+# 动态跳过阈值（RERANK_DYNAMIC_SKIP_ENABLED，默认关）。
 # 候选过少（≤4，再排也重不出花）或首位分已高（≥0.95，排序无损）⇒ 保序跳过。
 DYNAMIC_SKIP_MAX_CANDIDATES = 4
 DYNAMIC_SKIP_MIN_SCORE = 0.95
@@ -128,7 +128,7 @@ def dynamic_rerank_skip_reason(docs: list) -> str | None:
 
 async def _call_rerank(endpoint: str, payload: dict, docs: list) -> list:
     # 分批路径 _call_rerank_batch_rows 刻意逐字复刻本函数的响应校验段：改一处必须同步另一处（不共用重构的理由见该函数 docstring）。
-    # Phase H · W3：SHARED_HTTP_MAX_CONNECTIONS>0 复用进程级共享 client
+    # SHARED_HTTP_MAX_CONNECTIONS>0 复用进程级共享 client
     # （连接池复用，超时经请求级 timeout 传入）；默认 0 = 每次新建关闭
     # （owns=True，请求零额外参数——与基线调用形状逐位一致）。
     from agentix.infrastructure.http import acquire_http_client

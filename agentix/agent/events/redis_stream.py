@@ -161,7 +161,7 @@ class RedisStreamEventBus:
             scopes=("event:publish", "event:wait")
         )
         self._client = client  # 测试可注入；None ⇒ 首用时懒建
-        # Phase H · W4 批写缓冲：(rec, dedup_key|None)；flag 关恒为空。
+        # 批写缓冲：(rec, dedup_key|None)；flag 关恒为空。
         self._pending: list[tuple[EventRecord, Optional[str]]] = []
         self._flush_handle: Optional[asyncio.TimerHandle] = None
         self._flush_task: Optional[asyncio.Task] = None
@@ -283,7 +283,7 @@ class RedisStreamEventBus:
                 )
         try:
             if self._batching_enabled():
-                # Phase H · W4 批写：dedup 仍即时（保跨进程去重语义），写四件
+                # 批写：dedup 仍即时（保跨进程去重语义），写四件
                 # 入缓冲——满批即 flush（异常冒泡，同基线 publish 失败语义），
                 # 未满定时 flush（后台吞异常+回滚 dedup，见 flush()）。
                 # 权衡：可见性延迟 ≤ EVENT_BATCH_FLUSH_MS；批次写失败回滚
@@ -316,7 +316,7 @@ class RedisStreamEventBus:
             raise
         return rec.event_id
 
-    # -- Phase H · W4 批写（pipeline 批量提交；flag 关 = 零路径变化） -------
+    # -- 批写（pipeline 批量提交；flag 关 = 零路径变化） -------
 
     def _batching_enabled(self) -> bool:
         """两键任一为 0 = 关（回逐条写 = 基线）。"""

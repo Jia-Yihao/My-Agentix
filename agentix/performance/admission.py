@@ -1,4 +1,4 @@
-"""Phase H · W3：运行准入三态（放行 / 排队 / 拒绝 429）。
+"""运行准入三态（放行 / 排队 / 拒绝 429）。
 
 挂 **Control Plane 入口**——在 ``ControlPlane.spawn`` 之前 ``await admission_wait()``：
 

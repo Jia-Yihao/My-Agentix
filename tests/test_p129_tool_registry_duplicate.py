@@ -1,4 +1,4 @@
-"""P129：同名工具重复注册（PROJECT_SPEC §24.2 G14 落地回归）。
+"""P129：同名工具重复注册（项目实现手册 §24.2 G14 落地回归）。
 
 G14 的原始形态：``ToolExecutor.register_handler`` 只在 registry **没有**同名条目时
 登记 spec，于是第二份 ``ToolSpec`` 一个字都不落地（handler 却被覆盖）。⑮ 之后这不再
@@ -371,7 +371,7 @@ P129_COUNT_CLAIM = re.compile(r"p129 共 (\d+) 条")
 
 #: 会复述本文件用例数的文档。**为什么要有守卫**：2026-10-26 独立审查登记的一般项
 #: N3——套件总数有 `TestTestCountHasSingleSource` 盯着，单文件条数没有，于是同一
-#: 个数字在五处手抄（README / CHANGELOG / PROJECT_SPEC / runtime-guardrails /
+#: 个数字在五处手抄（README / CHANGELOG / 项目实现手册 / runtime-guardrails /
 #: roadmap），改一条用例就要靠人记得改五处。约定 7 说"被当核对基准的表必须是生成物"，这里把数字交给本轮
 #: 真实采集面现算。
 DOCS_CLAIMING_P129_COUNT = (

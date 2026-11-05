@@ -479,7 +479,7 @@ async def supervisor_dispatch(
     }
     if outcome_meta.get("bus") is not None:
         defense_meta["bus"] = outcome_meta["bus"]
-    # Phase H · W5：子代理结果契约（SUBAGENT_RESULT_CONTRACT_ENABLED flag-on
+    # 子代理结果契约（SUBAGENT_RESULT_CONTRACT_ENABLED flag-on
     # 才非空；空不挂键 = flag-off 时 meta 与基线逐位等价）。
     if outcome is not None and getattr(outcome, "result_contracts", None):
         defense_meta["result_contracts"] = list(outcome.result_contracts)

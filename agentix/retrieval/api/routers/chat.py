@@ -128,7 +128,7 @@ def api_chat_stream(
         try:
             from agentix.application.services.stream_gate import gate_events
 
-            # Phase H·W4：SSE 出口门控（token 合并/背压，flag 关=原样直通）。
+            # SSE 出口门控（token 合并/背压，flag 关=原样直通）。
             # 非流式聚合（上方 _run）不经此缝——背压丢帧只作用于真 SSE。
             async for payload in gate_events(
                 svc.stream_answer(

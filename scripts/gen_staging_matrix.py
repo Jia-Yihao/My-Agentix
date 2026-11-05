@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""staging 配置矩阵生成器（PROJECT_SPEC §24.2 G13 的终态形态）。
+"""staging 配置矩阵生成器（项目实现手册 §24.2 G13 的终态形态）。
 
 用法：
     python scripts/gen_staging_matrix.py             # 打印**生成**的矩阵（含手写列占位）

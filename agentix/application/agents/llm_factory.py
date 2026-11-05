@@ -27,7 +27,7 @@ from agentix.infrastructure.llm.provider_registry import (
 
 Role = Literal["router", "planner", "tool", "summarizer", "general", "hallucination"]
 
-# Phase H W1：仅对**静态模板**角色上报 prompt 前缀指纹（general 角色的 system
+# 仅对**静态模板**角色上报 prompt 前缀指纹（general 角色的 system
 # 消息含记忆/AGENTS 动态注入，逐请求变化属预期，不作漂移信号）——general 的
 # 演进见下方 ``_TEMPLATE_PREFIX_ROLES``（指纹取模板常量）。
 _STATIC_PROMPT_ROLES = frozenset({"router", "hallucination", "tool", "summarizer", "planner"})
@@ -179,7 +179,7 @@ class _TrackedChatOpenAI(ChatOpenAI):
             # 企业化 P1-5.3：全局并发限制（max=0 时直通零开销；排队超时抛
             # LLMConcurrencyLimitError → 调用方走结构化错误路径）。
             from agentix.reliability.concurrency_limiter import get_llm_limiter
-            # Phase H·W7：GenAI 语义 span（`chat {model}` + gen_ai.* 请求属性，
+            # GenAI 语义 span（`chat {model}` + gen_ai.* 请求属性，
             # 用量在返回后补写；不写 trajectory——本方法下方已有
             # _record_llm_trajectory 步骤级轨迹，避免一步双记）。
             from agentix.observability.spans import apply_genai_usage, genai_span
@@ -249,7 +249,7 @@ class _TrackedChatOpenAI(ChatOpenAI):
                 except Exception:  # noqa: BLE001 - 指标失败不影响主链路
                     pass
 
-                # Phase H · W0：按角色的 LLM 调用/token 账本（role_tag 为有界
+                # 按角色的 LLM 调用/token 账本（role_tag 为有界
                 # 枚举：router/planner/tool/summarizer/general/hallucination）。
                 try:
                     from agentix.observability.metrics import (
@@ -269,7 +269,7 @@ class _TrackedChatOpenAI(ChatOpenAI):
                 except Exception:  # noqa: BLE001 - 指标失败不影响主链路
                     pass
 
-                # Phase H W1：静态 system prompt 前缀指纹（同 role 指纹突变 =
+                # 静态 system prompt 前缀指纹（同 role 指纹突变 =
                 # 提示词漂移，Prometheus/Grafana 侧可见）。
                 # 上下文工程 A1：静态角色取运行期 system 正文；general 正文含
                 # 记忆/指令动态注入，改取**模板常量**作指纹——模板变更仍是漂移
@@ -426,7 +426,7 @@ def _parse_role_tier_map(raw: str) -> Dict[str, str]:
 
 
 def _apply_tier_routing(profile: LLMProfile) -> LLMProfile:
-    """Phase H W1 角色到档位接线（LLM_TIER_ROUTING_ENABLED，默认关）。
+    """角色到档位接线（LLM_TIER_ROUTING_ENABLED，默认关）。
 
     flag-off / 空表 / 未命中角色 / 未知档位 / 解析异常 => 原 profile 原样返回
     （与基线逐位等价，fail-open 不打挂建链）；命中 => 经既有
@@ -516,7 +516,7 @@ def get_llm_client(
         raise RuntimeError("OPENAI_API_KEY is not configured.")
 
     profile = DEFAULT_PROFILES.get(role, DEFAULT_PROFILES["general"])
-    # Phase H W1：角色到档位接线（LLM_TIER_ROUTING_ENABLED，默认关时恒原样返回）。
+    # 角色到档位接线（LLM_TIER_ROUTING_ENABLED，默认关时恒原样返回）。
     profile = _apply_tier_routing(profile)
 
     ensure_llm_providers_registered()

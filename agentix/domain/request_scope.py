@@ -38,7 +38,7 @@ class RequestScope:
     completion_tokens: int = 0
     total_tokens: int = 0
     tools: List[str] = field(default_factory=list)
-    # Phase H · W3：run 预算传播（跨 gather 子任务共享同一对象引用）。
+    # run 预算传播（跨 gather 子任务共享同一对象引用）。
     # deadline_at = time.monotonic() 绝对时刻；None = 未设（调用方回原行为）。
     deadline_at: Optional[float] = None
     # 共享重试预算桶（agentix.reliability.retry_budget.RetryBudget 实例；

@@ -1,4 +1,4 @@
-"""Phase H·W0 性能冒烟（CI perf-smoke job 入口，软断言）。
+"""性能冒烟（CI perf-smoke job 入口，软断言）。
 
 定位：**软门禁**——用进程内假件跑真实代码路径，只拦「量级级」退化
 （单次流 > PERF_SMOKE_AVG_MS 或 HTTP > PERF_SMOKE_HTTP_AVG_MS，默认 3s/2s，

@@ -686,7 +686,7 @@ class CheckpointRecovery:
                 metadata.get("last_node", "unknown"),
             )
 
-            # PhaseK 任务 6：断点续跑恢复点落 span。thread_id 判据只从 config 取
+            # 断点续跑恢复点落 span。thread_id 判据只从 config 取
             # （唯一真源，约定 6 ④；thread_id = session_id，见 application/services/
             # chat_service.py）；fail-open 由 helper 保证，绝不影响恢复主链路（约定 2）。
             record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))

@@ -203,7 +203,7 @@ async def _invoke_tracked(coro: Any, *, agent_name: str = "kg_graph") -> Any:
     get_control_plane,
 )
     try:
-        # Phase H · W3：准入三态（flag 关首行直通）。拒绝抛 AdmissionDenied
+        # 准入三态（flag 关首行直通）。拒绝抛 AdmissionDenied
         # → 落入下方既有 except（关协程 + fail-closed 上抛）。
         from agentix.performance.admission import admission_wait
 
@@ -755,7 +755,7 @@ class ChatService:
         统计泄漏到下一次请求。具体逻辑见 ``_ask_impl``。
         """
         async with request_scope() as scope:
-            # Phase H · W3：run 墙钟 deadline 挂到 scope（跨 gather 子任务
+            # run 墙钟 deadline 挂到 scope（跨 gather 子任务
             # 共享）；ADAPTIVE_TOOL_TIMEOUT_ENABLED 关时为惰性数据零影响。
             scope.set_deadline_seconds(settings.AGENT_TIMEOUT)
             return await self._ask_impl(
@@ -1277,7 +1277,7 @@ class ChatService:
                 logger.warning("record_request failed (non-fatal): {}", obs_exc)
 
         async with request_scope() as scope:
-            # Phase H · W3：流式路径同挂 run deadline（工具层自适应超时取
+            # 流式路径同挂 run deadline（工具层自适应超时取
             # 其剩余预算；flag 关时为惰性数据零影响）。
             scope.set_deadline_seconds(settings.AGENT_TIMEOUT)
             # A5/R5a：run-scoped emitter——impl 在首帧前把登记成功的 run_id
@@ -1413,7 +1413,7 @@ class ChatService:
     get_control_plane,
 )
 
-            # Phase H · W3：准入三态（spawn 前；flag 关直通）——拒绝在首帧
+            # 准入三态（spawn 前；flag 关直通）——拒绝在首帧
             # 之前 fail-closed 上抛（落入下方既有 except → 429 映射）。
             from agentix.performance.admission import admission_wait
 

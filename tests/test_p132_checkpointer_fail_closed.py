@@ -1,4 +1,4 @@
-"""P132：checkpointer 的 fail-closed 开关（Phase K 任务 1）测试。
+"""P132：checkpointer 的 fail-closed 开关测试。
 
 覆盖：
 - flag 关（默认）+ Redis 连接失败 ⇒ 降级 MemorySaver + 记录原因，行为与基线逐位不变；

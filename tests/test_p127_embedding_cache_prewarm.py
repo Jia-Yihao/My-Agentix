@@ -483,4 +483,4 @@ def test_prewarm_runs_off_the_event_loop() -> None:
 def test_project_spec_declares_the_prewarm_keys() -> None:
     text = (REPO / "docs" / "项目实现手册.md").read_text(encoding="utf-8")
     for key in _PREWARM_KEYS:
-        assert key in text, f"{key} 未登记进 PROJECT_SPEC"
+        assert key in text, f"{key} 未登记进 项目实现手册"

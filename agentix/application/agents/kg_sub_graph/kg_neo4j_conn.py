@@ -204,7 +204,7 @@ def _query_timeout_seconds() -> float:
 
 
 # ---------------------------------------------------------------------------
-# Phase H·W2：Cypher 成本护栏（NEO4J_COST_GUARD_ENABLED，默认关 = 零变化）
+# Cypher 成本护栏（NEO4J_COST_GUARD_ENABLED，默认关 = 零变化）
 # ---------------------------------------------------------------------------
 
 _COST_RETURN_STAR_RE = re.compile(r"\bRETURN\s+\*", re.IGNORECASE)

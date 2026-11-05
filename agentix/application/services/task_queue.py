@@ -429,7 +429,7 @@ class TaskQueue:
             await self._redis.xack(self.stream_name, self.consumer_group, message_id)
             return
 
-        # Phase H · W3：负载甩脱（LOAD_SHEDDING_ENABLED，默认关 = 零判定）。
+        # 负载甩脱（LOAD_SHEDDING_ENABLED，默认关 = 零判定）。
         # 消费侧甩——已入队任务在执行前按阶梯丢弃（后台优先：evolution/eval
         # 最先），标记 FAILED 留痕 + ack，不进重试分支、不执行 handler。
         if bool(getattr(settings, "LOAD_SHEDDING_ENABLED", False)):

@@ -104,7 +104,7 @@ class ManagerOutcome:
     exit_status: str = ""
     exit_reason: str = ""
     truncated: bool = False
-    #: Phase H · W5：子代理结果契约（flag ``SUBAGENT_RESULT_CONTRACT_ENABLED``
+    #: 子代理结果契约（flag ``SUBAGENT_RESULT_CONTRACT_ENABLED``
     #: flag-on 才非空；每项 = ``{status, claims, evidence_refs, artifact_refs,
     #: confidence, cost}``，见 ``contract.SubAgentResult``）。缺省空不破
     #: ``__post_init__`` 退出契约。
@@ -161,7 +161,7 @@ def bound_result_face(text: str, *, max_chars: int = 4000) -> str:
 
 
 def peer_face(value: Any, *, max_chars: int) -> str:
-    """Peer 结果进黑板/下一对方的面（Phase H · W5 单缝）。
+    """Peer 结果进黑板/下一对方的面（单缝）。
 
     - flag-off（默认）/ 裸字符串结果 → 基线 ``bound_result_face`` 全文截断，逐位等价；
     - flag-on → 结构化契约面（紧凑 JSON，证据经 ``obs://`` 外置）；过
@@ -337,7 +337,7 @@ class Manager:
             meta["bus"] = self._bus.status()
         contracts: List[Dict[str, Any]] = []
         if contract_enabled():
-            # Phase H · W5：flag-on 时从 PeerResult 派生结果契约（latency/tokens
+            # flag-on 时从 PeerResult 派生结果契约（latency/tokens
             # 取 peer 自报 meta，缺省 0——不臆造测量值）。
             contracts = [
                 SubAgentResult.from_peer_result(result).to_dict()
@@ -447,7 +447,7 @@ class Manager:
                 results.append(p_out)
             accept = _extract_decision(p_out, default="accept")
 
-            # Phase H · W5：证据充分早停（``MULTIAGENT_EARLY_EXIT_ENABLED``
+            # 证据充分早停（``MULTIAGENT_EARLY_EXIT_ENABLED``
             # 默认关 = 现行为逐位等价）。顺序拓扑下「停其余 peer」= 跳过
             # 本 peer（reviewer）与后续轮次；bus.cancel 不适用（无在途消息）。
             if early_exit_enabled() and evidence_sufficient(p_out, board_before):

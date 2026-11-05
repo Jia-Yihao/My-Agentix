@@ -1,7 +1,7 @@
 import type { ChatStreamPayload } from '../api/chatStream'
 
 /**
- * 流式批渲染缓冲（Phase H · W6 A1）。
+ * 流式批渲染缓冲。
  *
  * SSE 每帧同步 mutate 深层响应式状态 ⇒ 每 token 触发一次完整重渲染
  * （高峰 ~50–80 次/s）。本缓冲把 token/progress 类帧聚到 **50ms 窗口**，

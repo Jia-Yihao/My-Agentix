@@ -376,7 +376,7 @@ class TrajectoryRecorder:
     def __init__(self, *, sink: Optional[TrajectorySink] = None) -> None:
         self._sink: TrajectorySink = sink or InMemoryTrajectorySink()
         self._counters: Dict[str, int] = {}
-        # Phase H · W4 异步写：flag-on 时 record 只入队，后台 writer 落 sink。
+        # 异步写：flag-on 时 record 只入队，后台 writer 落 sink。
         self._async_queue: Optional[asyncio.Queue] = None
         self._writer_task: Optional[asyncio.Task] = None
 
@@ -395,7 +395,7 @@ class TrajectoryRecorder:
     ) -> Optional[TrajectoryStep]:
         """记录一条步骤；任何异常都被吞掉并 warning（绝不影响主链路）。
 
-        Phase H · W4：``TRAJECTORY_ASYNC_WRITE_ENABLED`` 且处于 event loop
+        ``TRAJECTORY_ASYNC_WRITE_ENABLED`` 且处于 event loop
         时改为入队 + 后台 writer 落 sink（顺序 = 队列 FIFO；关停/测试经
         ``flush_trajectory_writes`` 兜底）；flag 关或无 loop（同步上下文）
         保持同步直写现行为。
@@ -704,7 +704,7 @@ def reset_trajectory_recorder() -> None:
 
 
 async def flush_trajectory_writes() -> int:
-    """Phase H · W4 兜底：把全局记录器在队的异步轨迹全部落 sink。
+    """兜底：把全局记录器在队的异步轨迹全部落 sink。
 
     关停（lifespan shutdown）与测试在读回前调用；无记录器 / 队列为空 /
     flag 关均为 no-op（返回 0，零开销）。

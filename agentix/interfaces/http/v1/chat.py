@@ -102,7 +102,7 @@ class ChatStreamChunk(BaseModel):
     # run_id（守卫 #5：帧可回溯到统一 Run/Event stream；降级时为 None）。
     seq: Optional[int] = None
     run_id: Optional[str] = None
-    # Phase H · W0 性能戳记：RunEventEmitter 只在**终帧**注入这三个键，非终帧为
+    # 性能戳记：RunEventEmitter 只在**终帧**注入这三个键，非终帧为
     # None 且由 `_to_sse` 的 exclude 从 wire 里剔除（保持既有帧形状逐字节不变）。
     # 它们曾经在这里整个丢掉——DTO 字段集是白名单，序列化器不带就不出 wire，
     # 于是前端 `chatStreamHandlers.ts` 的耗时芯片永远拿不到数据。
@@ -349,7 +349,7 @@ async def chat_stream(
         try:
             from agentix.application.services.stream_gate import gate_events
 
-            # Phase H·W4：SSE 出口门控（token 50ms 合并/有界队列背压，
+            # SSE 出口门控（token 50ms 合并/有界队列背压，
             # flag 关 = 原 source 直通逐位等价）。挂 HTTP 出口：service 层
             # 帧语义/戳记/落库逻辑（下方循环）不受影响，合并帧 content
             # 为拼接 delta ⇒ answer_parts 落库内容恒等。

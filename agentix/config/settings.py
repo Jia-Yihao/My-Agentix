@@ -166,7 +166,7 @@ class Settings(BaseSettings):
     LLM_MODEL_REASONING: str = Field(
         default="", description="Strong reasoning tier model for complex legal reasoning (empty = fallback to LLM_MODEL)"
     )
-    # Phase H·W1：角色→档位接线（网关既有 fast/standard/reasoning 只接线不重建）。
+    # 角色→档位接线（网关既有 fast/standard/reasoning 只接线不重建）。
     # 关（默认）⇒ get_llm_client 档位解析不执行，profile 与基线逐位等价；
     # 开 + LLM_ROLE_TIER_MAP 命中 ⇒ 经 ModelGateway.resolve_model 取该档模型
     # （档位模型空/未知角色/未知档位 ⇒ 静默回退 LLM_MODEL 基线）。
@@ -418,7 +418,7 @@ class Settings(BaseSettings):
         default=False,
         description="Validate final KG answer via LLM structured check between summarize and final_answer nodes",
     )
-    # Phase H·W1 验证预算：校验器本身受硬预算约束（默认值 = 单次、1 秒、无
+    # 验证预算：校验器本身受硬预算约束（默认值 = 单次、1 秒、无
     # token 上限——校验只在 KG_FINAL_ANSWER_VALIDATION 开时才有意义，预算
     # 进一步保证它不会放大延迟/成本）。任一维度超预算 ⇒ **fail-open 降级放行**
     # （与既有校验失败降级同语义，steps 留痕），绝不扣下答案。
@@ -627,7 +627,7 @@ class Settings(BaseSettings):
             "queue and failures are fail-open (warning + stats().persist_errors)"
         ),
     )
-    # Phase H · W3（PhaseH_高性能运行时优化规划 §4）：运行时治理五件套。
+    # 运行时治理五件套。
     # ADMISSION_CONTROL_ENABLED：准入三态（放行/排队/拒绝 429）挂 Control
     # Plane 入口（spawn 前 await 排队，运行计数复用平面 active_count，
     # 终态自动释放）；默认关 = 直连 spawn 现行为逐位等价。
@@ -743,7 +743,7 @@ class Settings(BaseSettings):
         ge=0,
         description="Process-shared httpx.AsyncClient pool limit; 0 disables sharing (per-request clients)",
     )
-    # Phase H · W4（PhaseH_高性能运行时优化规划 §4）：持久化与 SSE 出口批处理。
+    # 持久化与 SSE 出口批处理。
     # 事件批写：redis_stream 后端把 xadd/save/rpush 按批经 pipeline 提交
     # （满批即 flush，否则 FLUSH_MS 定时 flush）；两键任一为 0 = 关（逐条
     # 写 = 基线）。memory/jsonl 后端不受影响。
@@ -805,7 +805,7 @@ class Settings(BaseSettings):
         default=False,
         description="Enable subagent isolation (ephemeral task-face prompt, skip live memory, per-session budget+registry); default off",
     )
-    # Phase H · W5（PhaseH_高性能运行时优化规划 §4）：多智能体通信压缩。
+    # 多智能体通信压缩。
     # SUBAGENT_RESULT_CONTRACT_ENABLED：Peer 结果进黑板换结构化契约面
     # {status,claims,evidence_refs,artifact_refs,confidence,cost}，证据条目
     # 经 obs:// 外置成引用（完整输出仍在 ManagerOutcome.peer_results）；
@@ -821,7 +821,7 @@ class Settings(BaseSettings):
         default=False,
         description="Exit early once proposer evidence is sufficient (has evidence + information increment, reuses information_increment); default off",
     )
-    # Phase H · W0（PhaseH_高性能运行时优化规划 §4）：性能真值三旋钮。
+    # 性能真值三旋钮。
     # LATENCY_BREAKDOWN_ENABLED：SSE 终帧注入 breakdown_ms（ttft/retrieval/stream），
     # 供前端耗时芯片与回放消费；默认关 ⇒ 帧与基线逐位等价（守卫 p65 通过）。
     LATENCY_BREAKDOWN_ENABLED: bool = Field(
@@ -916,7 +916,7 @@ class Settings(BaseSettings):
     MILVUS_COLLECTION: str = "legal"
     MILVUS_INDEX_TYPE: str = "IVF_FLAT"
     MILVUS_METRIC_TYPE: str = "IP"
-    # Phase H·W2：IVF 搜索探针数（原 milvus_impl 硬编码 16 配置化；默认值
+    # IVF 搜索探针数（原 milvus_impl 硬编码 16 配置化；默认值
     # 与基线逐位等价，>=1）
     MILVUS_NPROBE: int = 16
 
@@ -1071,7 +1071,7 @@ class Settings(BaseSettings):
     # R-P0-4：Cypher 执行超时秒数（>0 经 query_readonly 限时执行；
     # 0 = 不限时，与基线逐位等价）
     NEO4J_QUERY_TIMEOUT_SECONDS: float = 0.0
-    # Phase H·W2：Cypher 成本护栏（GraphCostEstimator 纯字符串预检：
+    # Cypher 成本护栏（GraphCostEstimator 纯字符串预检：
     # RETURN */无界变长/OPTIONAL MATCH 堆叠 → 拒绝；简单单 RETURN 尾追加
     # LIMIT；默认关 = 零预检零改写，与基线逐位等价）
     NEO4J_COST_GUARD_ENABLED: bool = False
@@ -1119,7 +1119,7 @@ class Settings(BaseSettings):
         ge=0,
         description="Per-step context rebuild token budget for AgentLoop (0 = one-shot build, baseline-equal)",
     )
-    # Phase H·W1 段级输出预算：ContextPort.build（ContextEngine +
+    # 段级输出预算：ContextPort.build（ContextEngine +
     # SimpleContextBuilder）对轨迹段（工具/检索观测）的 token 配额。0（默认）
     # = 不设段配额（与基线逐位等价）；>0 = 累计超过配额的观测**整体外置**
     # （obs:// 可取回引用，复用既有 ArtifactStore offload 通道）而非截断丢数据。
@@ -1380,7 +1380,7 @@ class Settings(BaseSettings):
     # on_error 五类旁路钩子。默认 False = 组合根零接线（executor/loop 零调用）。
     HOOKS_ENABLED: bool = False
     # ------------------------------------------------------------------
-    # Phase S（沙箱与执行边界加固，§24.3 T0）——全部默认关，flag-off 与基线逐位等价。
+    # 沙箱与执行边界加固（§24.3 T0）——全部默认关，flag-off 与基线逐位等价。
     # ------------------------------------------------------------------
     # G1：同步（非协程）工具 handler 会占住事件循环，asyncio.wait_for 对它无效。
     # 打开后 executor 用 asyncio.to_thread 下放，使 timeout_ms 真正可截断。
@@ -1505,7 +1505,7 @@ class Settings(BaseSettings):
         default="redis",
         description="LangGraph checkpointer backend: 'redis' or 'memory'",
     )
-    # Phase K 任务 1：Redis 路径初始化失败的 fail-closed 判据（默认关 = 维持既有降级基线）。
+    # Redis 路径初始化失败的 fail-closed 判据（默认关 = 维持既有降级基线）。
     CHECKPOINTER_FAIL_CLOSED: bool = Field(
         default=False,
         description="checkpointer 初始化失败时是否拒绝启动（true=fail-closed，绝不落 MemorySaver）；"
@@ -1567,7 +1567,7 @@ class Settings(BaseSettings):
         default=False,
         description="Enable agentic RAG query-rewrite retries (<=2) on empty knowledge retrieval; default off",
     )
-    # Phase H·W1：复杂度感知 fast-path——高置信确定性输入前置短路，跳过 LLM 意图
+    # 复杂度感知 fast-path——高置信确定性输入前置短路，跳过 LLM 意图
     # 分类器（零模型构造、零分类调用）。命中 reason 是封闭五元（与
     # ``router.FASTPATH_REASONS`` 逐字同源）：``chit_chat``（寒暄/问候，以及
     # ``谢谢`` / ``收到`` / ``好的`` / ``你是谁`` 一类短句——

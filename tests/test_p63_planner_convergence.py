@@ -2,7 +2,7 @@
 
 两半：
 1. **TEXT2SQL 死 flag 处置**——`TEXT2SQL_ENABLED` 从 Settings / selfcheck
-   合法省略清单 / `.env.example` / `PROJECT_SPEC` 配置表全量清除；
+   合法省略清单 / `.env.example` / `项目实现手册` 配置表全量清除；
 2. **KG planner 影子对拍 → 切流**——`KG_PLANNER_SHADOW_ENABLED`（对拍）与
    `KG_PLANNER_UNIFIED_ENABLED`（切流）双 flag 默认关、flag-off 图内私有链
    逐位不变；影子报告只记不改、非驱动侧异常绝不影响输出；切流后统一

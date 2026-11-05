@@ -1,6 +1,6 @@
 """§24.3 T1 ⑪：`/settings/{kb_id}` 的租户归属 + admin 升格（`SETTINGS_AUTHZ_ENABLED`）。
 
-**为什么需要它**（PROJECT_SPEC §24.2 G9 的后半段）：G9 把响应里的 `*_api_key` 掩成 `***`，
+**为什么需要它**（项目实现手册 §24.2 G9 的后半段）：G9 把响应里的 `*_api_key` 掩成 `***`，
 治的是「读回显」；这条路上「谁能写」一直没人管——路由只挂 `Depends(get_current_user)`，
 于是任何登录用户可以读改**任意** `kb_id` 的配置，租户归属一概不看。可写字段里有
 `llm_base_url` / `embedding_base_url`：把它们换成自己的端点，之后那个租户的每一条提问

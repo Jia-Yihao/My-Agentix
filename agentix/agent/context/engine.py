@@ -19,7 +19,7 @@ from agentix.domain.ports import CompactorPort
 
 __all__ = ["ContextEngine", "STATUS_BAR_TRUSTED_KEYS"]
 
-#: Phase H·W1：段级配额外置观测保留的头部字符数（小头部 + obs:// 指针）
+#: 段级配额外置观测保留的头部字符数（小头部 + obs:// 指针）
 _SEGMENT_ISOLATE_HEAD = 200
 
 #: 状态栏只允许这些 key（状态不得由模型自写——白名单校验）
@@ -144,7 +144,7 @@ class ContextEngine:
         prefix = self._static_prefix()
         isolated: List[str] = []
         traj_lines: List[str] = []
-        # Phase H·W1 段级输出预算（TOOL_OUTPUT_BUDGET_TOKENS，默认 0=关）：
+        # 段级输出预算（TOOL_OUTPUT_BUDGET_TOKENS，默认 0=关）：
         # 轨迹段（工具/检索观测）累计超过配额的观测**整体外置**为 obs://
         # 可取回引用（复用既有 _isolate_ref / ArtifactStore 通道）而非截断丢
         # 数据；flag-off 恒不计数、循环与基线逐字节等价。

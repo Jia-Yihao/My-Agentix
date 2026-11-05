@@ -1,6 +1,6 @@
-"""PhaseK 任务 3：spans.py 决策属性 helper + 任务 4/5/6 消费点接线守卫。
+"""spans.py 决策属性 helper + 任务 4/5/6 消费点接线守卫。
 
-覆盖面与验收口径（PhaseK 计划 §任务 3 + §审查重点第 47 行）：
+覆盖面与验收口径（计划 §任务 3 + §审查重点第 47 行）：
 - 三个 helper 写入的属性键名**逐字**钉死：``agentix.route.decision`` /
   ``gen_ai.response.model`` / ``agentix.resume_from_checkpoint``；
 - 空串 / 无 span / span 或取 span 接缝抛异常 ⇒ 静默降级（fail-open），
@@ -11,7 +11,7 @@
 - 键名常量只有一个源（约定 6 ④）：``gen_ai.response.model`` 字面量只许出现在
   tracing.py 常量表，spans.py 必须经常量引用。
 
-追加（PhaseK 任务 4/5/6，消费点接线）：
+追加（消费点接线）：
 - 任务 4：``analyze_and_route_query`` 成功路径的落点（与缓存命中路径同走 ``record_route_decision`` 单源 helper）写最终 route，值 ∈ 7 类词表；
 - 任务 5：``query_knowledge_base`` 两处 ``gw_result`` 分支写实际服务方，
   主模型名同源 ``ctx.model_name``；
@@ -171,7 +171,7 @@ def test_response_model_literal_single_source():
 
 @pytest.mark.asyncio
 async def test_router_records_route_decision_attr(fake_span, monkeypatch):
-    """成功路径拿到最终 route 后必须写 ``agentix.route.decision``（PhaseK 任务 4）。
+    """成功路径拿到最终 route 后必须写 ``agentix.route.decision``。
 
     假模型桩沿用 p118 既有范式（``get_llm_client`` → ``with_structured_output``
     → 固定结果），不新造桩形态；flag 显式钉到基线组合（fastpath/task/code/cache 全关），
@@ -226,7 +226,7 @@ async def test_router_records_route_decision_attr(fake_span, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fallback_result_records_actual_model_on_span(fake_span, monkeypatch):
-    """两处 ``gw_result`` 分支都要把 ``model_used`` 写上 span（PhaseK 任务 5）。
+    """两处 ``gw_result`` 分支都要把 ``model_used`` 写上 span。
 
     桩范式取自 test_r3_model_gateway / chat_service 既有形态：gateway 整体替身，
     只钉"消费点取的是 GatewayResult.model_used、主模型名取的是 ctx.model_name"。
@@ -324,7 +324,7 @@ async def test_fallback_result_records_actual_model_on_span(fake_span, monkeypat
 @pytest.mark.asyncio
 async def test_resume_paths_mark_checkpoint_attr(fake_span, monkeypatch):
     """两条恢复路径都要在 config 的 thread_id 非空时写 ``agentix.resume_from_checkpoint``，
-    无 thread_id 时**不写该属性**（PhaseK 任务 6；判据只许来自
+    无 thread_id 时**不写该属性**（；判据只许来自
     ``config["configurable"]["thread_id"]``，不得另取 thread 概念——约定 6 ④）。"""
     import json
 

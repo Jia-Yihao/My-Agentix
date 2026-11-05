@@ -124,7 +124,7 @@ application.add_middleware(APIKeyMiddleware)
 
 
 # Request logging middleware ---------------------------------------------------
-# Phase H · W0：endpoint 标签归一化——动态段（数字/UUID/长十六进制）收敛为 {id}，
+# endpoint 标签归一化——动态段（数字/UUID/长十六进制）收敛为 {id}，
 # 段数封顶，控制 Prometheus request 指标的基数。
 _ENDPOINT_SEGMENT_RE = re.compile(
     r"^(?:[0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$",
@@ -185,7 +185,7 @@ class RequestLoggingMiddleware:
             status_code,
             elapsed,
         )
-        # Phase H · W0：Prometheus 请求指标接线（prometheus_client 缺失时为 no-op）。
+        # Prometheus 请求指标接线（prometheus_client 缺失时为 no-op）。
         try:
             from agentix.observability.metrics import record_request
 
@@ -472,7 +472,7 @@ def _build_cron_runner():
     return _runner
 
 
-# Phase H · W0：事件循环滞后采样任务句柄（flag 默认关，不启动即无任何开销）。
+# 事件循环滞后采样任务句柄（flag 默认关，不启动即无任何开销）。
 _lag_sampler_task: asyncio.Task | None = None
 
 
@@ -1135,7 +1135,7 @@ async def _startup() -> None:
         service_name=settings.APP_NAME,
         service_version=settings.APP_VERSION,
     )
-    # Phase H · W0：事件循环滞后采样（EVENT_LOOP_LAG_METRIC_ENABLED，默认关）。
+    # 事件循环滞后采样（EVENT_LOOP_LAG_METRIC_ENABLED，默认关）。
     if settings.EVENT_LOOP_LAG_METRIC_ENABLED:
         global _lag_sampler_task
         try:
@@ -1509,7 +1509,7 @@ async def _shutdown() -> None:
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("cron scheduler stop failed: {}", exc)
 
-    # Phase H · W0：取消事件循环滞后采样任务。
+    # 取消事件循环滞后采样任务。
     global _lag_sampler_task
     if _lag_sampler_task is not None:
         _lag_sampler_task.cancel()
@@ -1561,7 +1561,7 @@ async def _shutdown() -> None:
         finally:
             _checkpointer_upgrade_task = None
 
-    # Phase H · W3：关闭共享 httpx 出口连接池（未构建时零开销）。
+    # 关闭共享 httpx 出口连接池（未构建时零开销）。
     try:
         from agentix.infrastructure.http import aclose_shared_async_client
 
@@ -1569,7 +1569,7 @@ async def _shutdown() -> None:
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("shared http client close failed: {}", exc)
 
-    # Phase H · W4：轨迹异步写兜底 flush（flag 关 = no-op）。
+    # 轨迹异步写兜底 flush（flag 关 = no-op）。
     try:
         from agentix.application.services.trajectory import flush_trajectory_writes
 
@@ -1577,7 +1577,7 @@ async def _shutdown() -> None:
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("trajectory flush on shutdown failed: {}", exc)
 
-    # Phase H · W4：事件批写尾巴 flush（redis_stream 后端有 aclose = 取消
+    # 事件批写尾巴 flush（redis_stream 后端有 aclose = 取消
     # 定时器并提交 pending；memory/jsonl 无此方法零开销）。
     try:
         from agentix.agent.events.port import get_event_port
@@ -1607,7 +1607,7 @@ async def _shutdown() -> None:
 
 @application.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    # Phase H · W3：准入拒绝 → 429（策略性过载，非服务器故障）。
+    # 准入拒绝 → 429（策略性过载，非服务器故障）。
     # 放在通用 500 之前判定；AdmissionDenied 惰性 import 避免加载期耦合。
     try:
         from agentix.runtime.control_plane import AdmissionDenied

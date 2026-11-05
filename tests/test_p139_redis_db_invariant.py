@@ -178,7 +178,7 @@ class TestDbInvariantAlert:
 
 
 class TestNoNewRejectionPath:
-    """验收②：不变式告警只做诊断，不新增拒绝路径；也不得与 PhaseK fail-closed 开关纠缠。"""
+    """验收②：不变式告警只做诊断，不新增拒绝路径；也不得与 fail-closed 开关纠缠。"""
 
     @pytest.mark.asyncio
     async def test_wrong_db_chain_still_completes_when_redis_path_ok(self, monkeypatch):
@@ -230,7 +230,7 @@ class TestNoNewRejectionPath:
 
     @pytest.mark.asyncio
     async def test_fail_closed_semantics_unchanged_on_real_failure(self, monkeypatch):
-        """真失败 + 开关开 ⇒ 照旧 RuntimeError（PhaseK 任务 1 语义不因本校验而变，禁纠缠）。"""
+        """真失败 + 开关开 ⇒ 照旧 RuntimeError（语义不因本校验而变，禁纠缠）。"""
         _install(monkeypatch, "redis://127.0.0.1:1/2", _FailingSaver)
         monkeypatch.setattr(settings_instance, "CHECKPOINTER_FAIL_CLOSED", True, raising=False)
         with pytest.raises(RuntimeError) as excinfo:

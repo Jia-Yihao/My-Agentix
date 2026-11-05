@@ -1,4 +1,4 @@
-"""Phase H·W1 LLM 优化验收（p94）。
+"""LLM 优化验收（p94）。
 
 覆盖规划 §4 W1 五项：
 1. 路由 fast-path：flag-off 仍走 LLM（基线）、命中分支（寒暄/单条法条）、

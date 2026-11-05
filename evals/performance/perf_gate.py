@@ -1,4 +1,4 @@
-"""Phase H·W0/W7 性能门禁：基准结果 vs 已录制基线（W7 起为 CI 阻塞门禁）。
+"""性能门禁：基准结果 vs 已录制基线（现为 CI 阻塞门禁）。
 
 口径：逐负载类比较 ``p50``，`now > baseline * ratio`（默认 3.0，容忍共享
 CI 抖动与跨机差异）判回归；overall p50 同规则。新类（基线没有）只提示不判失败；
@@ -166,7 +166,7 @@ def run_gate(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Phase H W0 性能门禁")
+    parser = argparse.ArgumentParser(description="性能门禁")
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS, help="基准结果 JSON")
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE, help="基线 JSON")
     parser.add_argument("--ratio", type=float, default=DEFAULT_RATIO, help="回归倍数阈值")

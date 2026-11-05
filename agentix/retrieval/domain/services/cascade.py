@@ -1,4 +1,4 @@
-"""Phase H·W2：确定性查询分类 + 低分升级的检索级联（adaptive cascade）。
+"""确定性查询分类 + 低分升级的检索级联（adaptive cascade）。
 
 领域层纯件（不 import 向量库/Redis/LLM 等基础设施）：
 - ``classify_query_kind``：无 LLM 的确定性三分类（statute / multi_hop /

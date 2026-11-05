@@ -122,7 +122,7 @@ def _heuristic_router(question: str) -> Optional[Router]:
 
 
 # ===========================================================================
-# Phase H·W1：复杂度感知 fast-path（ROUTING_FASTPATH_ENABLED，默认关）
+# 复杂度感知 fast-path（ROUTING_FASTPATH_ENABLED，默认关）
 # 高置信确定性输入前置短路 ⇒ 跳过 LLM 意图分类器（零模型构造、零调用）。
 # 只收**确定性极高**的几类；其余一律照常走 LLM 分类，不做任何猜测。
 # T8 扩面边界：只扩**落到 general-query 的助理元问题**（寒暄/致谢/能力/身份的
@@ -483,7 +483,7 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
             )
         }
 
-    # Phase H·W1 复杂度感知 fast-path（ROUTING_FASTPATH_ENABLED，默认关）：
+    # 复杂度感知 fast-path（ROUTING_FASTPATH_ENABLED，默认关）：
     # 高置信确定性输入（寒暄 / 单条数据条目直取）前置短路——零模型构造、零 LLM
     # 分类调用（_boom 哨兵测试钉死），命中记 llm_calls_saved_total；flag-off
     # 或未命中 ⇒ 下方链路与基线逐位等价（question_text 为纯读，提前无副作用）。
@@ -596,7 +596,7 @@ async def analyze_and_route_query(state: AgentState, *, config: RunnableConfig) 
 
     sanitized_router = router_cls(**sanitized_kwargs)
 
-    # PhaseK 任务 4：路由决策值上 span 的**两个落点之一**——白名单校验通过后的最终
+    # 路由决策值上 span 的**两个落点之一**——白名单校验通过后的最终
     # route（有界枚举，约定 3；理由文本不落）。缓存命中分支也调本 helper：同在函数体级、
     # 先于 route.cache_hit 子 span 打开，两处同层级落在当前环境 span 上。
     # 两处同走 record_route_decision 单源，不另立第二份判据。兜底出口另有

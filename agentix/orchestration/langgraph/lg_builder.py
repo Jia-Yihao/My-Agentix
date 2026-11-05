@@ -334,7 +334,7 @@ async def resume_in_loop(thread_id: str, resume_value: Any) -> Any:
     # LG-2-3：config 形状（含顶层 recursion_limit）只从 graph_config 出——恢复路径
     # 此前缺这个键，会落到框架默认 25，与主链路的 MAX_ITERATIONS 各说一套。
     config = thread_config(thread_id)
-    # PhaseK 任务 6：进环恢复点落 span。thread_id 判据只从 config 取（唯一真源，
+    # 进环恢复点落 span。thread_id 判据只从 config 取（唯一真源，
     # 约定 6 ④）；fail-open 由 helper 保证（无 span/异常 ⇒ no-op，约定 2）。
     record_resume_from_checkpoint(thread_id_present=bool(config["configurable"].get("thread_id")))
     # LG-3-3：第四个恢复入口（进环 HITL 裁决）。计数点是「向图发起续跑」。

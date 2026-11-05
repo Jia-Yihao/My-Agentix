@@ -2,7 +2,7 @@ import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 
 /**
- * 助手消息 markdown 渲染（Phase H · W6 A3）。
+ * 助手消息 markdown 渲染。
  *
  * 链路：`marked.parse`（GFM + breaks）→ `DOMPurify.sanitize` → `v-html`。
  * **绝不裸 v-html**：消毒失败 / 解析异常一律降级为转义纯文本（轻量兜底），

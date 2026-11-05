@@ -94,7 +94,7 @@ def _run_remaining_ms() -> float | None:
 
 
 def _effective_timeout_ms(spec_timeout_ms: int) -> int:
-    """Phase H · W3：工具超时 = min(spec, 剩余 run 预算)；flag 关/无
+    """工具超时 = min(spec, 剩余 run 预算)；flag 关/无
     deadline → spec 原值（错误文案字节等价）。下限 1ms（预算耗尽即近速失败）。"""
     if not bool(getattr(settings, "ADAPTIVE_TOOL_TIMEOUT_ENABLED", False)):
         return int(spec_timeout_ms)
@@ -575,7 +575,7 @@ class ToolExecutor:
                     )
                     truncated_by_budget = True
                     break
-                # Phase H · W3（RETRY_BUDGET_ENABLED，flag 关 = 原样退避重试）：
+                # 重试预算（RETRY_BUDGET_ENABLED，flag 关 = 原样退避重试）：
                 # ① 分类审计闸——仅瞬时性错误（timeout/429/503/reset）可重试，
                 #    鉴权/参数类 4xx 重试只会放大故障；② run 级共享预算扣减，
                 #    与 task/retrieval 层共用一个 token 桶（防 3×3×3 放大）。

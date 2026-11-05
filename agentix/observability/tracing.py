@@ -223,14 +223,14 @@ def traced(name: str = None):
 
 
 # ============================================================
-# GenAI 语义属性（OTel GenAI semconv，Phase H · W7）
+# GenAI 语义属性（OTel GenAI semconv）
 # ============================================================
 
 # 语义约定键名（字符串常量，零新增依赖——otel sdk 为既有硬依赖）
 GENAI_SYSTEM = "gen_ai.system"
 GENAI_OPERATION_NAME = "gen_ai.operation.name"
 GENAI_REQUEST_MODEL = "gen_ai.request.model"
-# 实际服务模型的 semconv 键（PhaseK 任务 3）：回退发生后 model_used 需落 span，
+# 实际服务模型的 semconv 键：回退发生后 model_used 需落 span，
 # 键名常量与本表其余同源——消费侧（spans.py helper）只引用，不再各自写字面量。
 GENAI_RESPONSE_MODEL = "gen_ai.response.model"
 GENAI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"

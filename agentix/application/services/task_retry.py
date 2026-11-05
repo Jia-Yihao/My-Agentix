@@ -291,7 +291,7 @@ async def run_task(
                 )
                 truncated_by_budget = True
                 break
-            # Phase H · W3（RETRY_BUDGET_ENABLED，flag 关 = 原样重试）：
+            # 重试预算（RETRY_BUDGET_ENABLED，flag 关 = 原样重试）：
             # task 层是三层（task/tool/retrieval）共享预算的最外层消费点，
             # 耗尽即停（工具/检索层同桶，3×3×3 放大被压成一个总额度）。
             if bool(getattr(settings, "RETRY_BUDGET_ENABLED", False)):

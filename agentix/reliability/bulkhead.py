@@ -1,4 +1,4 @@
-"""Phase H · W3：出口隔离舱（按下游分池 semaphore，roadmap E3）。
+"""出口隔离舱（按下游分池 semaphore，roadmap E3）。
 
 池尺寸走既有 settings 模式（``0 = 不限`` 默认 = 接线前逐位等价）：
 

@@ -1,4 +1,4 @@
-"""Phase H · W5：子代理结果契约与共享证据面（PhaseH 规划 §4 W5）。
+"""子代理结果契约与共享证据面。
 
 Peer 结果进黑板的面从 giant string 换成结构化契约::
 
@@ -154,7 +154,7 @@ def _extract_artifact_refs(result: PeerResult) -> List[str]:
 
 @dataclass
 class SubAgentResult:
-    """子代理结果契约（W5 任务 1）——替代 giant string 进黑板的结构化面。"""
+    """子代理结果契约——替代 giant string 进黑板的结构化面。"""
 
     status: str = "ok"
     claims: List[str] = field(default_factory=list)
@@ -287,7 +287,7 @@ def resolve_evidence_ref(
 
 
 def evidence_sufficient(result: Any, context: str) -> bool:
-    """早停判据（W5 任务 3）：提案**带证据**且相对上下文**有信息增量**。
+    """早停判据：提案**带证据**且相对上下文**有信息增量**。
 
     复用既有 :func:`has_information_increment`（书 §10 判据单源）；两个条件
     缺一不可——有证据但纯复读（echo）不早停，有增量但无证据不早停（证据

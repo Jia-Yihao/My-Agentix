@@ -9,7 +9,7 @@ A1c（统一执行链）：本模块自 ``agentix/retrieval/api/routers/agent_ru
 **上移**至接口层——Run API 是协议转换（HTTP ↔ ControlPlane），按分层
 归属 ``interfaces``；路径从 ``/api/v1/retrieval/agents/runs`` 迁为
 ``/api/v1/agents/runs``（路由路径 ``/agents/runs`` 不变，仅去掉 retrieval
-挂载前缀），文档（README / PROJECT_SPEC / failure-recovery runbook）同步。
+挂载前缀），文档（README / 项目实现手册 / failure-recovery runbook）同步。
 
 设计约束（遵守既有纪律）：
 - **运行态默认只在内存**（``ControlPlane`` 有界 FIFO）。T21 起可选落库
@@ -371,7 +371,7 @@ async def api_create_agent_run(request: Request, body: AgentRunCreate):
             user_hint=f"键长限 1–{IDEMPOTENCY_MAX_KEY_CHARS} 字符",
         )
 
-    # Phase H · W3：准入三态（flag 关直通）；拒绝抛 AdmissionDenied →
+    # 准入三态（flag 关直通）；拒绝抛 AdmissionDenied →
     # 全局异常处理器映射 429（fail-closed，不登记不执行）。
     from agentix.performance.admission import admission_wait
 

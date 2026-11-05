@@ -251,7 +251,7 @@ class MCPStdioClient:
     async def call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """调用工具，返回 MCP content 载荷（``{content: [...], isError?}``）。
 
-        Phase H · W3：``BULKHEAD_MCP_SIZE=0`` 默认直通；>0 时 stdio 下游
+        ``BULKHEAD_MCP_SIZE=0`` 默认直通；>0 时 stdio 下游
         走 MCP 隔离舱（打满只阻塞 MCP 调用方，不串扰其他下游）。
         """
         from agentix.reliability.bulkhead import bulkhead_slot

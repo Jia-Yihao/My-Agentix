@@ -1,6 +1,6 @@
-"""PhaseK 任务 2：审批指标 ``decision`` label 的**静态值域守卫**。
+"""审批指标 ``decision`` label 的**静态值域守卫**。
 
-验收口径（PhaseK 计划 §任务 2「值域归一」+ §事实表第 21 行那条本批新发现的腐烂）：
+验收口径（计划 §任务 2「值域归一」+ §事实表第 21 行那条本批新发现的腐烂）：
 
 - ``retrieval_approval_decisions_total{target_type,decision}`` 的 ``decision``
   只允许六值 ``{approved, rejected, edited, resumed, auto, bypass}``

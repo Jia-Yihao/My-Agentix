@@ -1,4 +1,4 @@
-"""Phase H·W0 性能基准的进程内假件（零 LLM / 零网络 / 零 Docker）。
+"""性能基准的进程内假件（零 LLM / 零网络 / 零 Docker）。
 
 思路源自 p65 流夹具：把 ``_stream_answer_impl`` 的四个外部依赖换成确定性
 假实现，使检索域 SSE 流（含 ControlPlane Run 登记 + W0 性能戳记）能在纯

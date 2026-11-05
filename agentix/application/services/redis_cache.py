@@ -290,7 +290,7 @@ class RedisSemanticCache:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        # Phase H · W3：SHARED_HTTP_MAX_CONNECTIONS>0 复用进程级共享 client；
+        # SHARED_HTTP_MAX_CONNECTIONS>0 复用进程级共享 client；
         # 默认 0 = 每次新建关闭（owns=True，超时走客户端级、请求零额外参数
         # ——与基线调用形状逐位一致）；共享模式 owns=False，超时经请求级传入。
         from agentix.infrastructure.http import acquire_http_client

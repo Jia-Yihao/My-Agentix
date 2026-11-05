@@ -1,4 +1,4 @@
-"""request_id / trace_id 的 ContextVar 存取（AGENTS 硬规则 12）。
+"""request_id / trace_id 的 ContextVar 存取。
 
 传播规则：
 - HTTP 中间件入口 ``bind_request_id``，``finally`` 中 ``reset_request_id``；

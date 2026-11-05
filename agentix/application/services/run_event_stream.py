@@ -7,7 +7,7 @@ Run/Event 源（守卫 #5：SSE event 必须来自统一 Run/Event stream）：
 - ``seq``：本 Run 内单调递增的帧序号（从 1 起，每个帧必打）；
 - ``run_id``：ControlPlane 登记成功的 Run 载体。
 
-Phase H · W0（PhaseH_高性能运行时优化规划 §4 W0）新增**性能真值戳记**：
+另含**性能真值戳记**：
 
 - 首个内容帧（answer_chunk / content / message）→ 记录 TTFT 并打
   ``agent_ttft_seconds`` 直方图（每流一次）；T6 起按回退链导出的事实拆分归因——
@@ -84,7 +84,7 @@ class RunEventEmitter:
         self._stamp_perf(frame)
         return frame
 
-    # -- Phase H · W0 性能戳记 ------------------------------------------------
+    # -- 性能戳记 ------------------------------------------------
 
     def _stamp_perf(self, frame: Dict[str, Any]) -> None:
         """TTFT / 终帧 duration 注入 / 延迟拆解与预算（全部 fail-open）。"""

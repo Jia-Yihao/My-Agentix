@@ -79,7 +79,7 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "ENABLE_EXTERNAL_SEARCH",
         "LEGACY_ERROR_MODE",
         "CHECKPOINTER_TYPE",
-        # Phase K 任务 1：fail-closed 开关不设 = 默认 false（维持降级基线），属合法省略
+        # fail-closed 开关不设 = 默认 false（维持降级基线），属合法省略
         "CHECKPOINTER_FAIL_CLOSED",
         # T22：升级重试节奏不设 = 默认 0（关闭重试循环）= 基线等价，属合法省略
         "CHECKPOINTER_RETRY_INTERVAL_S",
@@ -257,12 +257,12 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "MULTIAGENT_PEER_MAX_MESSAGES",
         "MULTIAGENT_BUS_ENABLED",
         "MULTIAGENT_SUBAGENT_ISOLATION_ENABLED",
-        # Phase H·W0（PhaseH_高性能运行时优化规划 §4）：性能真值三旋钮默认关/0，
+        # 性能真值三旋钮默认关/0，
         # 属合法省略
         "LATENCY_BREAKDOWN_ENABLED",
         "LATENCY_TOTAL_BUDGET_MS",
         "EVENT_LOOP_LAG_METRIC_ENABLED",
-        # Phase H·W1（PhaseH_高性能运行时优化规划 §4）：LLM 优化七键默认关/空/
+        # LLM 优化七键默认关/空/
         # 默认值，属合法省略
         "ROUTING_FASTPATH_ENABLED",
         # T8：路由结果跨请求缓存（进程内 LRU+TTL，默认关，属合法省略）
@@ -274,12 +274,12 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "VERIFICATION_MAX_LLM_CALLS",
         "VERIFICATION_TIMEOUT_MS",
         "VERIFICATION_TOKEN_BUDGET",
-        # Phase H·W2（PhaseH_高性能运行时优化规划 §4）：成本护栏默认关、
+        # 成本护栏默认关、
         # nprobe 默认 16（= 原硬编码值），属合法省略
         "NEO4J_COST_GUARD_ENABLED",
         "MILVUS_NPROBE",
         "TOOL_OUTPUT_BUDGET_TOKENS",
-        # Phase H·W3（PhaseH_高性能运行时优化规划 §4）：运行时治理默认关/0，
+        # 运行时治理默认关/0，
         # RETRY_BUDGET_TOKENS 默认 6，属合法省略
         "ADMISSION_CONTROL_ENABLED",
         "ADMISSION_MAX_CONCURRENT_RUNS",
@@ -300,14 +300,14 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "BULKHEAD_MCP_SIZE",
         "BULKHEAD_WEB_SEARCH_SIZE",
         "SHARED_HTTP_MAX_CONNECTIONS",
-        # Phase H·W4（PhaseH_高性能运行时优化规划 §4）：持久化与 SSE 批处理，
+        # 持久化与 SSE 批处理，
         # 默认 0/false = 关（与基线逐位等价），属合法省略
         "EVENT_BATCH_MAX_SIZE",
         "EVENT_BATCH_FLUSH_MS",
         "TRAJECTORY_ASYNC_WRITE_ENABLED",
         "SSE_COALESCE_ENABLED",
         "SSE_QUEUE_SIZE",
-        # Phase H·W5（PhaseH_高性能运行时优化规划 §4）：多智能体通信压缩，
+        # 多智能体通信压缩，
         # 默认 false = 关（与基线逐位等价），属合法省略
         "SUBAGENT_RESULT_CONTRACT_ENABLED",
         "MULTIAGENT_EARLY_EXIT_ENABLED",

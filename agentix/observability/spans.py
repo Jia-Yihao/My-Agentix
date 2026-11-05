@@ -1,18 +1,17 @@
-"""统一 span 网关：业务代码只允许用 ``span()`` / ``sync_span()``（AGENTS 硬规则 12）。
+"""统一 span 网关：业务代码只允许用 ``span()`` / ``sync_span()``（业务内唯一 span 入口）。
 
 - 转发 ``agentix.observability.tracing`` 的 OTel 封装；OTel 未安装时
   ``trace_span`` / ``sync_trace_span`` 为 noop，零开销降级；
 - 同时把步骤写入当前 ``TrajectoryRecorder``（若已 start），供落盘回放。
 未来安装 OTel 无需改业务代码。
 
-Phase H·W7 增补：``genai_span()``（LLM 调用专用，``chat {model}`` 命名 +
+另有 ``genai_span()``（LLM 调用专用，``chat {model}`` 命名 +
 ``gen_ai.*`` 语义属性）与 ``apply_genai_usage`` 再导出——genai_span **不写
 trajectory**（LLM 调用轨迹已由 llm_factory._record_llm_trajectory 与检索域
 usage 记录覆盖，避免一步双记）。
 
-PhaseK 任务 3 增补：三个决策属性 helper（``record_route_decision`` /
-``record_model_used`` / ``record_resume_from_checkpoint``），消费点由
-同批任务 4/5/6 落在 ``application/agents/router.py``（``analyze_and_route_query``）、
+三个决策属性 helper（``record_route_decision`` /
+``record_model_used`` / ``record_resume_from_checkpoint``），消费点分别在 ``application/agents/router.py``（``analyze_and_route_query``）、
 ``retrieval/usecases/chat_agent_tools.py``（两处）、``orchestration/langgraph/lg_builder.py``
 与 ``application/services/breakpoint_resume.py``（``resume_thread``）；只把**有界可枚举的判定值**写进当前 span（约定 3：理由文本与高基数
 内容不落），且无 span / OTel 抛异常时**静默降级**，绝不向上抛（约定 2）。
@@ -77,7 +76,7 @@ async def genai_span(
     operation: str = "chat",
     system: str | None = None,
 ) -> AsyncIterator:
-    """LLM 调用专用 span（Phase H·W7）：名 ``{operation} {model}``，预置
+    """LLM 调用专用 span：名 ``{operation} {model}``，预置
     ``gen_ai.operation.name`` / ``gen_ai.request.model`` / ``gen_ai.system``；
     用量经 ``apply_genai_usage(span, usage=...)`` 在调用返回后补写。
 
@@ -112,7 +111,7 @@ def sync_span(name: str, **attributes) -> Iterator:
 
 
 # ============================================================
-# 决策属性 helper（PhaseK 任务 3，纯新增——消费点归任务 4/5/6）
+# 决策属性 helper（纯新增——消费点在各调用方）
 # ============================================================
 
 ROUTE_DECISION_ATTR = "agentix.route.decision"
@@ -142,7 +141,7 @@ def _current_span():
 def record_route_decision(route_type: str) -> None:
     """当前 span 记路由决策值 ``agentix.route.decision``。
 
-    只落有界判定值（路由意图枚举，见任务 4 的 7 类词表守卫），理由文本不落
+    只落有界判定值（路由意图枚举，见 7 类词表守卫），理由文本不落
     （约定 3）。空串 / 无 span ⇒ 静默 no-op；异常一律吞并 debug 留痕——
     观测设施失败不得让一次正常问答失败（§审查重点第 47 行）。
     """
@@ -181,7 +180,7 @@ def record_resume_from_checkpoint(*, thread_id_present: bool) -> None:
 
     仅 thread_id_present 为真时写；为假**不写该属性**（属性缺席即"不是从
     检查点恢复"，写 False 会让无恢复的绝大多数 span 都背上一个噪声属性）。
-    判据口径归任务 6：config["configurable"]["thread_id"] 是否非空。
+    判据口径：config["configurable"]["thread_id"] 是否非空。
     """
     try:
         if not thread_id_present:

@@ -1,4 +1,4 @@
-"""Phase H · W3：应用级共享 httpx 出口连接池。"""
+"""应用级共享 httpx 出口连接池。"""
 
 from agentix.infrastructure.http.shared_client import (
     acquire_http_client,

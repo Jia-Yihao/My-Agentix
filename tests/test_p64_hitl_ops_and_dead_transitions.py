@@ -192,7 +192,7 @@ def test_ops_edit_without_arguments_returns_400_and_keeps_pending(client):
 def test_paused_for_approval_status_and_edges_removed():
     assert not hasattr(AgentStatus, "PAUSED_FOR_APPROVAL")
     assert "paused_for_approval" not in {s.value for s in AgentStatus}
-    assert len(AgentStatus) == 11  # PROJECT_SPEC §10.2：11 个值
+    assert len(AgentStatus) == 11  # 项目实现手册 §10.2：11 个值
 
 
 def test_approval_lane_roundtrip_single_status():

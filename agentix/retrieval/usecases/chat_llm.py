@@ -63,7 +63,7 @@ async def invoke_with_breaker(llm, prompt, *, name: str = "llm.chat") -> Any:
     - 开启时经 ``CircuitBreakerRegistry`` 按名取熔断器：OPEN 抛
       ``CircuitBreakerOpenError``；调用在线程中执行（不阻塞事件循环），
       成功/失败分别 ``record_success`` / ``record_failure``；
-    - Phase H·W7：外层 ``genai_span``（``chat {model}`` + ``gen_ai.*`` 请求/
+    - 外层 ``genai_span``（``chat {model}`` + ``gen_ai.*`` 请求/
       用量属性；不写 trajectory——检索域 usage 已有 DB/M6 记录）。
     """
     from agentix.observability.spans import apply_genai_usage, genai_span
@@ -169,7 +169,7 @@ def record_llm_usage(
         session.commit()
         record_llm_tokens(model=model_name or "default", direction="in", value=tokens_in)
         record_llm_tokens(model=model_name or "default", direction="out", value=tokens_out)
-        # Phase H · W0：检索域回答链路的按角色 LLM 账本（role=retrieval）。
+        # 检索域回答链路的按角色 LLM 账本（role=retrieval）。
         record_agent_llm_call(role="retrieval", status="success")
         record_agent_llm_tokens(
             role="retrieval", prompt_tokens=tokens_in, completion_tokens=tokens_out

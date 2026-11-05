@@ -118,7 +118,7 @@ DOCX_INTENTIONAL_REFS = {
 #: 2026-10-26 评测集下线后，三条路径从仓库消失：门禁基线、录制预测、以及两个只服务
 #: 金标集的守卫文件。历史文档（ENGINEERING_LOG / 迁移规划 / 优化路线）里提到它们是
 #: **事实陈述**——「当时有这个文件、当初守的是这条」——改写它们等于伪造历史；
-#: 而现时态文档（README / PROJECT_SPEC / evals/README）必须改写成「评测集已下线」。
+#: 而现时态文档（README / 项目实现手册 / evals/README）必须改写成「评测集已下线」。
 #: 两条纪律的分工靠本清单划线：现时态文档里出现这些路径仍会红（不在清单豁免范围之外
 #: 的引用一律照红），历史文档里出现则放行。
 MD_INTENTIONAL_REFS = {
@@ -134,7 +134,7 @@ MD_INTENTIONAL_REFS = {
 #: 判据是「这句话在讲过去发生过什么」还是「在讲现在是什么样」：
 #: 迁移规划 / 优化路线 / 工程日志 / 评测录制 runbook 属于前者——它们记录
 #: 「当时有这个文件、当初守的是这条」，改写等于伪造历史；现时态文档（README、
-#: PROJECT_SPEC、guides、LIMITATIONS、architecture/**）属于后者，必须改写成
+#: 项目实现手册、guides、LIMITATIONS、architecture/**）属于后者，必须改写成
 #: 「评测集已下线」，出现旧路径一律照红。
 HISTORY_DOC_PREFIXES = (
     "docs/migration/",
@@ -377,12 +377,12 @@ class TestDocumentedConfigKeys:
             "LLM_FALLBACK_MODEL_SPECS",
             "FEEDBACK_ENABLED",
             "FEEDBACK_PII_REDACT",
-            # Phase S（§24.3 T0 执行边界加固）
+            # （§24.3 T0 执行边界加固）
             "TOOL_SYNC_OFFLOAD_ENABLED",
             "TOOL_HANDLER_CONTRACT_ENABLED",
             "TOOL_DUPLICATE_REGISTRATION_STRICT",
             "EXECUTION_SANDBOX_ENABLED",
-            # Phase S·T2 ⑮（沙箱阶梯第三档）
+            # T2 ⑮（沙箱阶梯第三档）
             "TOOL_SANDBOX_SUBPROCESS_ENABLED",
             "TOOL_SANDBOX_SUBPROCESS_UID",
             "TOOL_SANDBOX_SUBPROCESS_ENV_EXTRA_KEYS",
@@ -395,7 +395,7 @@ class TestDocumentedConfigKeys:
             "DB_ECHO",
             "UVICORN_RELOAD",
             "SETTINGS_AUTHZ_ENABLED",
-            # Phase K（checkpointer fail-closed 开关）
+            # （checkpointer fail-closed 开关）
             "CHECKPOINTER_FAIL_CLOSED",
             # T22（checkpointer 降级后按可配节奏重试升级；间隔默认 0 = 关 = 基线等价）
             "CHECKPOINTER_RETRY_INTERVAL_S",
@@ -650,7 +650,7 @@ class TestTestCountHasSingleSource:
 #   - 徽章写 Neo4j 5.27 / Milvus 2.3，compose 与 Dockerfile 实际钉 5.18 / v2.4.17；
 #   - 「web 是第 13 个 service」，真实 15 个且 web 排最后；
 #   - 「CI 阻塞性能冒烟」，真实性能门在 perf-baseline.yml 按日巡检、不阻塞 PR；
-#   - 「PROJECT_SPEC 23 章」，真实 25 章（§0–§24）；
+#   - 「项目实现手册 23 章」，真实 25 章（§0–§24）；
 #   - 「按 `difficulty`/`source` 分层」，golden 行里根本没有这两个字段；
 #   - 目录把「参与贡献」排在 §16 之后，正文却夹在 §14 与 §15 之间；
 #   - 六条 GitHub 链接指向未发布的远端（实测 404），还随 wheel 元数据分发出去。
@@ -663,7 +663,7 @@ class TestTestCountHasSingleSource:
 COMPOSE_PATH = PROJECT_ROOT / "docker-compose.yml"
 CI_WORKFLOW_PATH = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
 DOCKERFILE_PATH = PROJECT_ROOT / "Dockerfile"
-PROJECT_SPEC_PATH = DOCS_ROOT / "项目实现手册.md"
+项目实现手册_PATH = DOCS_ROOT / "项目实现手册.md"
 
 #: 本仓库当前没配任何 git remote，该 URL 实测 404。
 #: 当前态文档（含随 wheel 分发的 pyproject 元数据）不许再出现它。
@@ -851,14 +851,14 @@ class TestDocumentedSpecChapters:
     _CLAIM_RE = re.compile(r"共 (\d+) 章（§0–§(\d+)）")
 
     def _real_chapters(self) -> List[int]:
-        text = PROJECT_SPEC_PATH.read_text(encoding="utf-8")
+        text = 项目实现手册_PATH.read_text(encoding="utf-8")
         return sorted(int(n) for n in re.findall(r"^## (\d+)\.", text, re.M))
 
     def test_spec_chapter_numbers_are_contiguous(self):
         nums = self._real_chapters()
-        assert nums, "PROJECT_SPEC 里没数到编号章节，正则可能失效"
+        assert nums, "项目实现手册 里没数到编号章节，正则可能失效"
         assert nums == list(range(len(nums))), (
-            f"PROJECT_SPEC 章节编号不连续（{nums}）——「共 N 章（§0–§M）」的写法依赖连续编号"
+            f"项目实现手册 章节编号不连续（{nums}）——「共 N 章（§0–§M）」的写法依赖连续编号"
         )
 
     def test_chapter_count_claims_match_spec(self):

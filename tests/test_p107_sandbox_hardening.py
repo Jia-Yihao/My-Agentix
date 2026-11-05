@@ -1,6 +1,6 @@
 """P107：执行边界加固（§24.3 T0 落地回归）。
 
-覆盖《PROJECT_SPEC》§24.2 实测缺口 G1/G2/G3/G4/G5/G6/G9/G11 的修复：
+覆盖《项目实现手册》§24.2 实测缺口 G1/G2/G3/G4/G5/G6/G9/G11 的修复：
 - G1 ``TOOL_SYNC_OFFLOAD_ENABLED``——同步 handler 下放线程后 timeout 才真能截断；
 - G2 ``MCP_SUBPROCESS_ENV_SCRUB``——MCP 子进程不再继承主进程密钥；
 - G3 内置计算器资源上限——``9**9**9`` 立即抛错，且一元负号不再被吞；

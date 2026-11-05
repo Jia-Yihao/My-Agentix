@@ -45,7 +45,7 @@ def diff_spec_fields(kept: "ToolSpec", incoming: "ToolSpec") -> Tuple[str, ...]:
     （甚至含凭据形态的串），把内容搬进启动日志是另一类事故。这条判据放在
     domain 层，是为了让 executor 与 registry 两个注册入口读**同一份**「什么算
     不同」——两份实现就是下一次「声明了什么 / 执行读到什么」各说一套的起点
-    （PROJECT_SPEC §24.2 G14）。
+    （项目实现手册 §24.2 G14）。
     """
     return tuple(
         item.name

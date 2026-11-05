@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 
 /**
- * 零依赖 Toast（Phase H · W6 B10）。
+ * 零依赖 Toast。
  *
  * 模块级单例队列 + `ToastHost` 挂根渲染；替换 `window.alert` 类打断式
  * 反馈（useKbModalChat 的失败提示等）。自动消失（默认 3s），`duration`

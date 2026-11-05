@@ -1,4 +1,4 @@
-"""Phase H·W7：OTel GenAI 语义属性 + Prometheus 指标标签基数守卫。
+"""OTel GenAI 语义属性 + Prometheus 指标标签基数守卫。
 
 - GenAI：``chat {model}`` span 命名、``gen_ai.*`` 请求/用量属性（两种
   usage 键名兼容、缺失不臆造）、span 网关与 invoke_with_breaker 接线；
@@ -121,7 +121,7 @@ def test_apply_genai_usage_explicit_params_win_over_usage_dict():
 
 
 # ---------------------------------------------------------------------------
-# genai_span 网关（spans.py 是业务唯一 span 入口，硬规则 12）
+# genai_span 网关（spans.py 是业务唯一 span 入口）
 # ---------------------------------------------------------------------------
 
 

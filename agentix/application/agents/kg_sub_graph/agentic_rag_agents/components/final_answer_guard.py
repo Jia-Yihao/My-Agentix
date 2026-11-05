@@ -15,7 +15,7 @@
 4. **流式契约（硬性契约 1）**：本节点是内部编排调用，``ainvoke`` **源头不转发
    config**——否则其 token 会以 ``final_answer_guard`` 节点名冒泡。纵使如此，
    ``ChatService._STREAM_FORWARD_NODES`` 白名单也不含本节点名（双保险）。
-5. **Phase H·W1 验证预算**：校验本身受三旋钮硬约束（``VERIFICATION_MAX_LLM_CALLS``
+5. **验证预算**：校验本身受三旋钮硬约束（``VERIFICATION_MAX_LLM_CALLS``
    按**本次答案**已尝试次数计、``VERIFICATION_TIMEOUT_MS`` 单次调用超时、
    ``VERIFICATION_TOKEN_BUDGET`` 按 count_tokens 粗估累计）；任一维度超预算
    ⇒ **fail-open 降级放行**（与既有校验失败降级同语义，steps 留痕），
@@ -60,7 +60,7 @@ def create_final_answer_guard(
         create_validate_final_answer_prompt_template()
         | llm.with_structured_output(ValidateFinalAnswerResponse)
     )
-    # Phase H·W1：token 预算台账（guard 实例级；0 = 不限额默认恒放行）。
+    # token 预算台账（guard 实例级；0 = 不限额默认恒放行）。
     token_spent = {"tokens": 0}
 
     async def final_answer_guard(state: OverallState) -> Dict[str, Any]:
@@ -68,7 +68,7 @@ def create_final_answer_guard(
         if not settings.KG_FINAL_ANSWER_VALIDATION:
             return {}
 
-        # -- Phase H·W1 预算 1/3：按本次答案的已尝试次数（state.steps 只读） --
+        # -- 预算 1/3：按本次答案的已尝试次数（state.steps 只读） --
         max_calls = int(getattr(settings, "VERIFICATION_MAX_LLM_CALLS", 1) or 0)
         if max_calls <= 0:
             return {"steps": ["final_answer_validation_budget"]}
@@ -88,7 +88,7 @@ def create_final_answer_guard(
             )
             return {"steps": ["final_answer_validation_budget"]}
 
-        # -- Phase H·W1 预算 2/3：累计 token（粗估口径，0 = 不限额） --
+        # -- 预算 2/3：累计 token（粗估口径，0 = 不限额） --
         token_budget = int(getattr(settings, "VERIFICATION_TOKEN_BUDGET", 0) or 0)
         if token_budget > 0 and token_spent["tokens"] >= token_budget:
             logger.warning(
@@ -108,7 +108,7 @@ def create_final_answer_guard(
             ],
         }
 
-        # -- Phase H·W1 预算 3/3：单次调用超时（0 = 不限时，与基线等价） --
+        # -- 预算 3/3：单次调用超时（0 = 不限时，与基线等价） --
         timeout_ms = int(getattr(settings, "VERIFICATION_TIMEOUT_MS", 1000) or 0)
         invocation = validate_chain.ainvoke(payload)
         if timeout_ms > 0:

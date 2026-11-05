@@ -1,4 +1,4 @@
-"""p115 · staging 配置矩阵改为部署物的生成物（PROJECT_SPEC §24.2 G13 的终态形态）。
+"""p115 · staging 配置矩阵改为部署物的生成物（项目实现手册 §24.2 G13 的终态形态）。
 
 G13 已经错过两次：runbook 那张「配置矩阵」是运维照着做的表，而它的 dev / staging 两列
 原先靠人从 `docker-compose.yml` 和 `docker/compose.override.staging.yml` 里抄。

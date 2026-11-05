@@ -1,4 +1,4 @@
-"""Phase H · W4：SSE 出口门控——token 帧合并 + 有界队列背压。
+"""SSE 出口门控——token 帧合并 + 有界队列背压。
 
 挂载点是 **HTTP 出口**（``interfaces/http/v1/chat.py::event_stream`` 与
 ``retrieval/api/routers/chat.py::sse_generator``），service 层帧语义、

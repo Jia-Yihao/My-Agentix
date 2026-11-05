@@ -363,7 +363,7 @@ function sendSuggestion(prompt: string) {
 type SendOutcome = "delivered" | "error" | "failed";
 
 /**
- * 流式主路径（Phase C1 接线）：POST /api/v1/chat/stream，逐 token 上屏，
+ * 流式主路径（接线）：POST /api/v1/chat/stream，逐 token 上屏，
  * 工具/路由元信息进气泡。任何网络/HTTP 层失败返回 "failed" 由调用方
  * 回退既有非流式契约（含降级 status/error_code 语义）。
  */

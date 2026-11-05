@@ -1,4 +1,4 @@
-"""Phase H·W2：纯 asyncio 在飞合并（SingleFlight）。
+"""纯 asyncio 在飞合并（SingleFlight）。
 
 同一 key 的并发 miss 只让第一个调用者（leader）真正执行 ``factory``，
 其余调用者（waiter）等在同一个 future 上共享其结果——检索 Redis 缓存

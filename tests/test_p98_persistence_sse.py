@@ -1,4 +1,4 @@
-"""Phase H·W4 持久化 + SSE 后端验收（p98）。
+"""持久化 + SSE 后端验收（p98）。
 
 覆盖规划 §4 W4 四项：
 1. 事件批写：flag-off 逐条直写（pipeline 未用 = 基线）、flag-on 满批/定时

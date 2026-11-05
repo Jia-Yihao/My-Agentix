@@ -1,7 +1,6 @@
 """A6 分层守卫定稿 p66——架构重构统一执行链 §6 十二条守卫的测试化收敛。
 
-方案文档：``docs/migration/架构重构_统一执行链方案_v2.md`` §6（守卫层）+ §7
-（守卫基线只减不增，豁免必须显式登记）。
+口径：守卫层十二条，守卫基线只减不增，豁免必须显式登记。
 
 12 条守卫 → 承载测试：
 
@@ -237,7 +236,7 @@ CAPABILITY_FORBIDDEN: tuple = (
 #: 唯一登记豁免（§7 批次评审口径）：``agentix/tools/gateway/executor.py`` 对
 #: ``agentix.policies.guardrails`` 的边——蓝图 §5 Tool Gateway 链本就含
 #: Guardrails 步（「经 Tool Gateway（唯一对外出口，Guardrails 打 Risk 级 …）」），
-#: PROJECT_SPEC §9.5 M3 注记「M6 清尾时同步调整守卫与 import」即指此边：
+#: 项目实现手册 §9.5 M3 注记「M6 清尾时同步调整守卫与 import」即指此边：
 #: 迁移期该 import 走 shim 转发以满足守卫，M6 删 shim 后改为**显式窄豁免**。
 #: 豁免精确到模块前缀；新增豁免一律走 §7 批次评审。
 TOOLS_GUARDRAILS_EDGE_ALLOWED: tuple = ("agentix.policies.guardrails",)

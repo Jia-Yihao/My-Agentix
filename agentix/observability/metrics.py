@@ -363,7 +363,7 @@ try:
     )
     
     # ============================================================
-    # Phase H · W0 性能真值指标
+    # 性能真值指标
     # ============================================================
     TTFT_LATENCY = Histogram(
         "agent_ttft_seconds",
@@ -401,7 +401,7 @@ try:
     )
 
     # ============================================================
-    # Phase H · W1 LLM 优化指标
+    # LLM 优化指标
     # ============================================================
     LLM_CALLS_SAVED = Counter(
         "llm_calls_saved_total",
@@ -424,7 +424,7 @@ try:
     )
 
     # ============================================================
-    # Phase H · W3 运行时治理指标
+    # 运行时治理指标
     # ============================================================
     ADMISSION_DECISIONS = Counter(
         "admission_decisions_total",
@@ -433,7 +433,7 @@ try:
     )
 
     # ============================================================
-    # Phase H · W4 持久化与 SSE 出口指标
+    # 持久化与 SSE 出口指标
     # ============================================================
     SSE_DROPPED_FRAMES = Counter(
         "sse_dropped_frames_total",
@@ -602,7 +602,7 @@ def record_llm_tokens(
 
 
 def record_ttft(duration: float) -> None:
-    """Phase H·W0：SSE 流首内容帧时延（TTFT），单位秒。T6 后为**主口径**（未走兜底的流）。"""
+    """SSE 流首内容帧时延（TTFT），单位秒。现为**主口径**（未走兜底的流）。"""
     TTFT_LATENCY.observe(max(0.0, duration))
 
 
@@ -636,12 +636,12 @@ def gateway_fallback_observed() -> bool:
 
 
 def record_agent_llm_call(role: str, status: str) -> None:
-    """Phase H·W0：按角色统计 LLM 调用数（role 为有界枚举，控基数）。"""
+    """按角色统计 LLM 调用数（role 为有界枚举，控基数）。"""
     AGENT_LLM_CALLS.labels(role=role or "unknown", status=status or "unknown").inc()
 
 
 def record_agent_llm_tokens(role: str, prompt_tokens: int, completion_tokens: int) -> None:
-    """Phase H·W0：按角色统计 LLM token 用量（prompt/completion 两个方向）。"""
+    """按角色统计 LLM token 用量（prompt/completion 两个方向）。"""
     label = role or "unknown"
     if prompt_tokens > 0:
         AGENT_LLM_TOKENS.labels(role=label, type="prompt").inc(prompt_tokens)
@@ -649,30 +649,30 @@ def record_agent_llm_tokens(role: str, prompt_tokens: int, completion_tokens: in
         AGENT_LLM_TOKENS.labels(role=label, type="completion").inc(completion_tokens)
 
 
-#: Phase H · W3：最近一次采样的 event-loop lag（负载阶梯输入；flag 关时
+#: 最近一次采样的 event-loop lag（负载阶梯输入；flag 关时
 #: 采样任务不启动、此值保持 0）。仅事件循环内单线程写读，无锁。
 _last_event_loop_lag: float = 0.0
 
 
 def get_last_event_loop_lag() -> float:
-    """Phase H · W3：读最近一次 lag 采样（秒；未采样 = 0.0）。"""
+    """读最近一次 lag 采样（秒；未采样 = 0.0）。"""
     return _last_event_loop_lag
 
 
 def record_event_loop_lag(lag: float) -> None:
-    """Phase H · W0：事件循环调度滞后（后台采样任务上报，flag 默认关）。"""
+    """事件循环调度滞后（后台采样任务上报，flag 默认关）。"""
     global _last_event_loop_lag
     _last_event_loop_lag = max(0.0, lag)
     EVENT_LOOP_LAG.observe(_last_event_loop_lag)
 
 
 def record_admission_decision(state: str) -> None:
-    """Phase H · W3：准入三态计数（state: admitted/queued/rejected）。"""
+    """准入三态计数（state: admitted/queued/rejected）。"""
     ADMISSION_DECISIONS.labels(state=state or "unknown").inc()
 
 
 def record_sse_dropped(reason: str = "backpressure") -> None:
-    """Phase H · W4：SSE 有界队列背压丢帧计数（终态帧永不丢）。"""
+    """SSE 有界队列背压丢帧计数（终态帧永不丢）。"""
     SSE_DROPPED_FRAMES.labels(reason=reason or "backpressure").inc()
 
 
@@ -763,7 +763,7 @@ _BOUNDED_TOKEN_RE = re.compile(r"[A-Za-z0-9_]{1,32}\Z")
 
 
 def record_llm_calls_saved(reason: str) -> None:
-    """Phase H·W1：确定性 fast-path 跳过的 LLM 意图分类调用数（reason 有界枚举）。"""
+    """确定性 fast-path 跳过的 LLM 意图分类调用数（reason 有界枚举）。"""
     # G21（U-A）：形状限界对非 str 实参会在 ``re.match`` 抛 TypeError——那属约定 2 的
     # 降级面；守卫后「跳过这一次计数 + warning 留痕」。词表内逐字透传与越界落 "other"
     # 的既有语义一字不变（见 tests/test_p172_contract_regressions.py 的既有断言）。
@@ -789,7 +789,7 @@ def record_routing_cache(result: str) -> None:
 
 
 def record_prompt_prefix_fingerprint(builder: str, prefix: str) -> None:
-    """Phase H·W1：静态 system prompt 前缀指纹（CRC32 → Gauge）。
+    """静态 system prompt 前缀指纹（CRC32 → Gauge）。
 
     前缀漂移在 Prometheus/Grafana 侧可见（同 builder 指纹突变 = 提示词
     静态段被改）；CRC32 < 2^32，float64 精确可表示，不丢精度。

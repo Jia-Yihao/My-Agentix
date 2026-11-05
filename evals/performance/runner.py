@@ -1,6 +1,6 @@
-"""Phase H·W0 性能基准 runner（离线、进程内假件，零网络/零 LLM/零 Docker）。
+"""性能基准 runner（离线、进程内假件，零网络/零 LLM/零 Docker）。
 
-规划出处：``docs/migration/PhaseH_高性能运行时优化规划.md`` §4 W0。
+配置键口径见 `docs/architecture/配置管理.md` §5。
 
 九类负载（queries.jsonl，覆盖 HTTP 热路径 / SSE 流 / 发射器 CPU 地板）：
 
@@ -265,7 +265,7 @@ def write_results(results: Dict[str, Any], out_path: Path = DEFAULT_OUT) -> Path
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Phase H W0 性能基准 runner（离线）")
+    parser = argparse.ArgumentParser(description="性能基准 runner（离线）")
     parser.add_argument(
         "--iterations",
         type=int,

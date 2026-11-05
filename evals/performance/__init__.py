@@ -1,4 +1,4 @@
-"""Phase H·W0 性能基准包（PhaseH_高性能运行时优化规划 §4 W0）。
+"""性能基准包。
 
 - ``queries.jsonl``：九类离线负载（HTTP / SSE 流 / 发射器 CPU）；
 - ``fakes.py``：进程内假件（零 LLM/网络/Docker）；

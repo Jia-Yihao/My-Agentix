@@ -248,7 +248,7 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_QUERY_REWRITE_ENABLED = _bool_env("RETRIEVAL_QUERY_REWRITE_ENABLED", "false")
     RETRIEVAL_HYDE_ENABLED = _bool_env("RETRIEVAL_HYDE_ENABLED", "false")
 
-    # Phase H·W2（PhaseH_高性能运行时优化规划 §4）：检索优化三闸 + 精排动态
+    # 检索优化三闸 + 精排动态
     # 跳过，全部默认关 ⇒ flag-off 与基线逐位等价（检索域 env 键沿既有惯例
     # 只进 .env.example 注释示例块，不入 配置管理.md/p41 名单）。
     RETRIEVAL_SINGLEFLIGHT_ENABLED = _bool_env("RETRIEVAL_SINGLEFLIGHT_ENABLED", "false")

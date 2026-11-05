@@ -422,7 +422,7 @@ def retrieve_docs_with_retry(
                 e,
             )
             if attempt < max_retries:
-                # Phase H · W3（RETRY_BUDGET_ENABLED，flag 关 = 原样重试）：
+                # 重试预算（RETRY_BUDGET_ENABLED，flag 关 = 原样重试）：
                 # 分类审计闸（仅瞬时性错误可重试）+ run 级共享预算扣减。
                 if bool(getattr(settings, "RETRY_BUDGET_ENABLED", False)):
                     from agentix.reliability.retry_budget import (
@@ -477,7 +477,7 @@ async def retrieve_scoped_docs_cached(
     R-P2-1（F2b-b）：``history`` 供多轮改写做意图补全（预检路径传入；工具/端口
     适配路径缺省为空 ⇒ 单轮意图补全）。改写/HyDE 两 flag 默认关 = 基线逐位等价。
 
-    Phase H·W2：``tenant_id`` 供缓存键租户分池（端口适配路径显式传入；其余
+    ``tenant_id`` 供缓存键租户分池（端口适配路径显式传入；其余
     路径缺省时从 ``session`` 查 KnowledgeBase，失败 fail-open 回 "default"）；
     在飞合并/自适应级联分别由 ``RETRIEVAL_SINGLEFLIGHT_ENABLED`` /
     ``RETRIEVAL_ADAPTIVE_ENABLED`` 门控（默认关 = 与基线逐位等价）。
@@ -681,7 +681,7 @@ async def retrieve_scoped_docs_cached(
 
             runner = _cascade_miss
 
-        # Phase H · W3：检索下游隔离舱（BULKHEAD_RETRIEVAL_SIZE=0 默认直通）。
+        # 检索下游隔离舱（BULKHEAD_RETRIEVAL_SIZE=0 默认直通）。
         # 包住 miss 计算本体：SingleFlight 等待方不占池位，只有 leader 执行。
         _runner_inner = runner
 
@@ -942,7 +942,7 @@ async def _stream_answer_impl(
             logger.debug("retrieval stream run finish skipped: %s", exc)
 
     try:
-        # Phase H · W3：准入三态（flag 关直通）；拒绝经既有 except
+        # 准入三态（flag 关直通）；拒绝经既有 except
         # AdmissionDenied fail-closed 上抛（HTTP 层映射 429）。
         from agentix.performance.admission import admission_wait
 

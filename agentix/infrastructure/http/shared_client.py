@@ -1,4 +1,4 @@
-"""Phase H · W3：共享 ``httpx.AsyncClient`` 生命周期（消灭 per-request 创建）。
+"""共享 ``httpx.AsyncClient`` 生命周期（消灭 per-request 创建）。
 
 ``SHARED_HTTP_MAX_CONNECTIONS``（默认 0 = 关）：
 

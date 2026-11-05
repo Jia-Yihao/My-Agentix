@@ -26,7 +26,7 @@ from agentix.domain.ports import CompactorPort
 
 __all__ = ["SimpleContextBuilder"]
 
-#: Phase H·W1：段级配额外置观测保留的头部字符数（与 ContextEngine 同值）
+#: 段级配额外置观测保留的头部字符数（与 ContextEngine 同值）
 _SEGMENT_ISOLATE_HEAD = 200
 
 
@@ -52,7 +52,7 @@ class SimpleContextBuilder:
         budget_tokens: int = 0,
     ) -> ContextSnapshot:
         static = "\n".join(self._rules)
-        # Phase H·W1 段级输出预算（TOOL_OUTPUT_BUDGET_TOKENS，默认 0=关）：
+        # 段级输出预算（TOOL_OUTPUT_BUDGET_TOKENS，默认 0=关）：
         # 与 ContextEngine 同语义——超配额观测整体外置为 obs:// 可取回引用
         # （复用既有 _isolate_ref / ArtifactStore 通道）而非截断；flag-off
         # 恒不计数，轨迹行与基线逐字节等价。

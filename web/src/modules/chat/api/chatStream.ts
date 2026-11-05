@@ -1,5 +1,5 @@
 /**
- * P1-4 前端最小流式接入（Phase C1 已由 ChatWidget 接线为主路径）。
+ * P1-4 前端最小流式接入（已由 ChatWidget 接线为主路径）。
  *
  * 后端 SSE 协议（每个事件一帧 `data: <ChatStreamChunk json>\n\n`）：
  *   - {"type":"metadata","metadata":{"status":"processing"}}

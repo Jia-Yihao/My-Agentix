@@ -1,6 +1,6 @@
-"""Phase H·W0 性能真值可观测性守卫（p92）。
+"""性能真值可观测性守卫（p92）。
 
-覆盖（PhaseH_高性能运行时优化规划 §4 W0）：
+覆盖：
 
 1. 指标助手：TTFT 直方图 / 角色 LLM 调用与 token 账本 / 事件循环滞后；
 2. HTTP 请求指标接线：RequestLoggingMiddleware → ``record_request``，
