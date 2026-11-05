@@ -452,7 +452,7 @@ class HitlPendingStore:
         判据只有两条：``status == pending``（已决行不得被二次裁决，fail-closed 语义
         不因超时而放宽）与 ``created_at <= cutoff_epoch``。与 :meth:`list_unresolved`
         同风格：只读、显式抛错、不在这层降级——读库失败如何被观察到由调用方决定
-        （桥侧 ``expire_overdue`` fail-open 只留 warning，纪律 2）。
+        （桥侧 ``expire_overdue`` fail-open 只留 warning，约定 2）。
 
         ``limit`` 是**单次扫描上限**（不是"最多只拒绝这么多"）：扫描是周期任务，
         积压超过一屏时下一轮接着扫，避免一次把进程内的库会话和事件循环按住。

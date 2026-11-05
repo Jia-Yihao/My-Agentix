@@ -178,7 +178,7 @@ def test_every_relationship_endpoint_resolves(assets) -> None:
 def test_node_columns_are_the_documented_schema(tmp_path) -> None:
     """生成物的列名必须落在 `测试数据域-本体Schema.md` §1.1 声明的属性集内。
 
-    口径**从文档解析**而不是抄进测试（纪律 7：被当核对基准的表不能是抄本）——
+    口径**从文档解析**而不是抄进测试（约定 7：被当核对基准的表不能是抄本）——
     抄本会和实现一起漂移，解析出来的基准不会。
     """
     doc = SCHEMA_DOC.read_text(encoding="utf-8")
@@ -371,7 +371,7 @@ def test_forward_reference_citations_are_not_dropped(assets) -> None:
     症状是 `articles_cited_by` 少答，不报错、不改结构，所以只能靠
     "以种子为基准重算期望边集"来钉。
 
-    期望值口径（纪律 7）：**从种子重算**，不把 286 抄进测试。
+    期望值口径（约定 7）：**从种子重算**，不把 286 抄进测试。
     """
     seed = json.loads(SEED_JSON.read_text(encoding="utf-8"))
 

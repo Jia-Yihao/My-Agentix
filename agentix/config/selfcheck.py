@@ -93,7 +93,7 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "LOG_LEVEL",
         # M2-1（拆 observability→retrieval 反向边）：`LOG_JSON_ENABLED` / `LOG_LEVEL` /
         # `TRAJECTORY_DIR` 三键的真源上提到 config.settings，前两个同时写进
-        # `.env.example`（纪律 4 ③）。不设 = 用代码默认值（JSON 日志开、根 logger
+        # `.env.example`（约定 4 ③）。不设 = 用代码默认值（JSON 日志开、根 logger
         # INFO），属合法省略 ⇒ 不登记进来就会被 `compare_env_files` 判成"示例有、
         # 本地缺"的缺项，启动自检刷 warning（`LOG_LEVEL` 本就在表内，见上一行）。
         # `TRAJECTORY_DIR` **刻意不登记**：它在 `.env.example` 里是**注释行**——默认值是按

@@ -6,7 +6,7 @@
 节点注册协议（M3-1，`agentix/orchestration/node_registry.py`）②`application` 装配期
 注册全部 handler（**本文件**）③建图/分派文件只接收注册表、不再顶层 import 具体 handler
 （M3-2 起的拆边批次）。第②步的落点必须只有这一个文件：哪些名字、什么形态进入注册表，
-是编排层解析节点的唯一事实（`AGENTS.md` 纪律 6 ④：同一个判定不许两个源）。
+是编排层解析节点的唯一事实（`CONTRIBUTING.md` 的工程约定 6 ④：同一个判定不许两个源）。
 
 自 **M3-5a** 起，本文件同时是**非节点能力注入位**（`agentix/orchestration/capabilities.py`）
 的唯一写入点：编排层要用的应用侧能力（内容外置 `offload_content`、产物存储

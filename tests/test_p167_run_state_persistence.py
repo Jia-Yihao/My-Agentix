@@ -1,6 +1,6 @@
 """P167（T21）：控制平面运行态落库 + GET 跨重启可查。
 
-对应规划 `docs/design/审批与中断恢复优化规划.md` T21 卡（验收①–④）与项目级口径
+验收①–④，与项目级口径
 `docs/architecture/配置管理.md` §5 的 `RUN_STATE_PERSIST_ENABLED` 行：
 
 ① run **创建**与**状态迁移**（pending/running/终态，含取消）落库，终态必须落；
@@ -55,7 +55,7 @@ from agentix.runtime.control_plane import (
 
 #: flag-off 时 `ControlPlane.stats()` 的基线键集合（新增键只在库面装配时出现）
 BASELINE_STATS_KEYS = {"total", "active", "by_state", "max_runs"}
-#: 库面装配后**多出来**的计数键（无高基数 label，纪律 3）
+#: 库面装配后**多出来**的计数键（无高基数 label，约定 3）
 PERSIST_STATS_KEYS = {
     "persist_queued",
     "persist_written",
@@ -401,7 +401,7 @@ class TestFailOpen:
 
 
 # ---------------------------------------------------------------------------
-# 4. 验收④：flag-off 逐位等价（纪律 1）
+# 4. 验收④：flag-off 逐位等价（约定 1）
 # ---------------------------------------------------------------------------
 
 

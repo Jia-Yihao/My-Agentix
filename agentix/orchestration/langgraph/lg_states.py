@@ -54,7 +54,7 @@ class TaskRouter(Router):
 class CodeRouter(Router):
     """P2（代码执行）：在 Router 白名单上追加 ``code-query`` 意图。
 
-    与 :class:`TaskRouter` 同款纪律：不动基类字段、不放宽基类 ``type``
+    与 :class:`TaskRouter` 同款不动基类字段、不放宽基类 ``type``
     字面量，只在**子类**上加一个取值。仅当 ``settings.CODE_EXEC_ENABLED=true``
     时被 analyze 使用（结构化输出 schema / 字面量校验都换成本类）；flag-off 时
     生产链路仍只构造基类 ``Router``，其 ``type`` 字面量与基线**字节等价**。
@@ -114,7 +114,7 @@ class _KbChannelParams(BaseModel):
 # 1. ``routing_cache.generation_token()`` 拿 ``__name__`` 当换代成分——类名必须
 #    稳定可预期，显式声明让四个名字在文件里可直接读到，动态造名容易与令牌漂移；
 # 2. 混入 ``_KbChannelParams`` 后 ``type`` 白名单**继承自对应基线类**，不必再抄
-#    四份 8 项 ``Literal``（纪律 6 ④：同一个判定不许两个源——白名单也一样）；
+#    四份 8 项 ``Literal``（约定 6 ④：同一个判定不许两个源——白名单也一样）；
 # 3. 结构化输出的 JSON schema 由字段声明决定，显式类对审查者是静态可读的。
 class SingleLayerRouter(_KbChannelParams, Router):
     """单层路由基线变体：基线 7 类意图 + KB 通道参数。"""

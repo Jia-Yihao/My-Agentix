@@ -346,7 +346,7 @@ class TestEvolutionRunner:
         assert out["canary_pct"] == 10.0
 
     def test_missing_prefix_baseline_fails_closed(self, tmp_path, capsys):
-        # Phase 17 纪律：真机基线缺失 → not_enforced ≠ 通过（拒绝伪造）
+        # Phase 17 真机基线缺失 → not_enforced ≠ 通过（拒绝伪造）
         (tmp_path / "qbase.json").write_text(json.dumps({"citation_accuracy": 0.9}), encoding="utf-8")
         (tmp_path / "qcur.json").write_text(json.dumps({"citation_accuracy": 0.93}), encoding="utf-8")
         code = evolution_main(

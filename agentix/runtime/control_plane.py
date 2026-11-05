@@ -24,7 +24,7 @@
 迁移经**有界后台写队列 + 单写线程**落 ``agent_run_states``，使 ``GET /agents/runs``
 在重启后仍可查历史终态。装配判据唯一源 :func:`resolve_run_state_store`（flag-off
 连持久层都不 import、不建表、不读写）。写库失败 **fail-open**：只 warning +
-``stats().persist_errors`` 计数，运行照跑、内存态不回滚（纪律 2）。
+``stats().persist_errors`` 计数，运行照跑、内存态不回滚（约定 2）。
 """
 
 from __future__ import annotations
@@ -171,7 +171,7 @@ class _RunStateWriter:
     多次迁移」串成序（spawn → running → 终态 的写入顺序天然正确）。
 
     **有界**：队列超过 ``max_queue`` 时**丢最旧并计数**——运行态观测面不能因为库慢
-    把进程内存撑穿（纪律 2 的 fail-open 方向是「少记一条」而不是「拖垮主链」）。
+    把进程内存撑穿（约定 2 的 fail-open 方向是「少记一条」而不是「拖垮主链」）。
 
     失败姿态：``save_run`` 抛错只 ``logger.warning`` + ``errors += 1``；**绝不**向上
     冒泡、**绝不**回滚内存态（内存面才是运行的第一步真相，库是它的投影）。
@@ -450,7 +450,7 @@ class ControlPlane:
         }
         if self._writer is not None:
             # 计数键**只在 flag-on 时存在**：flag-off 的 stats() 键集合必须与基线
-            # 逐字相同（纪律 1），所以不预先塞 0。无高基数 label（纪律 3）。
+            # 逐字相同（约定 1），所以不预先塞 0。无高基数 label（约定 3）。
             snapshot = self._writer.snapshot()
             stats.update(
                 {
@@ -528,9 +528,9 @@ def resolve_run_state_store() -> Optional[Any]:
     """T21 装配判定**唯一源**：``RUN_STATE_PERSIST_ENABLED=false``（默认）恒 ``None``。
 
     flag-off 时连 store 模块都不 import——不触 sqlalchemy、不建池、不建表、不读写
-    新表（纪律 1 的「逐位等价」要求装配点本身零新副作用，而不是「建了但不用」）。
+    新表（约定 1 的「逐位等价」要求装配点本身零新副作用，而不是「建了但不用」）。
     flag 判据只在这里读一次；``get_control_plane``、测试注入与 ``runs.py`` 的
-    「库里有没有面」判定都只认这一处（纪律 6 ④：同一个判定不许两个源）。
+    「库里有没有面」判定都只认这一处（约定 6 ④：同一个判定不许两个源）。
     """
     from agentix.config import settings
 

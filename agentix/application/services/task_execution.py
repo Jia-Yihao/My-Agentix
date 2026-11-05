@@ -119,10 +119,10 @@ def _executable_menu() -> Dict[str, Any]:
     **不进 LLM 可见工具面的工具无条件排除**：菜单会被写进拆解提示词的
     ``{menu}``，模型看得见就能点名调用——``code_execute`` 出现在这张菜单里
     等于把"跑任意代码"变成一次普通的工具选择（口径见
-    ``.qoder/rules/code-exec.md`` §4）。判据走**唯一真源**
+    ``docs/architecture/adr/0007-执行沙箱端口.md`` §4）。判据走**唯一真源**
     ``agentix/tools/definitions.py::llm_visible_specs``（不依赖任何 flag 组合：
     flag-on / flag-off、``TASK_EXEC_ENABLED`` 开 / 关，结果一致）——
-    本地另写一份工具名判据就会与真源漂移（纪律 6 ④：同一个判定不许两个源）。
+    本地另写一份工具名判据就会与真源漂移（约定 6 ④：同一个判定不许两个源）。
     """
     from agentix.tools.definitions import llm_visible_specs
     from agentix.tools.definitions import registry as tool_registry
@@ -363,7 +363,7 @@ def _record_in_loop_decision(decision: str) -> None:
     重试仍失败）⇒ ``rejected``。
     打点只记账，不改变审批语义（未批准仍是 fail-closed 不放行）。
 
-    观测故障不得影响主链（纪律 2）：捕获后降级为 debug 留痕。
+    观测故障不得影响主链（约定 2）：捕获后降级为 debug 留痕。
     """
     try:
         record_approval_decision(target_type="tool", decision=decision)
@@ -460,7 +460,7 @@ async def run_task_execution(
             done_steps = await asyncio.to_thread(
                 ledger.load_scope, session_id, step_scope
             )
-        except Exception as exc:  # noqa: BLE001 - 辅助子系统故障只降级（纪律 2）
+        except Exception as exc:  # noqa: BLE001 - 辅助子系统故障只降级（约定 2）
             logger.warning(
                 "step ledger load failed; running without replay protection: {}", exc
             )
@@ -629,7 +629,7 @@ async def run_task_execution(
                 # T23：流内裁决经桥（``/ops/hitl/approvals/{id}`` → ``bridge.decide``）
                 # 已经把批准落在闸门上；此处再 ``gate.approve`` 会因「已非 PENDING」
                 # 返回 False，把一次真批准的恢复误判成"批准未落账"。判据仍是闸门
-                # 簿记这一处（纪律 6 ④），不另建流侧裁决缓存。
+                # 簿记这一处（约定 6 ④），不另建流侧裁决缓存。
                 recorded = gate.approve(
                     str(payload["request_id"]),
                     by="in_loop_resume",
@@ -701,7 +701,7 @@ async def run_task_execution(
                     await asyncio.to_thread(
                         ledger.mark_many, session_id, step_scope, entries
                     )
-                except Exception as exc:  # noqa: BLE001 - 辅助子系统故障只降级（纪律 2）
+                except Exception as exc:  # noqa: BLE001 - 辅助子系统故障只降级（约定 2）
                     logger.warning(
                         "step ledger mark failed; a later resume may replay these steps: {}",
                         exc,

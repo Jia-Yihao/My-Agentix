@@ -5,7 +5,7 @@
 ``Table.create(checkfirst=True)`` 幂等惯例（``ensure_ready``），不引入迁移框架。
 
 **同步实现、显式抛错**（同 T18）：写/读失败如何被观察到由调用方决定——
-``ControlPlane`` 的后台写线程负责 warning + ``stats().persist_errors`` 计数（纪律 2
+``ControlPlane`` 的后台写线程负责 warning + ``stats().persist_errors`` 计数（约定 2
 fail-open：写库失败绝不阻断运行、绝不回滚内存态），HTTP 读路径负责 warning 后回落
 内存面。降级判据只在调用方一处，本层不吞异常。
 

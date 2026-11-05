@@ -54,8 +54,8 @@ class RunEventEmitter:
         self._ttft_s: Optional[float] = None
         self._retrieval_ms: Optional[float] = None
         # T6：流开始即开本流的「兜底链事实」槽——判定由回退链自身写入
-        # （model_gateway → record_gateway_fallback），发射器只读不判（纪律 6 ④）。
-        # 开槽失败 ⇒ 降级为「无事实」（归因回落主口径），留痕不打挂帧流（纪律 2）。
+        # （model_gateway → record_gateway_fallback），发射器只读不判（约定 6 ④）。
+        # 开槽失败 ⇒ 降级为「无事实」（归因回落主口径），留痕不打挂帧流（约定 2）。
         try:
             from agentix.observability.metrics import begin_gateway_fallback_fact
 
@@ -101,7 +101,7 @@ class RunEventEmitter:
 
                     # T6：混采拆分——回退链已导出兜底事实的流，样本进
                     # agent_ttft_fallback_seconds；主直方图只记主口径。
-                    # 「是否兜底」读的是链自身写入的事实，这里不再判定（纪律 6 ④）。
+                    # 「是否兜底」读的是链自身写入的事实，这里不再判定（约定 6 ④）。
                     if gateway_fallback_observed():
                         record_ttft_fallback(self._ttft_s)
                     else:

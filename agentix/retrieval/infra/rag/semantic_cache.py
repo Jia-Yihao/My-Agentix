@@ -7,10 +7,10 @@
 
 口径六条（每条都对应一处不肯妥协的实现选择，逐条有守卫用例）
 ----------------------------------------------------------------
-1. **默认关**（AGENTS.md 纪律 1）：``SEMANTIC_CACHE_ENABLED=false`` 时
+1. **默认关**（工程约定 1）：``SEMANTIC_CACHE_ENABLED=false`` 时
    :func:`semantic_recall_peek` 在**构造 embeddings 之前**就返回 ``None`` ⇒ 不建客户端、
    不发 embedding。等价性不是措辞：守卫把 ``create_embeddings`` 换成"一调用就 raise"的桩。
-2. **τ 只有一个源**（纪律 6 ④）：相似度与 τ 的比较只发生在 :func:`best_match` 里，
+2. **τ 只有一个源**（约定 6 ④）：相似度与 τ 的比较只发生在 :func:`best_match` 里，
    τ 只从 ``settings.SEMANTIC_CACHE_TAU`` 读一次。调用方拿到 :class:`SemanticPeek`
    之后不许再自己比分数——再判一次就会出现"命中"与"看起来命中"两本账。
 3. **权限/租户隔离是结构性的**：条目按 bucket 分桶，bucket 由调用方从**与精确键同一个**
@@ -21,7 +21,7 @@
 4. **向量空间必须同源**：bucket 末尾带 embedding 模型名（``|m:<model>``）。换模型后新旧
    向量不在同一空间，共池就是拿余弦的**数值**去比**两把不同的尺**——最坏的形态是静默命中
    错答案，而不是报错。
-5. **fail-open**（纪律 2）：embedding 失败 / 维度不符 / 载荷坏 / 打点炸，全部按"未命中"
+5. **fail-open**（约定 2）：embedding 失败 / 维度不符 / 载荷坏 / 打点炸，全部按"未命中"
    处理并留一条 ``logger.warning``；缓存是加速件，没有任何资格让一次查询失败。
 6. **有界**：每个 bucket 至多 :data:`MAX_ENTRIES_PER_BUCKET` 条（常量，不占配置面，理由见
    该常量注释），并按 ``SEMANTIC_CACHE_TTL_SECONDS`` 过期。进程内、每 worker 各持一份 ⇒
@@ -31,7 +31,7 @@
 为什么复用 ``agentix.domain.policies.memory_recall.cosine_similarity`` 而不是自己写一份：
 全仓已经有两处余弦实现（memory_recall 版把负值截 0、维度不符返回 0.0；
 ``redis_cache._cosine_similarity`` 版不截负值，且维度不符时被 ``zip`` 静默按短边算）。
-第三份实现就是纪律 6 ④ 说的"同一个判定两个源"。memory_recall 版的两条语义恰好都是本模块
+第三份实现就是约定 6 ④ 说的"同一个判定两个源"。memory_recall 版的两条语义恰好都是本模块
 要的：**维度不符永不命中**（换模型/被截断的向量不该命中），**负相似度不命中**（τ 接近 1，
 截 0 无副作用）。那处既有的重复登记在路线图 §2 E7 的残余项里，不在本批顺手合并——
 ``redis_cache`` 那个类至今没接线，改它的数值口径没有可验证的收益。
@@ -57,7 +57,7 @@ DEFAULT_TAU = 0.95
 DEFAULT_TTL_SECONDS = 120
 
 #: 每个 bucket 的条目上限。**刻意不是配置键**：它防的是"长尾问法把内存吃光"，
-#: 与运维想调的行为无关；开一个键就多一处要五处同步的面（纪律 4）。
+#: 与运维想调的行为无关；开一个键就多一处要五处同步的面（约定 4）。
 #: 量级：1024 维 float 向量 × 64 条 ≈ 512KB/bucket（不含文档载荷）。
 MAX_ENTRIES_PER_BUCKET = 64
 
@@ -256,7 +256,7 @@ def semantic_recall_stats() -> dict[str, int]:
 
 
 def _config() -> dict[str, Any]:
-    """读取本模块需要的配置值——**只在这里读 settings**（纪律 6 ④）。"""
+    """读取本模块需要的配置值——**只在这里读 settings**（约定 6 ④）。"""
     from agentix.retrieval.settings import settings
 
     return {
@@ -350,7 +350,7 @@ def semantic_recall_peek(bucket_scope: str, query: str) -> SemanticPeek | None:
     try:
         embeddings = _embeddings_or_none()
         vector = [float(x) for x in embeddings.embed_query(query)]
-    except Exception as exc:  # noqa: BLE001 - 拿不到向量就当这层缓存不存在（纪律 2）
+    except Exception as exc:  # noqa: BLE001 - 拿不到向量就当这层缓存不存在（约定 2）
         _degraded(f"embedding unavailable: {type(exc).__name__}: {exc}")
         return None
     if not vector:
@@ -387,6 +387,6 @@ def semantic_remember(peek: SemanticPeek | None, payload: str) -> bool:
         return False
     try:
         return _CACHE.store(peek.bucket, peek.vector, payload, ttl_seconds=config["ttl_seconds"])
-    except Exception as exc:  # noqa: BLE001 - 写失败只影响下次能不能省（纪律 2）
+    except Exception as exc:  # noqa: BLE001 - 写失败只影响下次能不能省（约定 2）
         _degraded(f"store failed: {type(exc).__name__}: {exc}")
         return False

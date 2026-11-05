@@ -12,7 +12,7 @@ GroundingValidator 回答的问题不是"引用对不对"（那是 CitationValid
 本次检索证据池做字符 bigram 包含度比对，产出 grounding score 与
 未锚定句列表。
 
-v1 设计纪律：
+v1 设计
 - **纯函数、零 LLM 调用**：确定性、可解释、毫秒级——语义级 grounding
   （NLI / entailment）属后续演进，不在 v1；
 - **观测模式**：调用方（`_post_process_and_persist`）只记录报告与低分

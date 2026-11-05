@@ -5,7 +5,7 @@
 ② merge_cards：去重（confidence 取 max）/冲突（B1·M-P0-1 **只标记不覆写**：version+1 + conflicts 行）/共存/纯函数不改性
 ③ SemanticMemoryStore：存取/排序/清空（fake redis）
 ④ 接线面：LongTermMemory.store_summary 提取卡片 + get_context_for_query 注入
-⑤ 四层映射纪律：MEMORY_CARDS_ENABLED 默认开但挂 MEMORY_CONTEXT_ENABLED 之下
+⑤ 四层映射MEMORY_CARDS_ENABLED 默认开但挂 MEMORY_CONTEXT_ENABLED 之下
 """
 
 from __future__ import annotations

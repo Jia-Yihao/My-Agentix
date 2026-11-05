@@ -11,7 +11,7 @@
    **顶层**（module body 直接子节点）对 8 个被壳替代的 handler 模块的 import
    **恰 0 条**（M3-5b 之前唯一的例外是 `router._ensure_router` 辅助函数位，
    那条边已随本批拆掉——按「名字集合」显式放行的口子仍在，放行名单为空）。
-2. **签名同源守卫（AGENTS.md 纪律 6 ④ 的兜底）**：10 个壳逐个
+2. **签名同源守卫（工程约定 6 ④ 的兜底）**：10 个壳逐个
    `inspect.signature(壳)` 与 `inspect.signature(node_registry.resolve(键))`
    **逐字相等**（参数名、kind、keyword-only、默认值、求值后的注解）；异步形态
    用 `node_registry.is_awaitable_result` 与注册项 `awaits` 对账（判据与注册表
@@ -289,7 +289,7 @@ class TestShellSignatures:
 
     @pytest.mark.parametrize("shell_name", sorted(SHELL_TO_KEY))
     def test_shell_async_form_matches_registered_awaits(self, shell_name: str) -> None:
-        """异步形态与注册项 `awaits` 对账，判据用 `is_awaitable_result`（纪律 6 ④）。
+        """异步形态与注册项 `awaits` 对账，判据用 `is_awaitable_result`（约定 6 ④）。
 
         对真身做一次**不执行**的探测：异步函数拿到的只是未运行的协程对象
         （零副作用，用完即关）；同步真身（route_query）按登记形态只带 state，

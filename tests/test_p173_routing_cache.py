@@ -1,12 +1,11 @@
 """p173——T8「路由结果跨请求缓存 + 扩 fast-path 覆盖面」验收。
 
-任务卡：``docs/design/审批与中断恢复优化规划.md`` §4.3 T8（第 295-310 行）。
 口径：``agentix/application/agents/routing_cache.py`` 模块 docstring +
 ``agentix/config/settings.py::ROUTING_CACHE_ENABLED``。
 
 覆盖面与验收口径（按任务卡 ①–⑤ + 三条必须自证的命题）：
 
-1. ``TestFlagDefault``——新 flag 默认关（纪律 1）。
+1. ``TestFlagDefault``——新 flag 默认关（约定 1）。
 2. ``TestFlagOffEquivalence``——flag-off **逐位等价**：
    ① 缓存模块**没有被 import**（``sys.modules`` 里查不到）；
    ② ``routing_cache_total`` 三个取值零增量；
@@ -175,7 +174,7 @@ def _prometheus_available() -> bool:
 
     判据取自指标模块自身的结构：``_NoopMetric`` 只在 ``prometheus_client``
     导入失败的那个 ``except`` 分支里定义，因此"存在这个类"就等于"当前是兜底态"。
-    不另写一份 import 探测（纪律 6 ④：判定不许两个源）。
+    不另写一份 import 探测（约定 6 ④：判定不许两个源）。
     """
     return not hasattr(metrics_mod, "_NoopMetric")
 
@@ -190,7 +189,7 @@ class TestFlagDefault:
         assert app_settings.ROUTING_CACHE_ENABLED is False
 
     def test_module_constants_are_fixed(self):
-        """TTL / 容量是模块常量，**刻意不新增配置键**（纪律 4 的同步面越窄越好）。"""
+        """TTL / 容量是模块常量，**刻意不新增配置键**（约定 4 的同步面越窄越好）。"""
         mod = _cache_mod()
         assert mod._TTL_S == 300.0
         assert mod._MAX_ENTRIES == 1024
@@ -835,7 +834,7 @@ class TestTierRoutingGeneration:
 
 
 # ===========================================================================
-# 6) fail-open（纪律 2）
+# 6) fail-open（约定 2）
 # ===========================================================================
 
 
@@ -982,7 +981,7 @@ class TestObservability:
         assert metrics_mod.ROUTING_CACHE_RESULT_VALUES == frozenset({"hit", "miss", "error"})
 
     def test_out_of_enum_label_falls_back_to_other(self):
-        """表外取值落 ``other``：指标基数由枚举封死（纪律 3）。"""
+        """表外取值落 ``other``：指标基数由枚举封死（约定 3）。"""
         if not _prometheus_available():
             pytest.skip("prometheus_client 不可用，指标断言跳过")
         from prometheus_client import REGISTRY

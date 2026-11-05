@@ -21,7 +21,7 @@ from agentix.domain.tool.spec import (  # noqa: F401
 
 #: **不进 LLM 可见工具面**的工具名（**唯一真源**）。
 #:
-#: 口径见 ``.qoder/rules/code-exec.md`` §4：code exec 工具是**执行面**——
+#: 口径见 ``docs/architecture/adr/0007-执行沙箱端口.md`` §4：code exec 工具是**执行面**——
 #: 由 ``code_agent`` 节点直接经 ``ToolExecutor.execute`` 调用，不交给模型自由挑选
 #: （把它挂进工具面等于把"跑任意代码"变成一次普通的工具选择）。
 #:

@@ -1,15 +1,15 @@
 """p176——T30-2「单层路由收敛为一层（flag-on 分支）」验收。
 
-任务卡：``docs/design/审批与中断恢复优化规划.md`` §4.3 T30 卡 + 卡内 ⑦ 的
+T30 + 卡内 ⑦ 的
 A1–A7 归属表（已裁决：**只动 A1（L1 意图分类）与 A3（KB 检索路由）**，
 A2/A4a/A4b/A5/A7 保留原样，A6 未接线）。
 口径：``agentix/config/settings.py::ROUTING_SINGLE_LAYER_ENABLED``（默认关）、
-``.qoder/rules/task-order.md``（纪律 1 flag-off 逐位等价）。
+``.qoder/rules/task-order.md``（约定 1 flag-off 逐位等价）。
 
 覆盖面与验收口径
 ----------------
 
-1. ``TestFlagOffEquivalence``——flag-off **逐位等价**（纪律 1）：
+1. ``TestFlagOffEquivalence``——flag-off **逐位等价**（约定 1）：
    ① ``_router_class(a, b, False)`` 与既有四类**同一对象**；
    ② ``_router_prompt_text(a, b, False)`` 与既有拼接结果**逐字节相同**，
       三项全关时逐字节等于 ``ROUTER_SYSTEM_PROMPT``；
@@ -182,13 +182,13 @@ def _clean_routing_flags(monkeypatch):
 
 
 # ===========================================================================
-# 1) flag-off 逐位等价（纪律 1）
+# 1) flag-off 逐位等价（约定 1）
 # ===========================================================================
 
 
 class TestFlagOffEquivalence:
     def test_new_key_default_is_off(self):
-        """业务总闸默认关（纪律 1）：钉**字段声明的默认值**，不吃宿主机 .env。"""
+        """业务总闸默认关（约定 1）：钉**字段声明的默认值**，不吃宿主机 .env。"""
         assert type(settings).model_fields["ROUTING_SINGLE_LAYER_ENABLED"].default is False
 
     def test_exec_flags_is_three_booleans_all_off(self):

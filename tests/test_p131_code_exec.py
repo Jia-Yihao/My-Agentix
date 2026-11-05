@@ -28,7 +28,7 @@
    不在本文件另立平台判点；
 9. **单文件条数**：文档里写的「p131 共 N 条」必须等于**这一轮真实的采集**条数
    （本文件涨条数时，README / CHANGELOG / runbook / PROJECT_SPEC 里的手抄数字会
-   同时腐烂，而全量回归一个字都不红——纪律 7 把它落到用例计数上）。
+   同时腐烂，而全量回归一个字都不红——约定 7 把它落到用例计数上）。
 
 另有两组"契约级"守卫（防的是**形态退化**，不是行为）：墙内侧运行时的 import 面
 必须只有标准库、handler 必须能按 ``module``+``qualname`` 跨进程重建。
@@ -84,7 +84,7 @@ from agentix.tools.gateway import executor as executor_mod
 from agentix.tools.gateway.executor import ToolResult, get_tool_executor, reset_tool_executor
 from agentix.tools.sandbox import RLIMIT_NPROC, probe_subprocess_caps
 
-#: skip 判据必须与执行点的判定同源（纪律 6 ④）：读 ``probe_subprocess_caps()``
+#: skip 判据必须与执行点的判定同源（约定 6 ④）：读 ``probe_subprocess_caps()``
 #: 的真值，而不是在本文件里另立一个"这台机器是不是 POSIX"的判点。
 _CAPS = probe_subprocess_caps()
 POSIX_ONLY = pytest.mark.skipif(
@@ -92,7 +92,7 @@ POSIX_ONLY = pytest.mark.skipif(
     reason=f"subprocess 隔离档要本机探测通过才谈得上；missing={_CAPS['missing']}",
 )
 
-#: ``PR_SET_PDEATHSIG`` 的 skip 判据同样必须与**执行点**同源（纪律 6 ④）：读
+#: ``PR_SET_PDEATHSIG`` 的 skip 判据同样必须与**执行点**同源（约定 6 ④）：读
 #: ``agentix.code_exec_runtime.parent_death_signal_supported()`` 的真值——那正是
 #: 执行点自己的能力探测（``_LIBC`` 取不到 ⇒ 静默降级 ⇒ 这条承诺本就不成立）。
 #: **不在本文件另写一份"是不是 Linux"**：判点分家就会出现"守卫在容器里被数成 0 条"
@@ -399,7 +399,7 @@ class TestLlmVisibleSurfaceSingleSource:
 
     上一轮只堵了任务拆解菜单那一条路；本组钉的是两件事：
 
-    1. **同源**（纪律 6 ④）：判定集中在
+    1. **同源**（约定 6 ④）：判定集中在
        ``agentix/tools/definitions.py::NON_LLM_VISIBLE_TOOL_NAMES``，
        各拼装点不许另立一份（本地按名字排除 ⇒ 改一处漏一处）；
     2. **拼装点全覆盖**：``code_execute`` 的 spec 会被 ``register_handler``
@@ -513,7 +513,7 @@ def _declared_risk_levels() -> dict:
     「非 LLM 可见工具不得声明成 L0」，而 MCP 导出面读的是**注册表** ⇒ 取值必须
     以注册表为准，声明清单只作**补齐**（有些工具只在显式清单里出现）。
     反过来（声明清单优先）就会读到 MCP 导出面根本不读的那一份 ⇒ 守卫与被守卫
-    分家，两边各说各话（纪律 6 ④ 的不同源形态）。
+    分家，两边各说各话（约定 6 ④ 的不同源形态）。
     """
     levels: dict = {}
     levels.update(_declaration_risk_levels())
@@ -563,7 +563,7 @@ class TestNonLlmVisibleToolsAreNotL0:
         conflicts = _risk_level_conflicts()
         assert not conflicts, (
             f"注册表与声明清单的 risk_level 漂移了：{conflicts} ⇒ 守卫读到的"
-            "取值与 MCP 导出面读的不是同一份（纪律 6 ④：同一个判定不许两个源）"
+            "取值与 MCP 导出面读的不是同一份（约定 6 ④：同一个判定不许两个源）"
         )
         levels = _declared_risk_levels()
         unresolved = sorted(NON_LLM_VISIBLE_TOOL_NAMES - set(levels))
@@ -1111,7 +1111,7 @@ P131_COUNT_CLAIM = re.compile(r"p131 共 (\d+) 条")
 #: 会复述本文件用例数的文档。**为什么要有守卫**（N7）：套件总数有
 #: ``tests/test_p41_doc_consistency.py::TestTestCountHasSingleSource`` 盯着，
 #: **单文件条数没有** ⇒ 本文件从 21 条涨到 38 条时，README / CHANGELOG / runbook /
-#: PROJECT_SPEC 里那几处手抄数字会同时腐烂，而全量回归一个字都没红（纪律 7：
+#: PROJECT_SPEC 里那几处手抄数字会同时腐烂，而全量回归一个字都没红（约定 7：
 #: "被当核对基准的表必须是生成物，不是抄本"——这条把它落到用例计数上）。
 #: **不含** ``docs/工程口径日志.md``：那是历史流水账（记的是"当时那轮"的读数），
 #: 按历史陈述保留，不当当前声明去核；历史段落一律不写"共 N 条"这个短语。
@@ -1172,7 +1172,7 @@ def _collected_file_name(item: object) -> str:
     采集侧路径却是 `/repo/tests/x.py` ⇒ 两者分家。更要命的是 POSIX 上反斜杠**不是**
     分隔符，`Path(r"D:\…\x.py").name` 返回**整条字符串**，于是本文件被数成 0 条：
     守卫红在"取证流程"上，而不是它本该核的"文档"上。
-    `nodeid` 由 pytest 用 `/` 拼出、相对 rootdir，两平台同形 ⇒ 只有一个身份源（纪律 6 ④）。
+    `nodeid` 由 pytest 用 `/` 拼出、相对 rootdir，两平台同形 ⇒ 只有一个身份源（约定 6 ④）。
     """
     return PurePosixPath(str(item.nodeid).split("::", 1)[0]).name  # type: ignore[attr-defined]
 
@@ -1182,7 +1182,7 @@ def test_docs_declaring_this_files_case_count_match_the_live_collection(request)
 
     取值口径刻意不依赖 `-rs` 的输出，也不另跑一遍 `--collect-only` 子进程：
     `session.items` 就是产出终端那行"N passed / M skipped"的同一份清单，
-    用它现算 ⇒ 文档核的是"执行链真用到的东西"，而不是第二套算法（纪律 6 ④）。
+    用它现算 ⇒ 文档核的是"执行链真用到的东西"，而不是第二套算法（约定 6 ④）。
 
     采集被人为缩窄时**响亮跳过**并说明原因：`-k` / 指定 nodeid / `--lf` / `--deselect`
     都会让 `session.items` 只剩局部，那种时候拿它当基准去核文档反而是错的

@@ -238,7 +238,7 @@ class _RecordingModel:
         static = STATIC_CALL_POINTS.get(self.key)
         if static is None:
             # 静态表没覆盖到的（本文件里只有 L1 与 KB 子图两类）退回栈归因——
-            # 栈拿得到的帧本身就是生产调用点，不需要另编一份映射（纪律 6 ④）。
+            # 栈拿得到的帧本身就是生产调用点，不需要另编一份映射（约定 6 ④）。
             static = f"栈归因：{self.frame_site}"
         return (
             f"      #{idx} schema={self.schema:<20} 帧={self.frame_site:<62} "

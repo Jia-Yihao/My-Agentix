@@ -1,6 +1,6 @@
 """P132：checkpointer 的 fail-closed 开关（Phase K 任务 1）测试。
 
-覆盖（口径见 docs/migration/PhaseK_HITL与恢复链断点收口实施计划.md 任务 1）：
+覆盖：
 - flag 关（默认）+ Redis 连接失败 ⇒ 降级 MemorySaver + 记录原因，行为与基线逐位不变；
 - flag 开 + 同样的 ConnectionError ⇒ 抛 RuntimeError（消息以 "checkpointer fail-closed" 起头），
   且单例不得被粘成 MemorySaver（checkpointer.py 模块 docstring 第 3 条登记的"粘死"问题）；

@@ -1,8 +1,8 @@
-"""E7 · 召回级语义结果缓存的守卫（路线图 ``docs/design/性能与优化路线图.md`` §2 E7）。
+"""E7 · 召回级语义结果缓存的守卫。
 
-验收口径（对应路线图原文"相似问题命中用例 + 「不相似必须不命中」反例；默认关下零行为变化"）
+验收口径（"相似问题命中用例 + 「不相似必须不命中」反例；默认关下零行为变化"）
 ----------------------------------------------------------------------------------------------
-1. **默认关 ⇒ 逐位等价**（AGENTS.md 纪律 1）：flag 关时 ``semantic_recall_peek`` 必须在
+1. **默认关 ⇒ 逐位等价**（工程约定 1）：flag 关时 ``semantic_recall_peek`` 必须在
    **构造 embeddings 之前**就返回 ``None``。这句话的守卫**不是** raise 桩：raise 会被本模块的
    fail-open 咽成 ``None``，"flag 关"与"端点挂了"在断言眼里于是长得一模一样——变异实测 M1
    第一轮全绿就是这么发现的（见 CHANGELOG 的 P5 条）。所以 peek 侧数**构造次数**
@@ -13,7 +13,7 @@
    向量做边界（``[4,3]`` vs ``[3,4]`` 的余弦 = 24/25 = 0.96，与字面量 ``0.96`` 是同一个
    double），因此 "τ=0.96 命中 / τ=0.97 不命中" 是确定性断言，不依赖容差。
 3. **权限隔离是结构性的**：语义 bucket 与精确键必须由**同一个** ``_retrieval_cache_key``
-   派生（纪律 6 ④）。这条有专门用例比对两个键的差分——第二个隔离源出错的表现形式是
+   派生（约定 6 ④）。这条有专门用例比对两个键的差分——第二个隔离源出错的表现形式是
    跨权限命中，不是报错，所以不能靠"看起来带了租户"来保证。
 
 覆盖面：判定面纯函数（含 τ 边界与四类必须不命中的反例）/ 存储面（TTL、去重刷新、有界
@@ -191,7 +191,7 @@ class TestBestMatch:
         assert score > 0.98
 
     def test_best_match_is_pure_and_reads_no_settings(self):
-        """纪律 6 ④：τ 只有一个源。判定函数不许自己摸 settings，否则"命中"会有两本账。"""
+        """约定 6 ④：τ 只有一个源。判定函数不许自己摸 settings，否则"命中"会有两本账。"""
         tree = ast.parse(SEMANTIC_PY.read_text(encoding="utf-8"))
         fn = next(
             node
@@ -355,7 +355,7 @@ class TestConfigSurface:
         unified = (REPO / "agentix" / "config" / "settings.py").read_text(encoding="utf-8")
         retrieval = (REPO / "agentix" / "retrieval" / "settings.py").read_text(encoding="utf-8")
         for key in _SEMANTIC_KEYS:
-            assert key not in unified, f"{key} 同时出现在统一配置层 ⇒ 两个源（纪律 6 ④）"
+            assert key not in unified, f"{key} 同时出现在统一配置层 ⇒ 两个源（约定 6 ④）"
             assert key in retrieval
         assert "from agentix.retrieval.settings import settings" in SEMANTIC_PY.read_text(
             encoding="utf-8"
@@ -419,7 +419,7 @@ class TestObservability:
         assert CACHE_TYPE not in {"semantic", "retrieval", "embedding", "prompt_prefix"}
 
     def test_module_declares_no_new_metric_label_names(self):
-        """纪律 3：新 label 名必须先进 p100 的 ALLOWED_METRIC_LABELS。本批只复用既有名。"""
+        """约定 3：新 label 名必须先进 p100 的 ALLOWED_METRIC_LABELS。本批只复用既有名。"""
         tree = ast.parse(SEMANTIC_PY.read_text(encoding="utf-8"))
         used: set[str] = set()
         for node in ast.walk(tree):
@@ -482,7 +482,7 @@ class TestObservability:
 
 class TestEmbeddingsAndFailOpen:
     def test_flag_off_returns_none_before_any_embedding_is_constructed(self, monkeypatch):
-        """纪律 1 的可证伪版本：flag 关 ⇒ 连客户端都不该构造，更不该发请求。
+        """约定 1 的可证伪版本：flag 关 ⇒ 连客户端都不该构造，更不该发请求。
 
         这里**不能**用"一调用就 raise"的桩：``peek`` 的 fail-open 会把 raise 咽成
         ``None``，于是"flag 关"与"embedding 挂了"两种结局长得一模一样，变异实测
@@ -883,7 +883,7 @@ async def _retrieve(*, question="合同违约责任", cache_redis=None, **kw):
 class TestRetrievalChainBehaviour:
     @pytest.mark.asyncio
     async def test_flag_off_chain_is_bit_identical_and_touches_nothing_new(self, monkeypatch):
-        """纪律 1 的链路版：默认关 ⇒ 两个名字都不许被调用（桩一调用就 raise）。"""
+        """约定 1 的链路版：默认关 ⇒ 两个名字都不许被调用（桩一调用就 raise）。"""
         calls: list[int] = []
 
         def _dense(vectorstore, query, **kwargs):
@@ -972,7 +972,7 @@ class TestRetrievalChainBehaviour:
 
     @pytest.mark.asyncio
     async def test_bad_payload_falls_back_to_a_real_search(self, monkeypatch):
-        """坏载荷不是"检索失败"，是一次 miss（纪律 2）。"""
+        """坏载荷不是"检索失败"，是一次 miss（约定 2）。"""
         from agentix.retrieval.infra.rag.semantic_cache import SemanticMatch
 
         def _fake_peek(bucket_scope, query):
@@ -1100,27 +1100,13 @@ class TestDocSync:
             ), f"{key} 写成了生效行：会让缺项自检把每个新部署报成配置变更"
         assert "SEMANTIC_CACHE" in block
 
-    def test_roadmap_marks_e7_as_landed_without_leftover_plan_words(self):
-        roadmap = (REPO / "docs" / "design" / "性能与优化路线图.md").read_text(encoding="utf-8")
-        section = roadmap.split("**E7 · 语义结果缓存**", 1)[1].split("**E8 ·", 1)[0]
-        assert "已落地" in section
-        # 纪律 6：诚实标注——§5 第 6 条要求「拟增/拟建/尚未核验」在落地时逐个换成真实锚点
-        assert "拟增 flag" not in section, "落地条目里不许长期滞留「拟增」"
-        for anchor in (
-            "agentix/retrieval/infra/rag/semantic_cache.py",
-            "tests/test_p128_semantic_recall_cache.py",
-            "SEMANTIC_CACHE_TAU",
-        ):
-            assert anchor in section, f"落地条目缺真实锚点：{anchor}"
-        assert "未压测" in section, "没压测就要在风险段写清楚，不许用「已优化」蒙过去"
-
     def test_project_spec_registers_keys_and_validation(self):
         spec = (REPO / "docs" / "项目实现手册.md").read_text(encoding="utf-8")
         assert "SEMANTIC_CACHE_ENABLED=false" in spec
         assert "SEMANTIC_CACHE_TAU ∈ (0,1]" in spec
 
     def test_metric_label_allowlist_still_covers_what_we_emit(self):
-        """纪律 3 的复核：本批复用的 label 名早已在白名单里（白名单没被本批改动）。"""
+        """约定 3 的复核：本批复用的 label 名早已在白名单里（白名单没被本批改动）。"""
         source = (REPO / "tests" / "test_p100_genai_observability.py").read_text(encoding="utf-8")
         for label in ("cache_type", "component"):
             assert f'"{label}"' in source

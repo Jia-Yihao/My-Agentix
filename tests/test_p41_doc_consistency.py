@@ -405,7 +405,7 @@ class TestDocumentedConfigKeys:
             # T19：审批等待 deadline（默认 0 = 关 = 不建扫描任务、不读库）
             "HITL_APPROVAL_DEADLINE_S",
             # M2-1（拆 observability→retrieval 反向边）：三键真源上提到 config.settings，
-            # 沿纪律 4 五处同步（settings / selfcheck / .env.example / 本表 / 配置管理.md）
+            # 沿约定 4 五处同步（settings / selfcheck / .env.example / 本表 / 配置管理.md）
             "LOG_JSON_ENABLED",
             "LOG_LEVEL",
             "TRAJECTORY_DIR",
@@ -542,16 +542,14 @@ class TestDocumentedGraphNodeCount:
             f"lg_builder.py 声称注册 {sorted(claims)} 个节点，实际 add_node 调用 {real} 次"
         )
 
-    def test_design_doc_node_count_matches_code(self):
+    def test_readme_node_count_matches_code(self):
+        """README 对主图节点数的陈述必须与代码里的真实注册数一致。"""
         real = _declared_add_node_count()
-        text = (
-            PROJECT_ROOT / "docs/design/编排方案选型论证.md"
-        ).read_text(encoding="utf-8")
-        claims = {int(m) for m in re.findall(r"只注册了?\s*(\d+)\s*个节点", text)}
-        assert claims, "设计文档里未找到节点数声明，正则可能失效"
+        text = _readme()
+        claims = {int(m) for m in re.findall(r"平铺\s*(\d+)\s*个节点", text)}
+        assert claims, "README 里未找到「平铺 N 个节点」声明，正则可能失效"
         assert claims == {real}, (
-            f"编排方案选型论证.md 声称 {sorted(claims)} 个节点，"
-            f"实际 add_node 调用 {real} 次"
+            f"README 声称平铺 {sorted(claims)} 个节点，实际 add_node 调用 {real} 次"
         )
 
 

@@ -10,7 +10,7 @@
    业务 ``retry_policy``，慢节点只执行 **1 次**（``NodeTimeoutError`` 已进领域不可
    重试分类，不会「超时→重试→再超时」）；异常能被原生 ``error_handler`` 接住，
    整轮以可恢复状态结束而不是静默失败。
-3. **边界（``AGENTS.md`` 纪律 6 ②）**：超时靠 asyncio 协作式取消——只在节点
+3. **边界（``CONTRIBUTING.md` 的工程约定` 约定 6 ②）**：超时靠 asyncio 协作式取消——只在节点
    **让出事件循环**的时刻生效。两条特征化用例把它钉死：整段不让出的协程杀不掉；
    阻塞后才让出的协程能杀，但实际耗时是阻塞时长而不是上限（超时不可抢占）。
    同步节点更早就被拦下：``compile().validate()`` 直接抛 ``ValueError``。
@@ -304,7 +304,7 @@ class TestTimeoutDrivesRealBehavior:
 
 
 class TestCooperativeCancellationBoundary:
-    """纪律 6 ②：超时只在节点让出事件循环的时刻生效——不是抢占式杀伤。"""
+    """约定 6 ②：超时只在节点让出事件循环的时刻生效——不是抢占式杀伤。"""
 
     def test_coroutine_that_never_yields_completes_anyway(self):
         block = 0.4

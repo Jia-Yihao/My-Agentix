@@ -18,7 +18,7 @@
 
 1. **fail-closed**：未注册的 name 一律抛 `CapabilityNotRegistered`，不返回 `None`、
    不做内联兜底、不 `try/except` 降级。装配缺失必须在全链路里响亮暴露，静默兜底等于
-   把「装配没跑」伪装成「跑通了」（`AGENTS.md` 硬性纪律 2 的 fail-open 只适用于
+   把「装配没跑」伪装成「跑通了」（`CONTRIBUTING.md` 的工程约定 2 的 fail-open 只适用于
    指标/记忆/指令/预算这类**辅助**子系统，注入位是主链路）。
 2. **provider 是零参 thunk**，返回**当前模块属性**而非 import 期快照；`resolve`
    **每次都走 thunk**、不缓存。这条语义由
@@ -28,7 +28,7 @@
    `agentix/retrieval/domain/services/context_engine.py:204` 的函数体内 import）的降级用例，
    既不经 `contract.py` 也不经本文件，与本注入位**无依赖关系**，至多作为「模块属性 patch
    惯用法同形」的旁证——不得写成前提。
-3. **同一个判定不许两个源**（`AGENTS.md` 纪律 6 ④）：「装配缺失」的可定位短语只有
+3. **同一个判定不许两个源**（`CONTRIBUTING.md` 的工程约定 6 ④）：「装配缺失」的可定位短语只有
    一份，即 `node_registry.WIRING_HINT`。本文件**复用**它、不另写字面量，异常文本
    因此与节点面同说法；日志里出现这条短语时，不必先猜是哪把键集没装配。
 

@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """F2a · Stage F2：Memory P2 守卫（M-P2-2 PreCompact 重注 / M-P2-4 画像作用域）。
 
-对应 ``docs/design/记忆域深度优化.md`` §6 与统一执行链方案 §4 Stage F2。
-纪律：两枚 flag 默认关、flag-off 与基线逐字节/逐位等价；授权边界 fail-closed
+两枚 flag 默认关、flag-off 与基线逐字节/逐位等价；授权边界 fail-closed
 （无授权证据 ⇒ 不沿用稳定层，读取异常同样扣下）；删除面不静默吞错
 （``errors`` 非空 ⇒ ops 端点显式 500）。
 """

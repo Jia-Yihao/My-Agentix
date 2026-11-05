@@ -1521,7 +1521,7 @@ class ChatService:
 
             # T23（规划 approval-recovery §4）：流内审批通道。装配判定唯一源在
             # `stream_hitl.build_stream_hitl`——flag-off ⇒ None，config 一个键都
-            # 不多、下面取事件的语句也一字不改（与基线逐位等价，纪律 1）；
+            # 不多、下面取事件的语句也一字不改（与基线逐位等价，约定 1）；
             # flag-on ⇒ 进环意图 + 通道挂到 configurable，`execute_task` 里那
             # 段"等人工裁决"的等待由此变成审批帧 + 心跳帧，不再是一条静默的流。
             from agentix.application.services.stream_hitl import build_stream_hitl

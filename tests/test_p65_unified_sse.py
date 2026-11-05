@@ -1,6 +1,6 @@
 """A5 SSE 全量统一批次（p65+）——R5a run-scoped emitter / R5b 词汇归一 / R5d 流式轨迹通电与持久化评估门。
 
-覆盖（对应 docs/migration/架构重构_统一执行链方案_v2.md Stage A · A5，L113）：
+覆盖：
 
 1. **R5a + 守卫 #5**（v2 §6「SSE event 必须来自统一 Run/Event stream」在此
    测试化）：chat 与 retrieval 两条流的每帧都带 ``seq``（本 Run 单调从 1）

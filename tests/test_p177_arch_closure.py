@@ -11,9 +11,7 @@
   §7.3 = 本文件的修法本体（允许集 → 闭包计算器 → 相等棘轮 + 两条守卫口径：
   每条例外带理由、登记不许腐化）；§7.6 = 边界（AST 扫描，与 p66 扫描器同源，
   不新增依赖）。
-- ``docs/design/性能与优化路线图.md`` §7.1 M1 行（验收五条）与 §7.2（M2 已落地，
-  本批才录基线）。
-- ``.qoder/rules/task-order.md`` §5（架构守卫两条口径）。
+- 验收五条（M1）与 M2 的基线录入口径（本批录入）。
 
 与 M2 grep 口径的差异（务必注意）：本守卫用 ``ast.walk`` 全树遍历，**函数体内的
 延迟 import、``if TYPE_CHECKING:`` 块内的 import 一律计为边**——静态可达即算依赖，
@@ -857,7 +855,7 @@ def _norm_bidi_pairs(pairs: Iterable[tuple[str, str]]) -> frozenset[tuple[str, s
     """双向边对的序不敏感规范化：每对折成 ``(min, max)``。
 
     正文解析／计算器实测／``DOC_CLAIMS`` 三方比之前都过这一个函数——序的规范化判据
-    只许有一个源，两侧各写一份就会漂移（纪律 6 ④）。
+    只许有一个源，两侧各写一份就会漂移（约定 6 ④）。
     """
     return frozenset((min(a, b), max(a, b)) for a, b in pairs)
 

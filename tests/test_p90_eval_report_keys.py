@@ -5,7 +5,7 @@
    dist / budget_exhaust_rate / cancel_terminal_rate(+applicable) 精确口径。
 2. meta 缺 ``exit_reason``（Phase 19 旧预测行 / 扁平拓扑）⇒ ``{}``，
    evaluate() summary 不加本组键——不把「没有」读成 0。
-3. 只增报告键纪律：新键是**报告键**，不进质量门禁；``test_ci_gate_contract`` /
+3. 只增报告键新键是**报告键**，不进质量门禁；``test_ci_gate_contract`` /
    phase31 空预测快照与前缀白名单零变化。
 4. 取消口径：分母 = ``exit_reason == "interrupted"`` 的样本；分子 = 其中
    ``status`` 落在明确终态集合（completed / interrupted / failed）的占比；
@@ -229,7 +229,7 @@ class TestEvaluateWiring:
 
 
 # ---------------------------------------------------------------------------
-# 4. 只增报告键纪律：与既有聚合函数正交
+# 4. 只增报告键与既有聚合函数正交
 # ---------------------------------------------------------------------------
 #
 #: 2026-10-26 起本节少了「不泄进 CI 五键门」那一条：CI 的 `eval-offline` 质量门禁

@@ -461,7 +461,7 @@ def _marker_expressions(path: Path) -> list[str]:
 
     不用"文件文本里没出现过 ``integration``"当判据：注释里写过一次就永远读成"标了"，
     而真标了 marker 也可能因为写在别处（如 ``conftest`` 的 ``addini``）读成"没标"。
-    判据必须与 pytest 实际选择用例的那个结构同源（AGENTS.md 纪律 6 ④）。
+    判据必须与 pytest 实际选择用例的那个结构同源（工程约定 6 ④）。
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     found: list[str] = []
@@ -478,11 +478,11 @@ def _marker_expressions(path: Path) -> list[str]:
 def test_perf_smoke_blocks_through_the_test_job_it_actually_runs_in() -> None:
     """性能冒烟的阻断力来自 ``test`` job，而不是一个"独立性能冒烟 job"——文档只能这么写。
 
-    **为什么需要这条**：``docs/migration/PhaseH_高性能运行时优化规划.md`` 与 CHANGELOG 的 W7 条
-    都记着"perf-smoke 摘 ``continue-on-error`` 转阻塞（job 改名「性能冒烟」）"。后来 ``.github/``
+    **为什么需要这条**：CHANGELOG 的 W7 条
+    记着"perf-smoke 摘 ``continue-on-error`` 转阻塞（job 改名「性能冒烟」）"。后来 ``.github/``
     整目录在快照里缺失、按契约重建成 8 个 job（CHANGELOG 的 M·CI 重建条自己记着这个数），那个 job
     **没有被恢复**。于是没有任何一步变红：测试照跑（被 ``test`` job 收走）、超预算照样阻断汇总，
-    但三份文档指向的 job 名在 CI 里根本找不到——按图找的那一格是空的。这正是纪律 6 ④ 说的形态：
+    但三份文档指向的 job 名在 CI 里根本找不到——按图找的那一格是空的。这正是约定 6 ④ 说的形态：
     **诊断（文档）口径与执行链判定不同源，两边都"看起来正常"**。
 
     四条**合取**，任一断掉就说明 §2 E5 那句是假的：① ``test`` job 真跑 ``pytest -m "not integration"``

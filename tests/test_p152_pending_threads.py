@@ -1,6 +1,6 @@
 """LG-2-1：待恢复线程改由 `checkpointer.alist()` 派生（不再读 Redis 集合）。
 
-对应规划 `docs/design/LangGraph原生对齐与恢复链优化.md` §4.3 LG-2-1 验收：
+验收：
 
 ① 走一轮未完成请求后该线程能被列出；
 ② 完成后不再列出；

@@ -3,7 +3,7 @@
 覆盖面与验收口径：
 
 1. ``TEXT2SQL_DATABASE_URL`` / ``text2sql_database_url()``——Text2SQL 目标库的
-   **单源**：留空逐位回退 ``DATABASE_URL``（纪律 1），显式配置时 schema 拉取、
+   **单源**：留空逐位回退 ``DATABASE_URL``（约定 1），显式配置时 schema 拉取、
    SQL 执行、``EXPLAIN`` 试跑、schema 缓存键**四处同源**；并守住"四处不再各自
    读 ``settings.DATABASE_URL``"这条静态边（防止日后又冒出一个第五处直读）。
 2. ``KB_SCOPE_DESCRIPTION``——KB 子图 guardrails 的领域范围说明：空 →
@@ -88,7 +88,7 @@ class TestText2SQLTargetDb:
         assert text2sql_database_url().startswith("mysql+pymysql://")
 
     def test_default_setting_is_empty(self):
-        """新键默认必须是空（纪律 1：不配即与基线等价）。"""
+        """新键默认必须是空（约定 1：不配即与基线等价）。"""
         from agentix.config.settings import Settings
 
         fields = Settings.model_fields
@@ -175,7 +175,7 @@ async def _run_kb_query(monkeypatch, scope_value: str, captured: dict) -> None:
 class TestKbScopeDescription:
     @pytest.mark.asyncio
     async def test_empty_passes_none(self, monkeypatch, capture_kb_workflow):
-        """空 = 传 ``None`` = 子图沿用内置测试数据集文案（逐位等价，纪律 1）。"""
+        """空 = 传 ``None`` = 子图沿用内置测试数据集文案（逐位等价，约定 1）。"""
         await _run_kb_query(monkeypatch, "", capture_kb_workflow)
         assert capture_kb_workflow["scope_description"] is None
 

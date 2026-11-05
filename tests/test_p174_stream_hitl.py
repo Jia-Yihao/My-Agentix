@@ -547,7 +547,7 @@ class _ChannelPump:
 class _FakePendingStore:
     """T18 库面的鸭子型替身：``hitl_bridge`` 对 store 只要求 ``load`` 这一个读法。
 
-    ``raises=True`` 用来模拟"库不可用"，验证回捞失败是 fail-open（纪律 2）。
+    ``raises=True`` 用来模拟"库不可用"，验证回捞失败是 fail-open（约定 2）。
     """
 
     def __init__(self, status: str = "approved", *, raises: bool = False) -> None:

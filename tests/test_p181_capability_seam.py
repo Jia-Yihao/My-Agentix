@@ -18,7 +18,7 @@
    才放行）；`provider` 返回 thunk 本身、`resolve` 每次现取不缓存。
 5. **提示串单源守卫**：`capabilities.py` 源码**不得出现** `"application wiring not loaded"`
    字面量，必须 `from agentix.orchestration.node_registry import WIRING_HINT` 复用
-   （`AGENTS.md` 纪律 6 ④：同一个判定不许两个源）。
+   （工程约定 6 ④：同一个判定不许两个源）。
 6. **AST 依赖守卫**：`capabilities.py` 全树不 import `langgraph`（p66 的 equality 棘轮）
    与 `agentix.application`（本机制要拆的就是这条边）；`contract.py` 全树
    `agentix.application` import == 0；全仓 `agentix/orchestration/**` 同类语句 == 5，
@@ -48,8 +48,7 @@
 
 ## 验收口径
 
-- 机制口径由主会话裁决并登记在 `docs/design/审批与中断恢复优化规划.md` §8 台账的
-  M3-4b / M3-5 行：**非节点能力注入位**，未注册即响亮失败，提示串复用 `WIRING_HINT`。
+- 机制口径：**非节点能力注入位**，未注册即响亮失败，提示串复用 `WIRING_HINT`。
 - 键集形态口径见 `agentix/orchestration/node_registry.py` 模块 docstring 的三条设计口径
   （fail-closed / 零参 thunk 每次现取 / 同一个判定单源）。
 - 本批**只收 `artifact_store` 的两键**：后续批 M3-4b 会把 `llm_factory` 的 3 条边也接到
@@ -66,7 +65,7 @@ subprocess 探针不改动本进程任何全局状态。
 ## AST helper 的单源说明
 
 取数用的 `_imported_modules` 直接复用 `tests/test_p178_node_registry.py:535` 的实现，
-不在本文件复制第二份（纪律 6 ④）。它的口径比 `tests/test_p177_arch_closure.py` 窄：
+不在本文件复制第二份（约定 6 ④）。它的口径比 `tests/test_p177_arch_closure.py` 窄：
 只扫**绝对导入**（`level == 0`），跨包相对导入的兜底源是 p177 守卫 #5；
 `agentix/orchestration/` 全目录当前零相对导入（grep `^\\s*from \\.` 零命中），
 故本批两条口径等价。
@@ -106,7 +105,6 @@ ORCHESTRATION_DIR = REPO_ROOT / "agentix" / "orchestration"
 
 #: 装配后的能力面全集（**三键，全集相等**）。M3-4b 卡2（2026-10-30）已把
 #: `llm_factory` 的三条边收到同一注入位，本清单已由两键改为三键——指针：
-#: `docs/design/审批与中断恢复优化规划.md` §8 台账的 M3-4b 行。
 EXPECTED_CAPABILITY_NAMES = ["get_artifact_store", "get_llm_client", "offload_content"]
 
 #: 本批之后全仓 `orchestration → application` 的残留边分布。

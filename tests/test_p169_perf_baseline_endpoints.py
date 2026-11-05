@@ -1,6 +1,6 @@
 """T16：perf-baseline 扩关键业务端点的形状守卫（p169）。
 
-覆盖（规划卡 ``docs/design/审批与中断恢复优化规划.md`` §4.3 T16 三条验收）：
+覆盖（三条验收）：
 
 1. 三个关键业务端点进了**夜间 job** ``business-p95`` 的压测清单；
 2. 新端点不挂 PR 触发器——workflow 顶层没有 ``pull_request``，且该 job 用

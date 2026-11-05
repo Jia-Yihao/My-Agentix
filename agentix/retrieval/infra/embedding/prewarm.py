@@ -10,16 +10,16 @@
 
 口径四条（每条都对应一处不肯妥协的实现选择）
 ------------------------------------------------
-1. **默认关**（AGENTS.md 纪律 1）：三个键全部 `False` / 空串 / 上限起步。开关关着时本模块
+1. **默认关**（工程约定 1）：三个键全部 `False` / 空串 / 上限起步。开关关着时本模块
    **一个 embeddings 实例都不构造、一次网络都不发**——不是"构造了但不用"，因为构造本身
    就会新建 OpenAI 兼容客户端并读凭据，那已经越出"与基线逐位等价"这条线了。
-2. **fail-open**（纪律 2）：预热的作用是"让第一次查询更快"，它自己没有"必须成功"的资格。
+2. **fail-open**（约定 2）：预热的作用是"让第一次查询更快"，它自己没有"必须成功"的资格。
    任何异常（缺 API key、端点未起、超时）都只进报告的 ``error`` 字段 + 一条
    ``logger.warning``，绝不外抛给启动路径。
 3. **没有缓存就不预热**：``EMBEDDING_CACHE_ENABLED=false`` 时打出来的向量无处可存，
    等于每启动一次就白烧一批端点调用 ⇒ 响亮跳过（``skipped="cache_disabled"``）。
-4. **不新造指标 label**（纪律 3）：hit/miss 计数由缓存层既有接线负责，本模块再打一遍就是
-   "同一个事实两个源"（纪律 6 ④）；要新增指标先登记 ``ALLOWED_METRIC_LABELS``。
+4. **不新造指标 label**（约定 3）：hit/miss 计数由缓存层既有接线负责，本模块再打一遍就是
+   "同一个事实两个源"（约定 6 ④）；要新增指标先登记 ``ALLOWED_METRIC_LABELS``。
    守卫见 ``tests/test_p127_embedding_cache_prewarm.py``。
 
 为什么预热走 ``embed_documents`` 而不是自己写 sqlite
@@ -119,7 +119,7 @@ def prewarm_embeddings(embeddings: Embeddings, texts: Iterable[str]) -> dict[str
         if manifest:
             embeddings.embed_documents(list(manifest))
         report["embedded"] = max(0, distinct - cached)
-    except Exception as exc:  # noqa: BLE001 - 预热失败只留痕，不影响启动（纪律 2）
+    except Exception as exc:  # noqa: BLE001 - 预热失败只留痕，不影响启动（约定 2）
         report["error"] = f"{type(exc).__name__}: {exc}"
         logger.warning(
             "embedding cache prewarm failed after %d queries: %s",
@@ -182,7 +182,7 @@ def run_prewarm_from_settings() -> dict[str, Any]:
 
         embeddings = create_embeddings(get_default_config())
         result = prewarm_embeddings(embeddings, manifest)
-    except Exception as exc:  # noqa: BLE001 - 同上：启动路径不许被预热打断（纪律 2）
+    except Exception as exc:  # noqa: BLE001 - 同上：启动路径不许被预热打断（约定 2）
         report["error"] = f"{type(exc).__name__}: {exc}"
         report["elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
         logger.warning(

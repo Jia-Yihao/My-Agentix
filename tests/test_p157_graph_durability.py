@@ -12,7 +12,7 @@
   抛 ``ValidationError``，不许静默回落；
 - **四处调用点透传**：chat 的 ask（``ainvoke``）与流式（``astream_events``）、
   ``lg_builder.resume_in_loop``、``breakpoint_resume.resume_thread``；
-- **静态守卫**：四处调用点不得内联 ``durability=`` 关键字字面量（纪律 6 ④）。
+- **静态守卫**：四处调用点不得内联 ``durability=`` 关键字字面量（约定 6 ④）。
 """
 
 from __future__ import annotations

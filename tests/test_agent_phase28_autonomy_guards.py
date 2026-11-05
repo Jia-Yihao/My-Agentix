@@ -1,6 +1,6 @@
 """Phase 28 自主护栏验收（全离线，无 LLM / Redis / Neo4j / Docker）。
 
-DoD 映射（`docs/migration/Phase28-31_优化规划.md` §4 Phase 28）：
+DoD 映射：
 
 - flag-off：``respond_to_general_query`` / ``create_kb_query`` 入口行为与基线
   字节等价（仍走原路径、零 clarify 键）；状态栏无 ``max_iter``；

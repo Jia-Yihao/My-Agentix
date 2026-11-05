@@ -183,7 +183,7 @@ class ReviewerSidecar:
         """把一条未决 pending 放回待审面（T18 启动回捞/跨实例回捞的公开通道）。
 
         与 ``from_persistence`` 同式，但走公开入口——桥恢复时不再隔对象摸私有，
-        同一个"什么算待审"的判定保持单源（纪律 6 ④）。
+        同一个"什么算待审"的判定保持单源（约定 6 ④）。
         """
         self._pending[request.request_id] = request
 

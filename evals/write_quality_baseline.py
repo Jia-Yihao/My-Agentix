@@ -1,7 +1,7 @@
 """从 run_eval 的 summary JSON **生成**质量基线（而不是手抄数字）。
 
 为什么要有这个脚本：``evals/baselines/quality.json`` 是 CI 门禁的核对基准，
-基准一旦是手抄的就会漂——AGENTS.md 纪律 7 记过两次「矩阵写着 true、override 里
+基准一旦是手抄的就会漂——工程约定 7 记过两次「矩阵写着 true、override 里
 压根没设」这类案发，同一形态在指标基线上同样成立（README 里发布一个数、基线文件
 里另一个数，CI 却拿后者判 PASS）。本脚本让基线只有一个来源：某次真实
 ``run_eval`` 产出的 summary。
@@ -180,7 +180,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "generated_by": "evals/write_quality_baseline.py",
         "source_summary": _repo_relative(summary_path),
         # 默认题集已随评测集下线删除：summary 没记 golden 字段时**不猜路径**——
-        # 在这里留一个指向已删文件的常量，等于在生成物里写死一个死引用（纪律 7 同一个毛病）。
+        # 在这里留一个指向已删文件的常量，等于在生成物里写死一个死引用（约定 7 同一个毛病）。
         "golden": (
             _repo_relative(summary["golden"])
             if summary.get("golden")

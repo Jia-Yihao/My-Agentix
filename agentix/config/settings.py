@@ -611,10 +611,10 @@ class Settings(BaseSettings):
     )
     # T21（规划 approval-recovery · 运行态落库）：控制平面运行态的持久化。
     # 默认**关**——关 = 运行登记/状态迁移只存进程内存，不 import 持久层、不建表、
-    # 不读写、响应体形状不变（GET 重启后仍 404，与基线逐位等价，纪律 1）；
+    # 不读写、响应体形状不变（GET 重启后仍 404，与基线逐位等价，约定 1）；
     # 开 = spawn 与每次状态迁移经**有界后台写队列 + 单写线程**落 `agent_run_states`
-    # （游标在事件的什么位置都不会被同步 SQL 卡住，纪律 6 ②），GET 单查与列表在内存
-    # miss 时回落到库（重启后仍可查历史终态）。写库失败 **fail-open**（纪律 2）：
+    # （游标在事件的什么位置都不会被同步 SQL 卡住，约定 6 ②），GET 单查与列表在内存
+    # miss 时回落到库（重启后仍可查历史终态）。写库失败 **fail-open**（约定 2）：
     # 只 warning + `stats().persist_errors` 计数，运行照跑、内存态不回滚。
     # 装配判据唯一源 = `agentix/runtime/control_plane.py::resolve_run_state_store`。
     RUN_STATE_PERSIST_ENABLED: bool = Field(
@@ -649,7 +649,7 @@ class Settings(BaseSettings):
         description="Admission wait-queue depth; 0 = reject immediately at capacity",
     )
     # LG-1-1：只读节点的原生节点级重试（langgraph 1.x 的 `add_node(retry_policy=)`）。
-    # 默认关 ⇒ 注册处**完全不传** `retry_policy`，图执行与基线逐位等价（纪律 1）。
+    # 默认关 ⇒ 注册处**完全不传** `retry_policy`，图执行与基线逐位等价（约定 1）。
     # 覆盖面只有 6 个只读节点；`execute_task` / `code_agent` 永不挂——整节点重跑会
     # 重放工具副作用（指导文档铁律，LG-1-1 验收第 ② 条把它钉成用例）。
     NODE_RETRY_ENABLED: bool = Field(
@@ -658,9 +658,9 @@ class Settings(BaseSettings):
     )
     # LG-3-2：主图节点的原生超时（langgraph 1.x 的 `add_node(timeout=)`），单位秒，
     # 作用在**每次节点尝试**上。`0`（默认）= 关 ⇒ 注册处**完全不传** `timeout`
-    # 形参，与基线逐位等价（纪律 1）；策略对象由
+    # 形参，与基线逐位等价（约定 1）；策略对象由
     # `orchestration/langgraph/policies.py::node_timeout` 集中构造（LG-0-3）。
-    # 边界（AGENTS.md 纪律 6 ②）：超时依赖 asyncio 协作式取消，只在节点**让出
+    # 边界（工程约定 6 ②）：超时依赖 asyncio 协作式取消，只在节点**让出
     # 事件循环**的时刻生效——同步阻塞/整段不让出的节点杀不掉；同步节点更是
     # 编不过（`compile().validate()` 直接抛 ValueError）。
     NODE_TIMEOUT_SECONDS: float = Field(
@@ -670,11 +670,11 @@ class Settings(BaseSettings):
     )
     # LG-3-5：有副作用节点（execute_task / code_agent）的原生错误补偿
     # （langgraph 1.x 的 `add_node(error_handler=)`）。默认关 ⇒ 注册处**完全不传**
-    # `error_handler`，与基线逐位等价（纪律 1）。开 = 节点重试耗尽（无 retry_policy
+    # `error_handler`，与基线逐位等价（约定 1）。开 = 节点重试耗尽（无 retry_policy
     # 时即首次失败）后不再是整轮 500：handler 往 hitl_pending_approvals 写一条
     # 已闭合的补偿记录（decided_by=system:node_error_handler），并把一条如实的
     # 失败回执写进 messages 后路由到 END。handler **不重跑节点**（副作用铁律）。
-    # 记录写失败按纪律 2 fail-open：只告警，失败收尾照常。
+    # 记录写失败按约定 2 fail-open：只告警，失败收尾照常。
     # 前置：补偿记录真的落库还须 HITL_PENDING_PERSIST_ENABLED=true（装配判据唯一源
     # hitl_bridge.resolve_pending_store）；该键关（默认 false）时只给失败回执 + warning。
     NODE_ERROR_HANDLER_ENABLED: bool = Field(
@@ -696,7 +696,7 @@ class Settings(BaseSettings):
     )
     # RETRY_BACKOFF_ALIGNED：三层（tool/task/retrieval）自研退避统一换成
     # LangGraph ``RetryPolicy`` 的默认形状（0.5 / 2.0 / 128.0 / 3 / jitter=True）；
-    # 默认关 = 各层保留历史数值，flag-off 逐位等价（纪律 1）。
+    # 默认关 = 各层保留历史数值，flag-off 逐位等价（约定 1）。
     RETRY_BACKOFF_ALIGNED: bool = Field(
         default=False,
         description="Align task/tool/retrieval retry backoff with LangGraph RetryPolicy defaults; default off",
@@ -1086,7 +1086,7 @@ class Settings(BaseSettings):
     # - sync：每步写完 checkpoint 才开始下一步（崩溃最多丢当前步）；
     # - async：每步后台写、下一步不等（**框架默认**，与升级前行为一致）；
     # - exit：只在整轮退出 / 中断 / 报错时写（步骤历史会稀疏）。
-    # Literal 让非法取值在 Settings 实例化（启动）即报错，不许静默回落（纪律 1）。
+    # Literal 让非法取值在 Settings 实例化（启动）即报错，不许静默回落（约定 1）。
     GRAPH_DURABILITY: Literal["sync", "async", "exit"] = "async"
     AGENT_TIMEOUT: int = 300
     # 批次 B1（audit-2026-09-28 §2 B1）：流式**单事件间隔**看门狗——与
@@ -1167,7 +1167,7 @@ class Settings(BaseSettings):
     )
     # T23（规划 approval-recovery §4）：**流**内审批。默认 False = 流恒走 L2 且不
     # 声明进环意图，高风险工具在流里立即失败（与基线逐位等价：SSE 帧序列、日志、
-    # 指标零增量，纪律 1）。True（且父闸 HITL_IN_LOOP_ENABLED +
+    # 指标零增量，约定 1）。True（且父闸 HITL_IN_LOOP_ENABLED +
     # HUMAN_REVIEW_ENABLED 均开）时：流路径声明进环意图并经
     # `application/services/stream_hitl.StreamHitlChannel` 承接——遇
     # review_required **不挂图**（流只有一条 SSE 响应可写），而是节点内等待，期间
@@ -1175,7 +1175,7 @@ class Settings(BaseSettings):
     # 重试一次，其余 fail-closed 按治理层终局收口。裁决入口复用 `/ops/hitl/
     # approvals/{id}`（裁决事实的唯一真源是 T18 库行 `hitl_pending_approvals`，
     # 本地闸门簿记是同一事实的进程内快路径；未决时按 `sidecar_request_id`
-    # 回捞库行，见 `stream_hitl._gate_decision`，纪律 6 ④）。装配判定唯一源 =
+    # 回捞库行，见 `stream_hitl._gate_decision`，约定 6 ④）。装配判定唯一源 =
     # `stream_hitl.build_stream_hitl`。
     STREAM_HITL_ENABLED: bool = Field(
         default=False,
@@ -1192,13 +1192,13 @@ class Settings(BaseSettings):
     )
     # T18（规划 approval-recovery §4 · Q7 已裁决：Postgres 为真源）：HITL pending
     # 落库。默认**关**——关 = pending 维持进程内存（FIFO 封顶 200），不建表、不
-    # 读写新表，行为与基线逐位等价（纪律 1）；开 = 挂起写 `hitl_pending_approvals`
+    # 读写新表，行为与基线逐位等价（约定 1）；开 = 挂起写 `hitl_pending_approvals`
     # （库侧未决同样封顶 200，溢出**显式拒绝**不静默挤行——口径见
     # `agentix/infrastructure/persistence/hitl_pending_store.py` 模块注释）、
     # 裁决同库闭合、启动期回捞未决 pending 进内存可裁决、跨实例（本实例内存没有
     # 该 pending）从库判定不再 404。落库失败显式可观测（error 日志 + 回执
     # persist_error 标记 + persist_errors 计数），绝不静默降级成纯内存宣称成功。
-    # 治理层拒绝语义不动（fail-closed，`.qoder/rules/code-exec.md` §7）；
+    # 治理层拒绝语义不动（fail-closed，`docs/architecture/adr/0007-执行沙箱端口.md`）；
     # 装配判据唯一源 = `agentix/policies/hitl/hitl_bridge.py::_resolve_pending_store`。
     HITL_PENDING_PERSIST_ENABLED: bool = Field(
         default=False,
@@ -1206,7 +1206,7 @@ class Settings(BaseSettings):
     )
     # T19（规划 approval-recovery · Q9 已裁决：到期自动拒绝）：审批等待时限。
     # **0（默认）= 关 = 现行为**：不建扫描任务、不读库、`stats()` 键集合不变
-    # （纪律 1 flag-off 逐位等价）；>0 才启用扫描。量的是「pending 存活时长」
+    # （约定 1 flag-off 逐位等价）；>0 才启用扫描。量的是「pending 存活时长」
     # （挂起时刻起算），与 `AGENT_TIMEOUT` 的「单次图调用墙钟」是两把尺子：
     # 两者同时可达时**先到者生效**，且归因不同（超时拒 = `decided_by=system:deadline`）。
     # 扫描的库面来自 T18（`HITL_PENDING_PERSIST_ENABLED`），因此本键 >0 而落库
@@ -1250,7 +1250,7 @@ class Settings(BaseSettings):
     # T26（队列 PEL 认领 + 优雅停机）：Redis Stream 任务队列的消费 worker。
     # 此前 `TaskQueue.start_worker()` 全仓没有生产调用点——任务能入队但没人消费，
     # 未 ack 的消息永久卡在 PEL 里。默认**关** = 不建任务、不建连、不打日志、
-    # 不 import 队列模块（纪律 1：flag-off 与基线逐位等价）；
+    # 不 import 队列模块（约定 1：flag-off 与基线逐位等价）；
     # 开 = `_startup` 末尾起一条消费循环（`XAUTOCLAIM` 接手死消费者遗留消息，
     # idle 阈值 / 周期 / 单轮条数是 `task_queue.py` 的模块常量，不进配置面），
     # 关停时由 `_shutdown` 显式收口（`stop_worker()` + cancel）。
@@ -1271,7 +1271,7 @@ class Settings(BaseSettings):
     # LG-3-4：恢复期幂等——`execute_task` 节点内挂起后续跑会重跑挂起点之前的
     # 步骤（LangGraph 节点重入），带副作用的步骤不能重放两遍。开 = 已完成步骤
     # 落 `run_step_ledger`（键：thread + 节点执行作用域 + 步骤指纹），同一作用域
-    # 内恢复时跳过；默认关 = 不建表、零读写，与基线逐位等价（纪律 1）。
+    # 内恢复时跳过；默认关 = 不建表、零读写，与基线逐位等价（约定 1）。
     RECOVERY_STEP_LEDGER_ENABLED: bool = Field(
         default=False,
         description="Persist completed task steps (run_step_ledger) and skip them when execute_task is re-run after an in-loop suspension; default off",
@@ -1279,7 +1279,7 @@ class Settings(BaseSettings):
     # LG-3-6：优雅关闭——SIGTERM/SIGINT 先对在跑的每次图执行请求 drain
     # （langgraph 1.2 原生 ``RunControl``，调用级，每次运行新建），等到超步
     # 边界留下可恢复 checkpoint 再退出；默认关 = 不装信号处理器、不新建控制面、
-    # ``astream_events`` 不传 ``control`` 形参，与基线逐位等价（纪律 1）。
+    # ``astream_events`` 不传 ``control`` 形参，与基线逐位等价（约定 1）。
     RUN_CONTROL_ENABLED: bool = Field(
         default=False,
         description="Drain in-flight graph runs on SIGTERM/SIGINT via native RunControl (default off = no signal handler, no control kwarg)",
@@ -1512,7 +1512,7 @@ class Settings(BaseSettings):
         "显式 `CHECKPOINTER_TYPE=memory` 不受影响",
     )
     # T22：Redis 不可用降级 MemorySaver 后按定间隔重试升级。0（默认）= 关闭重试循环
-    # ⇒ 不建后台任务、不加日志、与基线逐位等价（纪律 1）。>0 才起任务，节奏就是这个值，
+    # ⇒ 不建后台任务、不加日志、与基线逐位等价（约定 1）。>0 才起任务，节奏就是这个值，
     # 刻意不做指数退避（重试目标同进程的一个 Redis 连接，退避换不来成功率）。
     CHECKPOINTER_RETRY_INTERVAL_S: float = Field(
         default=0.0,
@@ -1597,7 +1597,7 @@ class Settings(BaseSettings):
     # 开 = L1 一次调用同时产意图与执行参数、KB 检索路由并入 L1（A3 检索通道
     # 选择不再留在 KB 子图内）；**默认关** ⇒ 走现有三层路由（L1 只产意图，
     # A3 检索路由留在 KB 子图内），路由链、提示词与图可达性与现网**逐位等价**
-    # （Strangler 纪律 1）。本批（T30-1）只落配置面，零行为变更；收敛实现属 T30-2。
+    # （Strangler 约定 1）。本批（T30-1）只落配置面，零行为变更；收敛实现属 T30-2。
     ROUTING_SINGLE_LAYER_ENABLED: bool = Field(
         default=False,
         description="T30 single-layer routing: one L1 call emits both intent and execution params, KB retrieval routing folded into L1; default off = existing three-layer routing byte-for-byte baseline-equal",

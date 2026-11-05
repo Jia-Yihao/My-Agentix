@@ -13,7 +13,7 @@
 
 ## 两条必须说清的口径
 
-**flag-off 逐位等价**（``AGENTS.md`` 纪律 1）：``RETRY_BACKOFF_ALIGNED`` 默认关，
+**flag-off 逐位等价**（``CONTRIBUTING.md` 的工程约定` 约定 1）：``RETRY_BACKOFF_ALIGNED`` 默认关，
 三处返回各自的历史数值（工具 0.2s 起步无抖动、task 上界 8s、检索用
 ``KB_RETRIEVAL_*`` 配置），行为与基线逐位相同。
 
@@ -81,7 +81,7 @@ def aligned_on():
 
 class TestCanonicalSourceMatchesNative:
     def test_switch_defaults_off(self):
-        """纪律 1：新开关默认关；若确有理由改成 True，须先改本用例。"""
+        """约定 1：新开关默认关；若确有理由改成 True，须先改本用例。"""
         assert settings.RETRY_BACKOFF_ALIGNED is False
 
     def test_constants_match_retry_policy_defaults(self):

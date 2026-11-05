@@ -7,7 +7,7 @@
 写出，而恢复路径（``lg_builder.resume_in_loop`` / ``breakpoint_resume.resume_thread``）
 只带 ``configurable.thread_id`` ⇒ 落到框架默认的 **25**：同一张图，主链路按
 ``MAX_ITERATIONS``（默认 10）截断，恢复请求却能多跑一倍多。这不是"恢复更宽容"，
-而是两条路径的轮数预算各说一套（纪律 6 ④：同一个判定不许两个源）。
+而是两条路径的轮数预算各说一套（约定 6 ④：同一个判定不许两个源）。
 
 集中后：三处只调 ``thread_config()``，轮数预算每次调用现读
 ``settings.MAX_ITERATIONS``（运行期改值即生效，不必重建 config 构造器），
@@ -51,9 +51,9 @@ def durability_kwargs() -> Dict[str, str]:
     - ``exit``：只在整轮退出 / 中断 / 报错时落盘（步骤历史会稀疏）。
 
     默认档**不传参数**：框架在 ``durability is None`` 时按同一默认值解析，空 dict
-    与显式传默认档行为逐位相同，但不改任何既有调用形状（纪律 1：flag-off / 默认
+    与显式传默认档行为逐位相同，但不改任何既有调用形状（约定 1：flag-off / 默认
     路径与基线逐位等价）。「默认值」只从 Settings 字段自己的默认取，不在此另写
-    字面量（纪律 6 ④：同一个判定不许两个源）。
+    字面量（约定 6 ④：同一个判定不许两个源）。
     """
     durability = settings.GRAPH_DURABILITY
     default = type(settings).model_fields["GRAPH_DURABILITY"].default

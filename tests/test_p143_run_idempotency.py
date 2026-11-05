@@ -10,7 +10,7 @@
 - TTL / 上限清理口径可判定（注入假时钟，不让测试真等）；
 - 键合法性错误不回放键内容；失败请求（UNKNOWN_AGENT）不占用键；
 - 幂等命中不静默（日志留痕）且键只以指纹形式出现；
-- 键内容不进指标 label（纪律 3 高基数禁令）。
+- 键内容不进指标 label（约定 3 高基数禁令）。
 
 零外部依赖：无 DB、无 LLM（计数桩执行器）；不依赖真实时间流逝。
 分层提醒：本文件验证的是**客户端重试幂等**，与审批侧"一次批准一次执行"
@@ -96,7 +96,7 @@ def _wait_terminal(client: TestClient, run_id: str, *, timeout_s: float = 5.0) -
 
 
 # ---------------------------------------------------------------------------
-# ③ 无 header ⇒ 与现状逐位等价（纪律 1）
+# ③ 无 header ⇒ 与现状逐位等价（约定 1）
 # ---------------------------------------------------------------------------
 
 
@@ -295,7 +295,7 @@ def test_invalid_key_rejected_without_echoing(client, counter_executor):
     )
     assert over.status_code == 400
     assert over.json()["error_code"] == "INVALID_IDEMPOTENCY_KEY"
-    # 纪律 6 ③ 精神：错误响应不回放输入
+    # 约定 6 ③ 精神：错误响应不回放输入
     assert sentinel not in over.text
 
     # 被拒请求不占用键、不创建运行

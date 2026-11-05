@@ -431,7 +431,7 @@ RETRIEVAL_BYPASS_ALLOW: dict[str, frozenset[str]] = {
             "agentix.retrieval.infra.db.session",
             # E4 批次评审：embedding 缓存启动预热（flag 默认关）。导入刻意留在
             # ``_embedding_prewarm_worker`` 函数体内——依赖缺失/循环导入也要 fail-open
-            # （纪律 2），所以组合根这一行豁免按"启动预热接线"登记，不是新旁路。
+            # （约定 2），所以组合根这一行豁免按"启动预热接线"登记，不是新旁路。
             "agentix.retrieval.infra.embedding.prewarm",
         }
     ),

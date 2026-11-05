@@ -60,7 +60,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # 分位数的唯一实现与"默认题集缺失就响亮退出"的判定都住在 `evals/` 包里：
-# 本脚本是评测入口之一，不许另立第二套尺子或第二份"默认题集"判据（纪律 6 ④）。
+# 本脚本是评测入口之一，不许另立第二套尺子或第二份"默认题集"判据（约定 6 ④）。
 from evals.golden_source import ensure_default_golden  # noqa: E402 - 依赖上面的 ROOT 注入
 from evals.perf_stats import nearest_rank_quantile  # noqa: E402 - 同上
 
@@ -1021,7 +1021,7 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--hybrid",
         action="store_true",
-        help="显式打开 BM25+Dense 混合检索（代码默认关，见 AGENTS.md 纪律 1）",
+        help="显式打开 BM25+Dense 混合检索（代码默认关，见 工程约定 1）",
     )
     parser.add_argument(
         "--keep-thinking",

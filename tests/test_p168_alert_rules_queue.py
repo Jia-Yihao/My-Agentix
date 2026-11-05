@@ -1,7 +1,6 @@
 """T15 队列积压告警：规则形状守卫（``docker/monitoring/alert_rules.yml``）。
 
-卡面：``docs/design/审批与中断恢复优化规划.md`` §4.3 T15 —— 验收①「积压告警规则
-新增且阈值口径成文」。
+验收①「积压告警规则新增且阈值口径成文」。
 
 **本文件钉的是形状、口径，外加「阈值与声明容量之间的乘积等式」**（见下第 7 条）。
 第 7 条钉的是**关系**不是**取值**：阈值该不该是这个数，仍属观测结论，测试管不到：
@@ -19,7 +18,7 @@
    ``annotations.description``（台账表 A G3：子串判据对 "0" 恒真），推导依据按
    中英别名集判定、与措辞解耦（台账表 A G6），否则「阈值为什么是这个数」只活在提交信息里；
 5. 无高基数 label：新规则的 ``labels:`` 键与 ``expr`` 里不许出现 run_id/session/user
-   等可枚举爆炸的维度（硬性纪律 3 的精神），描述里也不许把它们插值进告警文本；
+   等可枚举爆炸的维度（硬性约定 3 的精神），描述里也不许把它们插值进告警文本；
 6. 外部指标的前置说明必须在**规则文件本身**里：删掉那段注释，本文件即失败；
    前置说明与部署现状（``docker-compose.yml`` 的 worker command）的**差额**也进断言
    （台账表 A G5），文档与部署两头对不上即红灯。
@@ -188,7 +187,7 @@ _PROMQL_WORDS = {
     "name",
 }
 
-#: 高基数维度黑名单（硬性纪律 3 精神）：值域随请求/会话/用户增长的都不许进告警
+#: 高基数维度黑名单（硬性约定 3 精神）：值域随请求/会话/用户增长的都不许进告警
 _HIGH_CARDINALITY_TOKENS = (
     "run_id", "session", "session_id", "trace", "trace_id", "thread_id",
     "user_id", "request_id", "kb_id", "tenant_id", "query", "question",
@@ -618,7 +617,7 @@ def test_new_rule_has_no_high_cardinality_labels(alert_name: str):
     annotations_text = " ".join(str(v) for v in (rule.get("annotations") or {}).values()).lower()
     for token in _HIGH_CARDINALITY_TOKENS:
         assert token not in expr_lower, (
-            f"{alert_name}: expr 引用了高基数维度 {token!r}（纪律 3 精神：值域随请求增长）"
+            f"{alert_name}: expr 引用了高基数维度 {token!r}（约定 3 精神：值域随请求增长）"
         )
         assert f"$labels.{token}" not in annotations_text, (
             f"{alert_name}: 告警文本插值了高基数 label {{ $labels.{token} }}"

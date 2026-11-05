@@ -1,6 +1,6 @@
 """T18（规划 approval-recovery Q7 裁决：Postgres 为真源）——HITL pending 审批表。
 
-字段载体就是桥侧既有序列化面的**逐字段投影**（不另造格式，纪律：接通不是重写）：
+字段载体就是桥侧既有序列化面的**逐字段投影**（不另造格式，接通不是重写）：
 
 - ``sidecar_*`` 列：``SidecarReviewRequest.to_public_dict()`` 的拆列
   （结构化审面，**无** Agent trajectory / narrative，sidecar 上下文隔离承诺不变）；
@@ -11,7 +11,7 @@
 
 **为什么模型不进 ``db/models/__init__.py`` 聚合**：聚合会被
 ``init_db(create_all=True)`` 全量建表——而纪律要求 flag-off（默认）**连表都不建**
-（纪律 1：不读写新表，建表同样属"新表触达"）。建表只经 store 的
+（约定 1：不读写新表，建表同样属"新表触达"）。建表只经 store 的
 ``ensure_ready()``（``CREATE TABLE IF NOT EXISTS`` 幂等）在 flag-on 的装配点发生。
 
 **本模块两张表**（同一套建表/回滚口径，都由 store 的 ``ensure_ready()`` 建）：

@@ -103,7 +103,7 @@ confidence，说明路由结构化输出走了兜底（见 §16 的 `router_fall
 
 问一句寒暄（`ask "你好，你是谁"`）会看到路由节点判成 `general-query` 并以退出码 3 停下——
 这个切片只跑 `kb-query` 一条链路，其余分支属于下面的可选能力。加 `--hybrid` 会显式打开
-BM25+Dense 融合（代码默认关，见 AGENTS.md 纪律 1），同一条问题的 top-5 里多出
+BM25+Dense 融合（代码默认关，见 工程约定 1），同一条问题的 top-5 里多出
 《民法典》第148/149条 两条欺诈本条（实测日志
 `hybrid retrieval kb=legal-demo dense=20 sparse=on fused=20 rerank=closed docs=5`，
 末项 `rerank=closed` 是 **rerank 熔断器的状态字符串**（closed＝熔断器闭合、失败数未达阈值），
@@ -176,7 +176,6 @@ My Agentix 是一套**生产导向的 Agent 平台**——以 Agent 内核为核
 > | 某处**具体怎么实现** | [`docs/项目实现手册.md`](docs/项目实现手册.md) | 实现细节手册（按符号定位，不写行号） |
 > | 出事/上线**要做什么动作** | [`docs/runbooks/`](docs/runbooks/) | 操作手册 |
 >
-> 历史规划与迁移计划在 [`docs/design/`](docs/design/) 与 [`docs/migration/`](docs/migration/)，**它们描述的是当时要做什么，不是现在的状态**；两者冲突时以本文档为准。
 
 ### 三条端到端数据流
 
@@ -246,7 +245,7 @@ flowchart LR
 | **性能治理** | 分段延迟 / 预算 / 准入排队 / 过载降级 | `agentix/performance/` |
 | **MCP** | 任意 MCP 工具进程接入 + 零依赖 stdio Server | `agentix/capabilities/mcp/` |
 | **执行沙箱（⑮ 起有墙）** | 按 `ToolSpec.sandbox` 声明选执行位置：`in_process` / `thread` 不隔离（同进程同 GIL）；`subprocess` = 一次调用一个进程 + 子进程侧 `RLIMIT_AS/CPU/FSIZE` + 进程数闸 `RLIMIT_NPROC`（**只在配了独立且非 0 的 uid 时落**）+ 环境白名单 + 可杀进程组 + **应答按 nonce 归属且 `ok` 严格布尔**（**POSIX 专属，默认关**）；`container` 未实现 ⇒ 声明即在执行点被拒 | `agentix/tools/sandbox.py` · `agentix/tools/subprocess_worker.py` · `agentix/domain/tool/exec_env.py` |
-| **运行时写代码执行（code exec）** | 模型在运行时写 Python 代码完成任务：经 `code_execute` 工具走 `subprocess` 沙箱档（一次调用一个进程 + `RLIMIT_AS/CPU/FSIZE` 三道闸 + 环境白名单 + 可杀进程组）；**沙箱隔离但 POSIX 专属，默认关**（`CODE_EXEC_ENABLED=false`，flag-off 与基线逐位等价）；**不隔离文件系统与网络** | `.qoder/rules/code-exec.md` |
+| **运行时写代码执行（code exec）** | 模型在运行时写 Python 代码完成任务：经 `code_execute` 工具走 `subprocess` 沙箱档（一次调用一个进程 + `RLIMIT_AS/CPU/FSIZE` 三道闸 + 环境白名单 + 可杀进程组）；**沙箱隔离但 POSIX 专属，默认关**（`CODE_EXEC_ENABLED=false`，flag-off 与基线逐位等价）；**不隔离文件系统与网络** | `docs/architecture/adr/0007-执行沙箱端口.md` |
 | **可观测** | trace_id 全链路 · 步骤轨迹 · Prometheus 指标 · SLO | `agentix/observability/` |
 | **评测与门禁** | 确定性打分 · 质量门禁 · 轨迹前缀回归（评测集换代中、基线未录，代码保留） | `evals/` |
 
@@ -420,7 +419,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 > 上述界面截图来自本地隔离测试账号与测试数据库（2026-10-22 实机重拍），不包含真实用户数据；截图文案与当前实现一致（见
 > `web/src/modules/knowledge/components/chat/HomeWelcomeHero.vue`、`web/src/modules/knowledge/views/HomeView.vue`）。
 
-**RAG 质量与时延优化路线**：先用人工核验的检索金标建立 Recall@5 / MRR 与引用正确率基线，再逐项对照 BM25 / Dense / RRF / Rerank（`python evals/hybrid_eval.py --kb-id <KB>`）；当前检索评估依赖真实索引和知识库数据，模板数据不能证明数据条目正确性。混合检索的 Dense 与 BM25 候选现已并发获取；BM25 使用倒排 posting 只扫描命中查询词的 chunk，并把阿拉伯数字与中文数字数据条目号规范到同一词项。索引快照仍按活动 `artifact_id` 隔离，语料只取该版本 manifest 内 `ready` 文档的 chunk。LM Studio 的 embedding 接口不能代替 Cross-encoder `/rerank` 接口；未成功精排会明确记为降级，不冒报成功。优化效果须在真实知识库上测量并同时检查召回质量。后续阶段与验收指标见 **[RAG 优化路线](docs/design/检索增强深度优化.md#8-后续质量提升计划)**。
+**RAG 质量与时延优化路线**：先用人工核验的检索金标建立 Recall@5 / MRR 与引用正确率基线，再逐项对照 BM25 / Dense / RRF / Rerank（`python evals/hybrid_eval.py --kb-id <KB>`）；当前检索评估依赖真实索引和知识库数据，模板数据不能证明数据条目正确性。混合检索的 Dense 与 BM25 候选现已并发获取；BM25 使用倒排 posting 只扫描命中查询词的 chunk，并把阿拉伯数字与中文数字数据条目号规范到同一词项。索引快照仍按活动 `artifact_id` 隔离，语料只取该版本 manifest 内 `ready` 文档的 chunk。LM Studio 的 embedding 接口不能代替 Cross-encoder `/rerank` 接口；未成功精排会明确记为降级，不冒报成功。优化效果须在真实知识库上测量并同时检查召回质量。检索开关与调优口径见 `docs/architecture/配置管理.md`。
 
 **上传通道与能力边界**（三条通道职责不同）：
 
@@ -448,7 +447,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 - **可靠性原语**：限流（全局 + 路由级）· 熔断（circuit breaker）· 并发限制，见 `agentix/reliability/`。**熔断的接线范围分开说（两个概念不互相援引）**：检索域两处**已接线**——① 检索 rerank 熔断（`agentix/retrieval/infra/rag/rerank.py`，熔断 OPEN / 半开探测额度用尽 ⇒ 快速降级、保留原召回顺序），② 检索链 LLM 调用熔断（`agentix/retrieval/usecases/chat_llm.py::invoke_with_breaker`，`LLM_CIRCUIT_BREAKER_ENABLED` 默认开）；**通用 CircuitBreaker 原语**（`agentix/reliability/circuit_breaker.py` 的装饰器与类直接用法）实现存在、未接线进检索域以外的生产链路（主编排 / 工具执行等无熔断闸），对外不声称"通用熔断已在生产链路生效"（发布门禁 release gate 已于 A6 删除，现由 `.github/workflows/release.yml` preflight + `evals/quality_gate.py` 承担）
 - **出站通知**（Phase 23）：`NOTIFY_USER_ENABLED=true` 注册 `notify_user` 工具——通知落 EventPort（type=`user_notification`）并经 `GET /api/v1/ops/events` 可查；声明 L1 → MEDIUM，开启 `HUMAN_REVIEW_ENABLED` 时**先审批后执行**（出站即副作用，不得绕闸）；当前未接真实邮件/短信通道
 - **配置漂移告警**（Phase 22）：会话中途检测配置哈希变化 → 结构化 `system_notice`（仅键名不含值），实现见 `application/services/config_watch.py`
-- **流式防挂起**（批次 B1）：SSE 逐次取事件包 `STREAM_IDLE_TIMEOUT`（默认 60s）看门狗——上游静默挂起即 error + done 兜底收口并归还并发槽位，连接绝不悬挂
+- **流式防挂起**：SSE 逐次取事件包 `STREAM_IDLE_TIMEOUT`（默认 60s）看门狗——上游静默挂起即 error + done 兜底收口并归还并发槽位，连接绝不悬挂
 - **预算意识**（Phase 28）：步数预算观测，轨迹 append `budget_notice`（剩余 ≤2 可见、不动静态前缀）+ 状态栏 `max_iter` 常量键（`BUDGET_NOTICE_ENABLED` 默认关）
 - **执行边界加固**（Phase S · §24.3 T0）：治理链回答「该不该做」，这一层回答「跑出去之后能不能切断」——非协程工具 handler 下放线程后 `timeout_ms` 才真能截断（`TOOL_SYNC_OFFLOAD_ENABLED`，默认关）、MCP 子进程只拿白名单环境不再继承全部密钥（`MCP_SUBPROCESS_ENV_SCRUB`）、表达式资源护栏（长度/指数/位宽/浮点有限性，语法白名单挡不住 `9**9**9`）、text2sql 两条闸门共用同一份只读词表（先等长抹除字面量再按词边界匹配）、日志凭据脱敏、`engine.echo` 与生产身份从 `DEBUG` 解耦（`DB_ECHO`/`APP_ENV`/`UVICORN_RELOAD`）、compose backend 加 `no-new-privileges` + CPU/内存/pids 配额；后续补上 T1 ⑫ 提前落地的 `kb_ingest` 连接串闸门（`KB_MYSQL_URL_GUARD`，默认关）与 T1 ⑧ 的 handler 类型契约告警（`TOOL_HANDLER_CONTRACT_ENABLED`，默认关：注册期点名非协程 handler，把「这条工具的超时为什么不生效」从排障现场前移到启动日志）、以及 T1 ⑬ 的数据库 engine 惰性化（`agentix/infrastructure/core/database.py` 不再在模块导入期建池，`import agentix.capabilities.mcp` 连带把整个数据面拉起来的副作用已切断；`engine` / `SessionLocal` 旧写法仍可用，只是取用才建）、以及 T0 ⑤ 的容器运行身份旋钮（`AGENTIX_CONTAINER_USER`，默认 `0:0` 仍是 root——降权要先准备宿主目录属主，否则失败形态是 restart 崩溃循环而不是拒绝启动，步骤见 [staging Runbook](docs/runbooks/预发环境与配置矩阵.md)）、以及 T1 ⑪ 的设置接口授权闸门（`SETTINGS_AUTHZ_ENABLED`，默认关：打开后 `GET /settings/{kb_id}` 要求该 kb 属于调用者租户、`PUT` 再要求 admin。**为什么掩码不够**——`llm_base_url` 这类字段本身可写，改指外部端点不需要密钥却足以让该租户的提问整批外送；「掩码」堵的是读、「授权」才堵得住写。开启有两个前置：迁移已回填 `knowledgebase.tenant_id`（NULL 走 fail-closed 一律 403）、且该租户内确有 admin（全仓暂无自助升 admin 的接口））、以及 T1 ⑫ 的第二半——导入过滤参数化（`KB_MYSQL_WHERE_PARAMETRIZED`，默认关：开则原始 `where` 片段一律拒，过滤只能走 `{column, op, value}` 结构化条件，列名过标识符白名单、运算符取封闭枚举、值全部走 bindparams。**为什么不是"再补几个黑名单词"**——黑名单拦得住 `;` 堆叠，拦不住 `1=1 OR 1=1` 这类合法但越界的片段，对拼出来的 SQL 而言调用方给的就是语法；也因此这一位是硬切而不是加字段，调用方要先迁完）、以及 T2 ⑭ 的执行位置端口（`EXECUTION_SANDBOX_ENABLED`，默认关：`ToolSpec.sandbox` 把「这条工具在哪儿跑」从写死在 `_invoke` 里变成声明，能跑的 `in_process` / `thread` 两档中后者让**单条工具**不必为它打开全局 `TOOL_SYNC_OFFLOAD_ENABLED` 就能下放线程；`container` 仍未实现 ⇒ 声明它在执行点被拒而不是静默退回进程内。**注意这两档都不是隔离**：同进程、同 GIL、同环境变量，端口的价值是让 ⑮ 的墙有地方接）、以及 T2 ⑮ 的子进程沙箱档（`TOOL_SANDBOX_SUBPROCESS_ENABLED`，默认关：开了、且某条工具**逐条声明** `sandbox="subprocess"`，才真的走墙。**一次调用一个进程**，子进程侧先落资源闸 `RLIMIT_AS=512MiB` / `RLIMIT_CPU=30s` / `RLIMIT_FSIZE=32MiB`（可选 `TOOL_SANDBOX_SUBPROCESS_UID=-1` 不降权；root 容器实测降到 65534）**再 import 业务代码**，环境变量走与 G2 **同一份**白名单 `agentix/domain/tool/exec_env.py`（实测父进程里的 `DATABASE_URL`/`LLM_API_KEY` 不过界），协议是 stdin 一条 JSON 请求 + stdout 一行带哨兵的 JSON 应答、两侧各有体积闸，**且成功信封必须回显本次调用的 nonce**（墙内代码自己 `print` 一条"成功信封"换不到它——旧口径下那条会被父进程当成成功结果返回，已实测复现；**且 `ok` 必须是严格布尔**，`"ok": 1` 这种伪造件同样会被真值判定当成成功，归属凭证在那条路上压根没执行），取消经 `start_new_session` + `os.killpg` 真杀进程组；⑯ 的能力探测不过（Windows 缺 `resource` 与进程组 kill）⇒ 执行点响亮拒绝，一次 handler 都不调、一个进程都不起。**它是墙，不是笼子**：挡住地址空间 / CPU 秒 / 文件大小 / 环境密钥 / 可杀性，另买到**带前置的**进程数闸（`RLIMIT_NPROC`，上限 32 个**任务**——线程也算：实测 soft=8 时先起 7 个线程、fork 预算就归 0；只在 `TOOL_SANDBOX_SUBPROCESS_UID` 配了**独立且非 0** 的 uid 时落，共用父 uid 会被假拦或形同虚设，uid 0 因持 `CAP_SYS_RESOURCE` 被内核豁免 ⇒ 明确不落并告警一次），**仍没挡住**文件权限与出网（只读根、指定可写目录、出网默认拒绝三件属 ⑰/T3）。代价实测：单次调用 p50 **≈50ms**（容器本机 FS），同一条 handler 走 `in_process` 档 p50 **0.001ms**、`thread` 档 **0.074ms** ⇒ 默认档必须留在进程内。取证步骤与数字表见 [subprocess 沙箱验证 Runbook](docs/runbooks/子进程沙箱取证.md)）。T2 G14 的同名重复注册点名告警也在这层（无开关、默认打印；`TOOL_DUPLICATE_REGISTRATION_STRICT` 可选、默认关）。口径见 [运行时护栏 §15](docs/architecture/运行时护栏.md)、选型与被拒方案见 [PROJECT_SPEC §23.8](docs/项目实现手册.md)、逐项实测见 [PROJECT_SPEC §24](docs/项目实现手册.md)
 - **运行时写代码执行**（Phase P2 · 默认关）：模型在运行时**自己写 Python 代码**完成任务，而不是把每一步翻译成既有工具调用（`code-query` 意图 → `code_agent` 节点 → `code_execute` 工具 → `subprocess` 沙箱档）。失败语义分两层：**治理层**失败（沙箱档位不可用 / 风险被拒 / HITL 未批 / 参数非法）**终局**——重试换不来一个实现，不进自愈循环；**运行层**失败（退出码非零 / 超时）才把真实 stdout/stderr 回灌让模型改码，最多 `CODE_EXEC_MAX_ROUNDS` 轮**尝试（含首次执行）**，轮数用尽产出**含最后一次输出**的失败回执、不假装成功。**POSIX 专属**，且**不隔离文件系统与网络**。口径见 `docs/项目实现手册.md` 里 code exec 的配置段
@@ -692,7 +691,7 @@ docker compose --profile full up -d       # 基础设施 + backend + web（compo
 
 40 条 skip 均为显式声明：22 条 p125 的 POSIX 专属用例（Windows 上按设计跳过，由 Linux 容器真跑取证，见 [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md)）+ 4 条 p131 的 POSIX 专属用例（code exec 在墙内真跑一段代码 / 非零退出如实上报 / 超时被杀且秒级返回 / 墙被杀时孙进程随之被杀（`PR_SET_PDEATHSIG`）——最后那条在 Windows 上是**按设计跳过**：口径 §5 写明这条承诺只在 Linux 成立（macOS 没有 `prctl`），它测的不是"这台机器测不了"，而是"这个平台兑现不了那条承诺"；4 条的跳过理由都取自与执行点同源的能力探测，第 4 条取自 `parent_death_signal_supported()`）+ 4 条集成/端到端用例（2 条需 `LEGELBOT_RUN_INTEGRATION_TESTS=1`，2 条 LightRAG 端到端需 `LEGELBOT_RUN_LIGHTRAG_E2E=1`）+ 10 条 Redis Stream 契约用例（本机无 Redis 服务时按设计诚实跳过，`RedisStreamEventBus` 懒连接、连接错误向上传播不伪造）。真图 HITL 进环 E2E（`test_p81` `TestRealGraphE2E`）在本地 Python 3.12.13 执行；CI Python 3.10 按设计跳过，**不存在无原因静默跳过**。
 
-p131 共 39 条（本轮真实采集，不是手抄：这条由 `tests/test_p131_code_exec.py::test_docs_declaring_this_files_case_count_match_the_live_collection` 现算再核，改用例就要同改 README / CHANGELOG / runbook / PROJECT_SPEC 里这句短语，漏一处当场红）。这 4 条 skip 已由 **Linux 容器真跑取证**：root 与非 root 两轮各 **39 passed / 0 skipped**（`-rs` 一条 skip 都没打印 ⇒ 没有出现"墙自己的故障"类 skip），步骤与原始输出见 [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md) 第 3.5 步。
+p131 共 39 条（本次真实采集，不是手抄：这条由 `tests/test_p131_code_exec.py::test_docs_declaring_this_files_case_count_match_the_live_collection` 现算再核，改用例就要同改 README / CHANGELOG / runbook / PROJECT_SPEC 里这句短语，漏一处当场红）。这 4 条 skip 已由 **Linux 容器真跑取证**：root 与非 root 两轮各 **39 passed / 0 skipped**（`-rs` 一条 skip 都没打印 ⇒ 没有出现"墙自己的故障"类 skip），步骤与原始输出见 [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md) 第 3.5 步。
 
 本地统一使用 **Python 3.12.13 + 标准 venv `.venv`**；CI 仍按工作流配置验证受支持的 Python 版本，不需要本地维护多套环境。
 
@@ -859,7 +858,6 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 | [请求执行图](docs/architecture/请求执行图与关键路径.md) | 请求链路与节点依赖 |
 | [配置管理](docs/architecture/配置管理.md) | 单一事实来源、特性开关回滚表 |
 | [架构决策记录](docs/architecture/adr/) | 分层与端口 / 注册表可插拔 / 声明式配置 |
-| [优化路线图与落地台账](docs/design/性能与优化路线图.md) | 性能功能盘点 · 优化清单 · 分期路线 · 落地记录（代码 + 守卫 + 取证边界）· 架构分层与 Agent 内核的 M 组（§7 / §8） |
 | [技术栈指南](docs/guides/技术栈详解.md) | 全量技术选型、版本与集成细节 |
 | [Quick Start 常见问题](docs/guides/快速启动.md) | 端口占用 / 连接超时 / LLM 空返回排查 |
 | [Agent 路由速查表](docs/guides/路由速查表.md) | 路由意图、出口节点、关键词兜底 |
@@ -1019,7 +1017,7 @@ SHA-256 与 §15.1 同为 `1ca58564b1f3a58c…`）、Dense-only（`hybrid=false`
 |---|---|---|
 | 样本量 | 23 | `evals/legal_golden.jsonl` 中 `route_type=kb-query` 且 `expected_sources` 非空（102 条里取这 23 条，`--limit 23`） |
 | Recall@5 | **0.8696**（20/23） | top-1 命中 14 题、2–5 位命中 6 题、未命中 3 题（L049/L055/L056）；匹配器见下方口径① |
-| MRR | **0.7029** | 首命中位次取倒数、位次不截断到 k（与 `evals/hybrid_eval.py` 同口径；本轮两者相等，因为没有 6 位以后的命中） |
+| MRR | **0.7029** | 首命中位次取倒数、位次不截断到 k（与 `evals/hybrid_eval.py` 同口径；本次两者相等，因为没有 6 位以后的命中） |
 | 检索 P50 / P95 | 100.3 / 284.5 ms | 只含 `_retrieve_docs` 一段（mean 125.8，min 51.7 / max 511.5）；**这段对 Python 栈敏感**，见口径③ |
 | 生成 P50 / P95 | 7108.2 / 13739.9 ms | 只含生成那次 LLM 调用（mean 7596.5，min 1831.8 / max 14749.4） |
 | 路由 P50 / P95（残差） | 13462.3 / 17682.1 ms | 端到端减检索减生成逐题算得（mean 13836.1，min 10608.8，max 19243.9）——**端到端里最大的一段**，见口径④ |
@@ -1031,7 +1029,7 @@ SHA-256 与 §15.1 同为 `1ca58564b1f3a58c…`）、Dense-only（`hybrid=false`
 
 1. **命中判定是 silver**（复用 `evals/hybrid_eval.py::doc_matches_gold`）：把 chunk 正文 +
    `metadata` 全部值当干草堆，出现「法规名 + 第X条（中文/阿拉伯数字写法）」即算命中，
-   金标无条号时只比法规名。换成「**金标文档本身**进 top-5」的严格口径，本轮是
+   金标无条号时只比法规名。换成「**金标文档本身**进 top-5」的严格口径，本次是
    **16/23 = 0.6957**——20 个 silver 命中里有 4 题是靠"别的条文引用了它"得分：
    L053/L054 的金标法规（《食品安全法》148、《消费者权益保护法》55）**根本不在这份语料**，
    命中的是正文里引用了该条文的司法解释 chunk；而 L060（《民法典》311）与 L062（《民法典》188）
@@ -1041,10 +1039,10 @@ SHA-256 与 §15.1 同为 `1ca58564b1f3a58c…`）、Dense-only（`hybrid=false`
    （库里只有《刑法》第253条，没有"之一"那款）。⇒ 这份语料对任何严格口径的天花板都是
    **18/23 = 0.7826**；报 Recall 必须同时说明是 silver 还是「金标文档本身」。
 2. **分位数是最近邻秩**：`sorted[round(q×(n−1))]`，n=23 时 P95 就是第 22 小 ⇒ 最慢那一条
-   （本轮端到端 max 32.5s / 路由残差 max 19.2s）被 P95 排除在外。这与 §15 主表的服务端
+   （本次端到端 max 32.5s / 路由残差 max 19.2s）被 P95 排除在外。这与 §15 主表的服务端
    Prometheus 直方图（桶边界 1s/2s/5s）是两套口径，**不可互读**；本节是逐请求客户端实测毫秒，
    但 n=23、单轮、单机，不构成任何 SLO 结论，也不外推到其他语料/模型快照。
-3. **延迟绝对值对 Python 栈敏感，质量结论不敏感**——这条是本轮踩出来的，值得单独讲。
+3. **延迟绝对值对 Python 栈敏感，质量结论不敏感**——这条是本次踩出来的，值得单独讲。
    同一份代码、同一份语料 SHA，另一套栈（Anaconda `python 3.13.9 / openai 1.47.0 /
    langchain-openai 1.1.6`，脚本为它自动改用 `function_calling + tool_choice="auto"`）把 23 题
    重跑一遍（明细留档到 `data/demo/eval_e2e_anaconda_py313_openai147.json`，
@@ -1156,11 +1154,11 @@ SHA-256 与 §15.1 同为 `1ca58564b1f3a58c…`）、Dense-only（`hybrid=false`
 指回 2026-10-11 那套隔离评测库）：Dense 精确复现 **18/23 = 0.7826**，逐题只有 4 个位次变化
 （L044 3→4、L046 None→1、L047 None→1、L052 2→1）。差异原因查明：那份评测库有
 **429 条 chunk 被截断在第一行**（例：《劳动合同法》第19条 的 `content` 是
-`'# 《劳动合同法》第19条\n第十九条'`，18 字，正文全丢；本轮同条 220 字），
+`'# 《劳动合同法》第19条\n第十九条'`，18 字，正文全丢；本次同条 220 字），
 两侧总字符 637,041 vs 696,224（+59,183）——L046/L047 问的正是试用期条款，正文缺失时不可召回。
 **截断是那一次灌库脚本的产物，今天的生产入库链路是否同样截断未经验证**。
 （那次对拍跑在 Anaconda 栈上；口径③已证逐题位次对栈不敏感，所以仍可与 §15.1 并排读。）
-BM25 侧本轮 0.6957/0.5486 vs §15.1 的 0.6957/0.5176：Recall 完全一致，MRR 略升。
+BM25 侧本次 0.6957/0.5486 vs §15.1 的 0.6957/0.5176：Recall 完全一致，MRR 略升。
 （单位提醒：§15.1 的 0.7826 与这里的 BM25 0.6957 都是 **silver** 口径实测值；0.7826 恰好等于
 上面算出的严格口径天花板 **18/23**，数值撞在一起，不是同一个量——别把"复现了旧数字"读成
 "旧数字是严格口径"。）

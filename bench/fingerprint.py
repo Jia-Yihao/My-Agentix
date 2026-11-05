@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, Optional
 
-#: 与唯一实现同源取尺子标识，不在这里重新描述秩算式（纪律 6 ④：单源）
+#: 与唯一实现同源取尺子标识，不在这里重新描述秩算式（约定 6 ④：单源）
 from evals.perf_stats import QUANTILE_CONVENTION
 
 #: 尺子的模块路径标识（reviewer 核对"分位数实现来源"时对照 evals/perf_stats.py）

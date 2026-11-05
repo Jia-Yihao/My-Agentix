@@ -18,7 +18,7 @@ compose 给 MySQL 挂的初始化脚本只有 `data/init_mysql.sql`（建表）+
   `DATABASE_URL`）——和 schema 拉取、SQL 执行、dry-run 同一个库，不会出现
   "补到 A 库、查 B 库"。
 * 默认 **dry-run**（只打印将要插入的行数），必须显式 `--apply` 才写库
-  （纪律 5：对数据的写操作要人点头）。
+  （约定 5：对数据的写操作要人点头）。
 """
 
 from __future__ import annotations

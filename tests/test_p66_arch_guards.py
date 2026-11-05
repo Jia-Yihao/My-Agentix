@@ -1,7 +1,7 @@
 """A6 分层守卫定稿 p66——架构重构统一执行链 §6 十二条守卫的测试化收敛。
 
 方案文档：``docs/migration/架构重构_统一执行链方案_v2.md`` §6（守卫层）+ §7
-（纪律：守卫基线只减不增，豁免必须显式登记）。
+（守卫基线只减不增，豁免必须显式登记）。
 
 12 条守卫 → 承载测试：
 
@@ -370,7 +370,7 @@ class TestOnlinePromoteForbidden:
                     offenders.append(f"{rel}:{i}")
         assert offenders == [], (
             f"在线路径出现 promote/run_regression 调用：{offenders}"
-            "（staged-only 纪律：propose 可在线，promote 只在离线）"
+            "（staged-only propose 可在线，promote 只在离线）"
         )
 
 

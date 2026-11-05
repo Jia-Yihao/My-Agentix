@@ -8,9 +8,9 @@
 2. ``invalid_type`` / ``empty`` 两条防御分支各自计数。触达方式必须用
    ``Router().type = ...`` 赋值：pydantic v2 默认不在赋值时校验，而**构造期
    Literal 校验根本到不了这两条分支**（这一点单独用一条测试记录）；
-3. **fail-open**（AGENTS.md 纪律 2）：指标子系统抛错不得改写路由结果——这条路径
+3. **fail-open**（工程约定 2）：指标子系统抛错不得改写路由结果——这条路径
    本身就是降级路径，再抛异常等于把降级变成故障；
-4. **标签值有界**（纪律 3）：表外 reason 归 ``unknown``；
+4. **标签值有界**（约定 3）：表外 reason 归 ``unknown``；
 5. **已知空洞（characterization，非期望行为）**：结构化输出返回非 ``Router``
    实例且类型非法时，``router_cls.model_validate`` 在 try 之外 ⇒
    ``ValidationError`` 直接冒出节点，既不兜底也不计数。修它属行为变更，

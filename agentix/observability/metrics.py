@@ -28,7 +28,7 @@ class _GatewayFallbackFact:
 
     写入方只有一个：回退链自身的成败判定点（model_gateway.ainvoke_with_fallback
     的既有 `if errors:` 分支）经 record_gateway_fallback 置位——「是否走了兜底」
-    在仓里不存在第二个判定（纪律 6 ④）。读取方：RunEventEmitter 首内容帧记 TTFT
+    在仓里不存在第二个判定（约定 6 ④）。读取方：RunEventEmitter 首内容帧记 TTFT
     时判归因。
 
     用「槽对象」而非直接 set 布尔值：并发工具轮（AGENT_TOOL_ROUND_CONCURRENCY>1）
@@ -374,7 +374,7 @@ try:
     # T6（approval-recovery-optimization）：拆开 TTFT 混采——走过 Model Gateway
     # 兜底链的流，其首内容帧样本进本指标，不再混进主口径。选「独立指标」而非
     # 「加 label」：主直方图定义与记录点逐字不动（README §15 PromQL、p92 断言、
-    # 历史桶全保住），且零新增 label（纪律 3，p100 白名单无需扩容）。
+    # 历史桶全保住），且零新增 label（约定 3，p100 白名单无需扩容）。
     # 桶边界**逐字复制**主直方图：Q2 未决不细分，两口径同分辨率才可互比。
     TTFT_LATENCY_FALLBACK = Histogram(
         "agent_ttft_fallback_seconds",
@@ -610,7 +610,7 @@ def record_ttft_fallback(duration: float) -> None:
     """T6：兜底路径的 TTFT（Model Gateway 主模型失败、由链内兜底模型答出），单位秒。
 
     本函数只在发射器读到 ``gateway_fallback_observed()`` 为真时被调用——判定由
-    回退链自身导出（见 :class:`_GatewayFallbackFact`），这里不另立判据（纪律 6 ④）。
+    回退链自身导出（见 :class:`_GatewayFallbackFact`），这里不另立判据（约定 6 ④）。
     """
     TTFT_LATENCY_FALLBACK.observe(max(0.0, duration))
 
@@ -629,7 +629,7 @@ def gateway_fallback_observed() -> bool:
     """T6：当前流的回退链是否已导出「主模型失败、链内兜底成功」的事实。
 
     事实槽未开（构造失败/非流式上下文）时恒 False——宁可少一笔兜底归因，
-    也不在仓里出现第二个「是否兜底」的判定点（纪律 6 ④）。
+    也不在仓里出现第二个「是否兜底」的判定点（约定 6 ④）。
     """
     fact = _gateway_fallback_fact.get()
     return fact is not None and fact.observed
@@ -690,13 +690,13 @@ def _bounded_label(value: str, allowed: frozenset[str]) -> str:
     return value if value in allowed else "other"
 
 
-#: G21（「指标埋点 fail-open 包裹面」统一批 U-A）：纪律 2 的守卫只此一处（纪律 6 ④）——
+#: G21（「指标埋点 fail-open 包裹面」统一批 U-A）：约定 2 的守卫只此一处（约定 6 ④）——
 #: 埋点动作整体进 try，失败即「跳过这一次计数 + warning 留痕」，绝不上抛主链路。
 #: 走本函数的新增埋点自动带上，不必各自再包一层。正常路径零日志：降级只在异常分支发声。
 def _emit_or_skip(action: Callable[[], None], metric_name: str) -> None:
     try:
         action()
-    except Exception as exc:  # noqa: BLE001 - 埋点失败降级为跳过，不影响主链路（纪律 2）
+    except Exception as exc:  # noqa: BLE001 - 埋点失败降级为跳过，不影响主链路（约定 2）
         logger.warning(
             "指标埋点失败已跳过: metric=%s err_type=%s err=%s",
             metric_name,
@@ -741,7 +741,7 @@ def record_task_queue_claimed(result: str) -> None:
     调用点 warning 留痕）。"""
     # G3（台账 :1375）：词表在此第一次成为生产侧判据。越界只留痕不改口——理由见
     # 本模块 ``TASK_QUEUE_CLAIM_RESULT_VALUES`` 之上的注释（指标层改口会把"调用点
-    # 传错了"这件事一起吞掉）；留痕本身不抛异常（纪律 2，指标不影响主链路）。
+    # 传错了"这件事一起吞掉）；留痕本身不抛异常（约定 2，指标不影响主链路）。
     # G21（U-A）：词表判定与计数一起进守卫——不可散列实参会先在 ``not in`` 抛，
     # prometheus 侧非法 label 值同由守卫兜住；生产调用点一字不动。
     def _action() -> None:
@@ -752,7 +752,7 @@ def record_task_queue_claimed(result: str) -> None:
     _emit_or_skip(_action, "task_queue_claimed_total")
 
 
-#: 纪律 3 要的是**基数有界**，不是"再抄一份 reason 名单"——reason 的真源是
+#: 约定 3 要的是**基数有界**，不是"再抄一份 reason 名单"——reason 的真源是
 #: ``router.FASTPATH_REASONS``（该文件明文不许外抄，本文件 ``LLM_CALLS_SAVED`` 的
 #: 声明注释只做指针），而 observability 的允许出边只有 {domain, config}
 #: （``tests/test_p177_arch_closure.py`` 的允许集），引它就是反向边、守卫判红。
@@ -764,7 +764,7 @@ _BOUNDED_TOKEN_RE = re.compile(r"[A-Za-z0-9_]{1,32}\Z")
 
 def record_llm_calls_saved(reason: str) -> None:
     """Phase H·W1：确定性 fast-path 跳过的 LLM 意图分类调用数（reason 有界枚举）。"""
-    # G21（U-A）：形状限界对非 str 实参会在 ``re.match`` 抛 TypeError——那属纪律 2 的
+    # G21（U-A）：形状限界对非 str 实参会在 ``re.match`` 抛 TypeError——那属约定 2 的
     # 降级面；守卫后「跳过这一次计数 + warning 留痕」。词表内逐字透传与越界落 "other"
     # 的既有语义一字不变（见 tests/test_p172_contract_regressions.py 的既有断言）。
     def _action() -> None:
@@ -896,7 +896,7 @@ def record_gateway_fallback(primary_model: str, fallback_model: str) -> None:
     """P2 可观测（O1）：Model Gateway 主模型失败后由 fallback 模型兜底成功一次"""
     # T6：先置本流兜底事实再动计数器（计数器故障不丢事实，事实由调用方兜异常）——
     # 本函数只在回退链自身判定点被调用（model_gateway.py 的 `if errors:` 分支），
-    # 因此「是否走了兜底」在全仓只有一个源（纪律 6 ④）。
+    # 因此「是否走了兜底」在全仓只有一个源（约定 6 ④）。
     fact = _gateway_fallback_fact.get()
     if fact is not None:
         fact.observed = True

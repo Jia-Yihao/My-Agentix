@@ -152,7 +152,7 @@ def scan_fingerprint(root: Path) -> Tuple[Tuple[str, int, int], ...]:
     """清单指纹：``(相对路径, mtime_ns, size)`` 升序元组——**只 stat 不读不解析**。
 
     ``SkillRegistry.maybe_refresh`` 据此做快照失效（hermes「缓存失效显式化」
-    纪律：每轮只付 stat 成本，扫描/解析/校验只在指纹变化时发生）。
+    每轮只付 stat 成本，扫描/解析/校验只在指纹变化时发生）。
     根不存在 ⇒ 空元组；单文件 stat 失败 ⇒ 跳过（下次指纹自然不匹配）。
     """
     root = Path(root)

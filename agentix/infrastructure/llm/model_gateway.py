@@ -13,7 +13,7 @@
    防「模型故障 → 无限重试 → 成本爆炸」；单次调用的超时/重试/预算/熔断
    由消费点注入的 ``build_client``/``invoke`` 决定（本模块只做链编排）。
 
-分层纪律：本模块（infrastructure）**不构建 client、不发起调用**——
+分层本模块（infrastructure）**不构建 client、不发起调用**——
 client 构建方式与端点参数因调用域而异（编排域 llm_factory vs 检索域
 create_chat_llm，两者的 base_url/extra_body 不同），由消费点注入
 ``build_client(model)`` 保证 fallback 客户端与主链路**同构**。

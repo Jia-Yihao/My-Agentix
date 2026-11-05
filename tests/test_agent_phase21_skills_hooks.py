@@ -8,7 +8,7 @@ DoD 映射：
 5. hook：注册→触发顺序正确；hook 抛异常主路径不受影响；未注册/关 flag 零调用
 6. describe_groups() 分组完整、同配置两次输出序稳定
 
-全局单例纪律：本文件会动 settings 字段、_DECLARATIONS、skills 单例、
+全局单例本文件会动 settings 字段、_DECLARATIONS、skills 单例、
 hooks 表、全局 ToolExecutor —— 均经 fixture 在 teardown 复位。
 """
 

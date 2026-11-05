@@ -1,10 +1,10 @@
-"""p126 · schema 缓存的**主动失效**入口（`docs/design/性能与优化路线图.md` E2）。
+"""p126 · schema 缓存的**主动失效**入口。
 
 四条口径，每条都对应 E2 原文里的一句验收：
 
 1. **「改表 → 主动清 → 立即可见」**：失效之后下一次取用必须读到新 schema，而不是继续吃
    TTL 里的旧值（`test_next_read_sees_the_new_schema_after_invalidation`）。
-2. **默认姿态不许变**（纪律 1）：`TEXT2SQL_SCHEMA_CACHE_TTL_SECONDS` 出厂 0 = 根本不缓存，
+2. **默认姿态不许变**（约定 1）：`TEXT2SQL_SCHEMA_CACHE_TTL_SECONDS` 出厂 0 = 根本不缓存，
    此时失效入口必须返回"清了 0 条"且不产生任何行为差异
    （`test_ttl_off_*` 两条）。反过来，**主动失效不许被 TTL 开关吞掉**：Neo4j 的周期刷新
    默认也是关的，若失效只在"周期刷新开着"时才生效，默认部署里这个入口就是装饰品
@@ -12,7 +12,7 @@
 3. **只清该清的**：text2sql 的缓存键里带连接串，失效必须能按库收窄，不许一把清空所有库
    （`test_invalidate_clears_only_the_named_database`）——多租户/多目标库下"清全局"会把
    别人的热缓存一起打掉，那是可被利用的延迟放大。
-4. **运维面 fail-open**（纪律 2）：清缓存是辅助设施，任何一侧报错都不得把 `/ops` 请求打成
+4. **运维面 fail-open**（约定 2）：清缓存是辅助设施，任何一侧报错都不得把 `/ops` 请求打成
    500，也不得让主链路受影响（`test_the_umbrella_service_degrades_instead_of_raising` +
    `test_ops_endpoint_still_answers_200_shape_when_everything_fails`）。
 """
@@ -109,7 +109,7 @@ def test_invalidate_with_an_unknown_url_is_a_no_op() -> None:
 
 @pytest.mark.asyncio
 async def test_ttl_off_caches_nothing_so_invalidation_reports_zero(monkeypatch) -> None:
-    """出厂 TTL=0：每次现查 ⇒ 失效入口返回 0，且行为与它不存在时逐位相同（纪律 1）。"""
+    """出厂 TTL=0：每次现查 ⇒ 失效入口返回 0，且行为与它不存在时逐位相同（约定 1）。"""
     monkeypatch.setattr(settings, "TEXT2SQL_SCHEMA_CACHE_TTL_SECONDS", 0)
     calls = _fake_reader(monkeypatch, ["v1", "v2", "v3"])
     node = schema_node.create_schema_retrieval_node()
@@ -189,7 +189,7 @@ def test_the_umbrella_service_reports_both_sides() -> None:
 
 
 def test_the_umbrella_service_degrades_instead_of_raising(monkeypatch) -> None:
-    """纪律 2：任何一侧炸了都不能把清缓存这件事变成 500；错误如实进报告。"""
+    """约定 2：任何一侧炸了都不能把清缓存这件事变成 500；错误如实进报告。"""
 
     def _boom(*_a, **_kw):
         raise RuntimeError("neo4j 侧不可用")

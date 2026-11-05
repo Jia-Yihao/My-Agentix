@@ -67,7 +67,7 @@ My Agentix 在架构层面内置了以下安全机制，便于你在部署与二
 | **工具 handler 类型契约** | 「这条工具的 `timeout_ms` 到底会不会生效」原先只能在排障时反推：非协程 handler 占住事件循环，`wait_for` 取消不了它。开 `TOOL_HANDLER_CONTRACT_ENABLED` 后注册期按**可等待口径**（`handler_shape`：类的 `async __call__` 算 async、异步生成器单列）点名告警并附声明超时。**告警不拒绝注册**——仓里最重的几个工具本就是同步 I/O，fail-closed 等于在开 flag 那刻打断全部功能；真正解除阻塞仍靠 `TOOL_SYNC_OFFLOAD_ENABLED` | `agentix/tools/gateway/executor.py` |
 | **同名工具声明不允许静默丢弃（G14）** | 同名再注册且 `ToolSpec` 不同时，两个注册入口（executor / registry）**默认**打印点名 `TOOL DUPLICATE REGISTRATION:` 告警，列出差异字段名（不搬运 `description` 等文本值；executor 侧另回显存活声明的 `sandbox`/`risk_level` 枚举值）并说明执行时读哪一份；`TOOL_DUPLICATE_REGISTRATION_STRICT=true` 才在改动 registry/handler **之前**拒绝。默认语义仍是 executor「第一次赢」/ registry「最后一次赢」——所以默认路径买到的是**可见**，要**不可能**须在部署里打开严格模式（告警本身没有开关） | `agentix/tools/gateway/executor.py`、`agentix/tools/definitions.py`、`agentix/domain/tool/spec.py` |
 | **执行位置是声明出来的** | `ToolSpec.sandbox` 决定这条 handler 在哪儿跑，`EXECUTION_SANDBOX_ENABLED`（默认关）打开才读声明。声明校验只判「在不在阶梯词汇表里」，不判「实现没实现」：`container`（以及 ⑮ 档位关着、或本机落不下资源闸时的 `subprocess`）会在执行点拿到 `sandbox_unavailable` 且**不可重试**，**不静默退回进程内**——静默降级会让「以为有墙」这个误判一直活着。⚠️ 默认两档 `in_process` / `thread` 同进程、同 GIL、同 `os.environ`、同文件权限，**不构成任何隔离边界**（[ADR-0007](docs/architecture/adr/0007-执行沙箱端口.md)） | `agentix/domain/tool/sandbox.py`、`agentix/tools/sandbox.py` |
-| **子进程沙箱档（⑮：真的有一面墙）** | 声明 `sandbox="subprocess"` 且 `TOOL_SANDBOX_SUBPROCESS_ENABLED=true`（默认关）时，一次调用一个进程：子进程侧 `apply_gates` **先落资源闸** `RLIMIT_AS=512MiB` / `RLIMIT_CPU=30s` / `RLIMIT_FSIZE=32MiB`（可选 `TOOL_SANDBOX_SUBPROCESS_UID` 降权，默认 `-1` 不降；root 容器实测降到 65534，非 root 实测以 `stage=limits` 终局拒绝）**再 import 业务代码**；环境变量走与 G2 **同一份**白名单（白名单里的 `HTTP_PROXY`/`HTTPS_PROXY` 会把代理 URL 一起带进墙里，而代理 URL 的 `user:pass@` **本身就是凭据**——这是登记在案的已知边界）；协议是 **v2**：stdin 一条 JSON 请求 + stdout 一行带哨兵的 JSON 应答，两侧各有体积闸（请求 1MiB / 应答 8MiB），**成功信封必须回显本次调用的 nonce**（墙内代码有 stdout 写权限，只靠哨兵行认应答等于把伪造应答的笔交给它）且**退出码非 0 时 stdout 上的信封一律不采信**（实测：旧口径下"墙内自己印一条 ok 信封"会被当成成功结果返回），**`ok` 字段还必须是严格布尔**（`1`/`1.0`/`"true"`/缺失一律按畸形信封拒——真值判定下"印一条 `"ok": 1` 的信封"同样会被当成成功结果，归属凭证在那条路上压根没执行）；取消经 `start_new_session` + `os.killpg` 杀掉整个进程组。**只有 POSIX 落得下**（⑯ 能力探测判的是 `resource` + 进程组，不是「某个二进制在不在」），Windows 上是执行点拒绝。**进程数闸 `RLIMIT_NPROC`（上限 32 个任务）已落地但有前置**：只在 `TOOL_SANDBOX_SUBPROCESS_UID` 配了**独立且非 0** 的 uid 时才落——该闸按整个 real uid 在全内核范围计费，共用父 uid 时要么假拦要么形同虚设，uid 0 因持 `CAP_SYS_RESOURCE` 被内核豁免（实测 soft=5 写进去并回读到 5、照样连起 12 个进程），落不下时回传 `nproc_gate.applies=false` 并告警一次；⚠️ 计费单位是**任务（线程也算）**，容器里可见的进程数/任务数都是下限。**不含**文件权限收紧与出网限制（属 ⑰） | `agentix/tools/sandbox.py::SubprocessSandbox`、`agentix/tools/subprocess_worker.py`、`agentix/domain/tool/exec_env.py` |
+| **子进程沙箱档（⑮：真的有一面墙）** | 声明 `sandbox="subprocess"` 且 `TOOL_SANDBOX_SUBPROCESS_ENABLED=true`（默认关）时，一次调用一个进程：子进程侧 `apply_gates` **先落资源闸** `RLIMIT_AS=512MiB` / `RLIMIT_CPU=30s` / `RLIMIT_FSIZE=32MiB`（可选 `TOOL_SANDBOX_SUBPROCESS_UID` 降权，默认 `-1` 不降；root 容器实测降到 65534，非 root 实测以 `stage=limits` 终局拒绝）**再 import 业务代码**；环境变量走与 G2 **同一份**白名单（白名单里的 `HTTP_PROXY`/`HTTPS_PROXY` 会把代理 URL 一起带进墙里，而代理 URL 的 `user:pass@` **本身就是凭据**——这是登记在案的已知边界）；协议是 **v2**：stdin 一条 JSON 请求 + stdout 一行带哨兵的 JSON 应答，两侧各有体积闸（请求 1MiB / 应答 8MiB），**成功信封必须回显本次调用的 nonce**（墙内代码有 stdout 写权限，只靠哨兵行认应答等于把伪造应答的笔交给它）且**退出码非 0 时 stdout 上的信封一律不采信**（实测：旧口径下"墙内自己印一条 ok 信封"会被当成成功结果返回），**`ok` 字段还必须是严格布尔**（`1`/`1.0`/`"true"`/缺失一律按畸形信封拒——真值判定下"印一条 `"ok": 1` 的信封"同样会被当成成功结果，归属凭证在那条路上压根没执行）；取消经 `start_new_session` + `os.killpg` 杀掉整个进程组。**只有 POSIX 落得下**（⑯ 能力探测判的是 `resource` + 进程组，不是「某个二进制在不在」），Windows 上是执行点拒绝。**进程数闸 `RLIMIT_NPROC`（上限 32 个任务）已实现但有前置**：只在 `TOOL_SANDBOX_SUBPROCESS_UID` 配了**独立且非 0** 的 uid 时才落——该闸按整个 real uid 在全内核范围计费，共用父 uid 时要么假拦要么形同虚设，uid 0 因持 `CAP_SYS_RESOURCE` 被内核豁免（实测 soft=5 写进去并回读到 5、照样连起 12 个进程），落不下时回传 `nproc_gate.applies=false` 并告警一次；⚠️ 计费单位是**任务（线程也算）**，容器里可见的进程数/任务数都是下限。**不含**文件权限收紧与出网限制（属 ⑰） | `agentix/tools/sandbox.py::SubprocessSandbox`、`agentix/tools/subprocess_worker.py`、`agentix/domain/tool/exec_env.py` |
 | **运行时写代码执行（code exec，默认关）** | `CODE_EXEC_ENABLED=true`（默认关）时，模型可在运行时写 Python 代码完成任务：经 `code_execute` 工具（声明 `sandbox="subprocess"` / `risk_level="L2"`，有效风险 HIGH，HITL 可审，**不进 LLM 可见工具面**、由节点直接调用）在 subprocess 档里执行。**隔离到的**：独立进程与地址空间、`RLIMIT_AS=512MiB` / `RLIMIT_CPU=30s` / `RLIMIT_FSIZE=32MiB` 三道资源闸、环境变量白名单（不含任何密钥）、超时可杀的进程组。**没隔离到的**：**文件系统与网络**——仍可出网、仍可读宿主可读的文件，这是 ADR-0007 已登记的残留，**不是"完全隔离"**。**非 POSIX 平台 fail-closed 拒绝执行**；Windows 上永不做无隔离降级。真正跑起来还需 `EXECUTION_SANDBOX_ENABLED=true` + `TOOL_SANDBOX_SUBPROCESS_ENABLED=true` + 平台是 POSIX，任一不满足 ⇒ 该次调用失败并说明原因 | [ADR-0007 执行沙箱端口](docs/architecture/adr/0007-执行沙箱端口.md)、`agentix/tools/sandbox.py` |
 
 ## 部署安全建议
@@ -125,10 +125,10 @@ My Agentix 在架构层面内置了以下安全机制，便于你在部署与二
 ## 依赖安全现状
 
 - 以 `pip-audit -r requirements.txt` 实测为准（2026-10-04，S2 安全批，**历史读数**）：残余 **21 项 / 8 包**，全部属 langchain 0.3.x 生态（langgraph-checkpoint、langgraph、langchain-core、langchain、langchain-openai、langchain-text-splitters、langgraph-sdk、langsmith），清零需 langchain 1.x 大版本迁移。
-  - **LG-0-2（2026-10-27）已把 langchain 家族迁到 1.x**（`langgraph 1.2.18` / `langchain-core 1.7.0` / `langsmith 0.14.13` 等，见 `requirements.txt`），上面那 8 包**全部换了版本线** ⇒ 21 项既不能当作已清零，也不能沿用为现状：**必须在 1.x 栈上重跑 `pip-audit -r requirements.txt` 才能出结论**（本轮环境未装 `pip-audit`，未复测，故不写新数字）。
-  - 核心 Web 栈（`fastapi==0.142.2` / `starlette==1.7.0` 等）漏洞在 S2 批已清零，本轮未动这两个 pin，详见 `CHANGELOG.md`「S2 安全批」。
+  - **LG-0-2（2026-10-27）已把 langchain 家族迁到 1.x**（`langgraph 1.2.18` / `langchain-core 1.7.0` / `langsmith 0.14.13` 等，见 `requirements.txt`），上面那 8 包**全部换了版本线** ⇒ 21 项既不能当作已清零，也不能沿用为现状：**必须在 1.x 栈上重跑 `pip-audit -r requirements.txt` 才能出结论**（本次环境未装 `pip-audit`，未复测，故不写新数字）。
+  - 核心 Web 栈（`fastapi==0.142.2` / `starlette==1.7.0` 等）漏洞在 S2 批已清零，本次未动这两个 pin，详见 `CHANGELOG.md`「S2 安全批」。
 - `bandit`（medium+ 级别）当前 **0 findings**；LOW 级信息性项（try/except pass 等）保留并逐项复核。
-- 升级纪律：`requirements.txt` 与 `pyproject.toml` 双声明必须同步（`tests/test_dependency_consistency.py` 守卫），升级后以全量测试套件验证（README §11 唯一真源）。
+- 升级`requirements.txt` 与 `pyproject.toml` 双声明必须同步（`tests/test_dependency_consistency.py` 守卫），升级后以全量测试套件验证（README §11 唯一真源）。
 
 ## 已知边界（非缺陷）
 
@@ -141,11 +141,11 @@ My Agentix 在架构层面内置了以下安全机制，便于你在部署与二
   **同一份**白名单裁剪（Linux 容器实测：父进程里的 `DATABASE_URL` / `LLM_API_KEY` 不过界，墙内
   `open(os.environ['DATABASE_URL'])` 因键被裁掉而失败）、取消经 `start_new_session` + `os.killpg`
   真杀进程组；能力探测不过（Windows 没有 `resource` 与进程组 kill）⇒ 在执行点响亮拒绝，
-  **绝不静默退回进程内**。**进程数闸（`RLIMIT_NPROC`）已落地但有前置**：只有
+  **绝不静默退回进程内**。**进程数闸（`RLIMIT_NPROC`）已实现但有前置**：只有
   `TOOL_SANDBOX_SUBPROCESS_UID` 配了一个**独立且非 0** 的 uid 时才落下（那道闸按整个 real uid
   在全内核范围计数、而 uid 0 持 `CAP_SYS_RESOURCE` 被豁免，共用父 uid 时它要么假拦要么形同虚设），
   没落时墙回传 `nproc_gate.applies=false` 并响亮告警一次；⚠️ 落了的闸按**任务**（线程也算）计费，
-  容器里看得见的两个计数都只是下限。**它没挡住的**（纪律 6 ①：白名单只覆盖它声明过的那个维度）：文件权限
+  容器里看得见的两个计数都只是下限。**它没挡住的**（约定 6 ①：白名单只覆盖它声明过的那个维度）：文件权限
   （只读根 / 指定可写目录）、出网（网络默认拒绝）——那三件一起属 ⑰/T3；
   `unshare` / namespace / seccomp 一律未接线，容器默认仍以 root 运行（`AGENTIX_CONTAINER_USER=0:0`）。
   所以口径是「**是墙，不是笼子**」：handler 崩了、把内存吃了、把环境密钥读了都出不了进程，但它想

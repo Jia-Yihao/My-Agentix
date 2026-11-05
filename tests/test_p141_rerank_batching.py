@@ -1,18 +1,18 @@
 """T9：rerank 候选分批 + 检索侧计数器。
 
-依据：docs/design/审批与中断恢复优化规划.md §T9（验收①–③）。
+验收①–③：
 
 覆盖：
-- 验收①（纪律 1）：``RETRIEVAL_RERANK_BATCH_SIZE`` 默认 0 = 不分批 ⇒
+- 验收①（约定 1）：``RETRIEVAL_RERANK_BATCH_SIZE`` 默认 0 = 不分批 ⇒
   上游恰好一次调用、请求形状（endpoint / payload 键 / documents / top_n）
   与基线一致、结果与基线一致（用桩记录调用证明"单次"）。
 - 验收③：配 batch_size ⇒ 调用次数 = ceil(候选数/批)，且融合顺序与
   不分批一致（显式口径：全局 relevance_score 降序；同分按原始下标升序）。
-- 验收②（纪律 3）：``rerank_calls_total`` / ``rerank_errors_total`` /
+- 验收②（约定 3）：``rerank_calls_total`` / ``rerank_errors_total`` /
   ``rerank_latency_seconds`` 可查，且三个指标零 label（基数恒 1，天然
   无需进 p100 ALLOWED_METRIC_LABELS——该守卫枚举默认 REGISTRY 全部
   collector 的 label 名，无 label 即不受影响）。
-- 纪律 2（fail-open）：分批中途上游异常 ⇒ 主链不炸、保原序、
+- 约定 2（fail-open）：分批中途上游异常 ⇒ 主链不炸、保原序、
   errors 计数增加。
 
 口径边界（刻意不测）：rerank 独立超时 + fail-open + 熔断为既有行为
@@ -112,7 +112,7 @@ def _sample(name: str) -> float:
 
 
 def test_default_batch_size_is_zero():
-    """纪律 1：新键出厂默认必须是"不分批"（0）。"""
+    """约定 1：新键出厂默认必须是"不分批"（0）。"""
     assert rerank_mod.settings.RETRIEVAL_RERANK_BATCH_SIZE == 0
 
 
@@ -234,7 +234,7 @@ def test_counters_track_calls_and_latency(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 纪律 2：分批中途上游异常 ⇒ fail-open，主链不炸，errors 增加
+# 约定 2：分批中途上游异常 ⇒ fail-open，主链不炸，errors 增加
 # ---------------------------------------------------------------------------
 
 
@@ -254,7 +254,7 @@ def test_batch_failure_midway_fails_open_and_counts_errors(monkeypatch, caplog):
     # 两次上游调用都记账（第二次失败）：calls +2、errors +1
     assert _sample("rerank_calls_total") - c0 == 2.0
     assert _sample("rerank_errors_total") - e0 == 1.0
-    # fail-open 必须留痕（纪律 2：logger.warning）
+    # fail-open 必须留痕（约定 2：logger.warning）
     assert "rerank degraded (fail-open)" in caplog.text
 
 
