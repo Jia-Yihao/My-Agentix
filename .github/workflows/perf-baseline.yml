@@ -39,7 +39,7 @@ jobs:
       # 主键每次唯一 ⇒ 一定 restore 到最近一版（restore-keys），且一定把本次
       # 结果写回缓存（actions/cache 只在主键 miss 时保存）。
       - name: Restore previous baseline
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: perf-cache
           key: perf-baseline-${{ github.run_id }}
@@ -153,7 +153,7 @@ jobs:
       - run: pip install -r requirements.txt
       # 前缀与 p95 job 不同（perf-business-baseline-）：两个 job 不互相恢复对方的基线。
       - name: Restore previous business baseline
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: perf-cache
           key: perf-business-baseline-${{ github.run_id }}
