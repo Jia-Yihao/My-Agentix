@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # My Agentix 多阶段构建（P1 部署收口）
 #
 # 构建目标：
@@ -117,7 +117,7 @@ CMD ["uvicorn", "agentix.main:application", "--host", "0.0.0.0", "--port", "8000
 
 
 # ---------- Stage 3: neo4j_seeded（预导入法律 KG，保持原逻辑不变） ----------
-FROM neo4j:5.18 AS neo4j_seeded
+FROM neo4j:5.26 AS neo4j_seeded
 
 # neo4j-admin 的 JVM 用 **locale** 决定 argv 的解码字符集（sun.jnu.encoding）。
 # 镜像默认 locale 是 POSIX/ASCII，于是 `--nodes=法条=…` 里的中文在进 JVM 之前就
