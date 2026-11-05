@@ -260,6 +260,16 @@ _ENV_SNAPSHOTS: dict[str, dict] = {
         #: 若将来 CI 上真出现半删包，守卫会列出具体包名，届时按同样口径补登记。
         "record_exempt": {},
     },
+    "3.12-linux": {
+        #: CI（ubuntu-latest + setup-python 3.12）按 requirements.txt **全新安装**：
+        #: 与 3.10-linux 同理，pip 为满足每条声明而解析 ⇒ 偏差按构造为空。
+        #: 换到 3.12 是因为 pydantic-settings 2.16.x 要求 Python >=3.11，
+        #: 3.10 的 runner 在装依赖那一步就失败（run 41982113875）。
+        "deviations": {},
+        #: 全新安装 ⇒ RECORD 逐文件核对零缺失；Windows-only 的包在 Linux 上根本没装，
+        #: 登记豁免反而会被 ``test_record_exempt_entries_are_still_needed`` 判成陈旧条目。
+        "record_exempt": {},
+    },
 }
 
 assert _ENV_KEY in _ENV_SNAPSHOTS, (
