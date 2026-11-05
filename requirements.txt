@@ -60,7 +60,7 @@ anyio==4.15.1  # 完整性补齐：chat.py 直连 import，原仅靠 starlette/o
 requests==2.33.0  # S1 安全批：2.31.0→2.33.0 修复 6 项 CVE
 websockets>=15,<17  # LG-0-2：langsmith 0.14.13（core 1.7.0 要求 >=0.14.9）要 websockets>=15；google-genai 1.x 只有 1.75.0 放宽到 <17，故上界钉 <17 并配套抬 google-genai
 bcrypt==4.1.2
-PyJWT==2.15.0  # S1 安全批：2.10.1→2.15.0 修复 20 项 CVE
+PyJWT==2.15.1  # S1 安全批：2.10.1→2.15.0 修复 20 项 CVE
 # Utilities
 python-dotenv==1.2.2  # S1 安全批：1.0.0→1.2.2
 python-multipart==0.0.31  # S1 安全批：0.0.6→0.0.31 修复 16+2 项；Form 解析兼容性由全量套件验证

@@ -118,7 +118,7 @@ dependencies = [
     # LG-0-2：langsmith 0.14.13 要 websockets>=15，google-genai 1.75.0 只放宽到 <17 ⇒ 区间钉死
     "websockets>=15,<17",
     "bcrypt==4.1.2",
-    "PyJWT==2.15.0",
+    "PyJWT==2.15.1",
     # ---- 通用工具 ----
     "python-dotenv==1.2.2",
     "python-multipart==0.0.31",
