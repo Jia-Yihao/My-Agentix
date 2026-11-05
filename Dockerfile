@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # My Agentix 多阶段构建（P1 部署收口）
 #
 # 构建目标：
@@ -12,7 +12,7 @@
 # ============================================================================
 
 # ---------- Stage 1: builder（依赖安装，可缓存） ----------
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1
 
@@ -35,7 +35,7 @@ RUN pip install --upgrade pip -i https://mirrors.ustc.edu.cn/pypi/simple && \
     pip install -r requirements.txt -i https://mirrors.ustc.edu.cn/pypi/simple
 
 # ---------- Stage 2: server（后端运行时） ----------
-FROM python:3.12-slim AS server
+FROM python:3.15-slim AS server
 
 WORKDIR /app
 
