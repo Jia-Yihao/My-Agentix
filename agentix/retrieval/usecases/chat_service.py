@@ -576,6 +576,9 @@ async def retrieve_scoped_docs_cached(
             key += "|h1"
         # R-P2-1：改写/HyDE 实际生效的结果与 flag-off 结果不共池
         key += cache_suffix
+        # Dense 候选池精排改变了检索集合与顺序，独立分池
+        if settings.RETRIEVAL_DENSE_RERANK_ENABLED:
+            key += "|d1"
         return key
 
     cache_key = ""
@@ -640,13 +643,26 @@ async def retrieve_scoped_docs_cached(
 
         async def _dense_miss() -> list:
             async with span("rag.retrieve", kb_id=kb_id) as _step:
+                effective_k = search_k
+                if settings.RETRIEVAL_DENSE_RERANK_ENABLED:
+                    effective_k = max(
+                        int(search_k), int(settings.RETRIEVAL_RERANK_CANDIDATES)
+                    )
                 miss_docs = await asyncio.to_thread(
                     retrieve_docs_with_retry,
                     vectorstore,
                     effective_norm,
-                    search_k=search_k,
+                    search_k=effective_k,
                     metadata_filter=metadata_filter,
                 )
+                if effective_k > search_k:
+                    from agentix.retrieval.usecases.dense_rerank import (
+                        rerank_dense_candidates,
+                    )
+
+                    miss_docs = await rerank_dense_candidates(
+                        question, miss_docs, search_k
+                    )
                 _step.set_attribute("docs_count", len(miss_docs or []))
             return miss_docs
 

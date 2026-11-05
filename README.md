@@ -419,7 +419,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 > 上述界面截图来自本地隔离测试账号与测试数据库（2026-10-22 实机重拍），不包含真实用户数据；截图文案与当前实现一致（见
 > `web/src/modules/knowledge/components/chat/HomeWelcomeHero.vue`、`web/src/modules/knowledge/views/HomeView.vue`）。
 
-**RAG 质量与时延优化路线**：先用人工核验的检索金标建立 Recall@5 / MRR 与引用正确率基线，再逐项对照 BM25 / Dense / RRF / Rerank（`python evals/hybrid_eval.py --kb-id <KB>`）；当前检索评估依赖真实索引和知识库数据，模板数据不能证明数据条目正确性。混合检索的 Dense 与 BM25 候选现已并发获取；BM25 使用倒排 posting 只扫描命中查询词的 chunk，并把阿拉伯数字与中文数字数据条目号规范到同一词项。索引快照仍按活动 `artifact_id` 隔离，语料只取该版本 manifest 内 `ready` 文档的 chunk。LM Studio 的 embedding 接口不能代替 Cross-encoder `/rerank` 接口；未成功精排会明确记为降级，不冒报成功。优化效果须在真实知识库上测量并同时检查召回质量。检索开关与调优口径见 `docs/architecture/配置管理.md`。
+**RAG 检索质量口径**：当前以 STARD 公开集（1,543 题、精确 docid 金标）为准，复现入口是 `evals/stard_eval.py`，指标与方法消融见 README §15.3。该集上的结论是：口语咨询问法下 Dense 单通道召回高于 BM25，词法查询改写 / 扩展 / 多查询融合不提升召回，把 BM25 用 RRF 并入 Dense 反而稀释语义信号。生产默认因此保持 Dense 单通道、混合总闸默认关；`RETRIEVAL_DENSE_RERANK_ENABLED` 可在不打开混合总闸的情况下对放大的 dense 候选池做 Cross-Encoder 精排，服务不可用时按原召回顺序 fail-open。混合检索的 Dense 与 BM25 候选并发获取，BM25 倒排 posting 只扫描命中查询词的 chunk，并把阿拉伯数字与中文数字条号规范到同一词项；索引快照按活动 `artifact_id` 隔离，语料只取该版本 manifest 内 `ready` 文档的 chunk。LM Studio 的 embedding 接口不能代替 `/rerank` 接口，未成功精排明确记为降级。检索开关与调优口径见 `docs/architecture/配置管理.md`。
 
 **上传通道与能力边界**（三条通道职责不同）：
 
@@ -881,10 +881,10 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 
 > ⚠️ **全栈服务口径（FastAPI + 基础设施容器 + Prometheus TTFT 直方图）仍为占位（`<待实测>`）**——
 > 采集方法见 [docs/runbooks/性能与成本采数.md](docs/runbooks/性能与成本采数.md)。
-> 本节三条实测线索各有边界：**§15.1** 是检索子链路对照（2026-10-11，不含生成）；
-> **§15.2** 是第一条端到端小样本（2026-10-25，本机 LM Studio + SQLite + FAISS 最小切片，
-> 逐请求客户端实测毫秒，n=23）；下面的 2026-10-23 段落是服务端指标口径（桶分辨率受限）。
-> 三者互不可替，也都不构成 SLO 结论。
+> **当前检索质量口径是 §15.3**（STARD 公开集，1,543 题、精确 docid 金标）。
+> §15.1 与 §15.2 是 2026-10 的历史小样本留档：题集已停用、命中判定为 silver 文本匹配，
+> 其中的 Recall@5 / MRR 与 §15.3 不是同一个量，不作现状读数，也不参与任何门禁。
+> 下面的 2026-10-23 段落是服务端指标口径（桶分辨率受限）。全章数字都不构成 SLO 结论。
 
 | 指标 | 数值 | 口径 |
 |---|---|---|
@@ -927,7 +927,7 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 token 明细从 `UsageRecord` 聚合。数字与模型快照/温度绑定，换模型须重测。
 已知限制：本机显存与云服务器测量结果不可互比，回填时须标注测量环境。
 
-### 15.1 本地测试数据语料检索对照（2026-10-11）
+### 15.1 本地测试数据语料检索对照（2026-10-11，历史读数）
 
 在隔离评测库中对 `data/kb/legal_corpus.txt` 的 4,865 条数据条目运行真实检索；
 语料 SHA-256 为
@@ -988,7 +988,7 @@ python evals/hybrid_eval.py --kb-id legal-recall-eval-20261011 --route kb-query 
 不要仅凭 23 题结果把此配置推广为所有知识库的默认值。Recall@5 未提升时，
 后续应先分析未命中题的候选覆盖与金标匹配，再决定是否改召回通道或查询解析。
 
-### 15.2 最小切片端到端小样本（本地 LM Studio + SQLite，2026-10-25）
+### 15.2 最小切片端到端小样本（本地 LM Studio + SQLite，2026-10-25，历史读数）
 
 **先看结论**（细节与 caveat 在下面，按顺序读）：
 
@@ -1200,6 +1200,67 @@ PYTHONPATH=. DATABASE_URL="sqlite:///D:/Code/My-Agentix/data/demo/agentix_demo.d
 不能推广为"混合检索/精排的收益结论"（Recall 未变、MRR 差异 0.0036 在 23 题上不到一题）；
 **不能把两套 Python 栈的延迟数字互读**，也不能脱离环境指纹引用其中任何一个毫秒数；
 换模型快照、换机器、换语料都要重测。
+
+### 15.3 STARD 公开集检索评测（当前口径）
+
+检索质量以公开数据集 **STARD**（Su et al., *Findings of EMNLP 2024*，MIT，
+`github.com/oneal2000/STARD`）为准：1,543 条真实非专业用户法律咨询、2,717 个条款级相关对、
+55,348 条候选法条，官方 `train` 1,235 / `dev` 308 划分零重叠。命中判定按 qrels 的
+**精确 docid**，定义为「至少一条相关法条进入 top-k」，不使用 silver 文本匹配。
+`dev` 是盲测集（权重与参数在 `train` 上定），下表 dev 列是唯一对外读数。
+
+| 语料 | 通道 | dev R@5 | dev R@10 | dev MRR | dev NDCG@5 | 全量 R@5 |
+|---|---|---:|---:|---:|---:|---:|
+| 全库 55,348 | BM25 | 0.4708 | 0.5422 | 0.3942 | 0.3327 | 0.5217 |
+| 受控子集 8,000 | BM25 | 0.5812 | 0.6494 | 0.4761 | 0.4192 | 0.6060 |
+| 受控子集 8,000 | **Dense** | **0.7110** | **0.7760** | **0.6014** | **0.5455** | **0.7207** |
+| 受控子集 8,000 | RRF(BM25+Dense, k=60) | 0.6591 | 0.7565 | 0.5584 | 0.4994 | 0.6889 |
+| 受控子集 8,000 | RRF(BM25+Dense, k=10) | 0.6916 | 0.7792 | 0.5698 | — | 0.7084 |
+
+**受控子集**＝全部 1,445 个金标法条 + `seed=42` 抽样的 6,555 条干扰文档，共 8,000 条。
+本机 embedding 吞吐约 33 ms/条，55,348 条全库向量约需 30 分钟，故语义通道在子集上测；
+子集保留全部金标、覆盖率为 100%，其绝对值高于全库，**只用于同一子集内的方法间比较**。
+全库 BM25 与子集 BM25 语料规模不同，两行不可互读。生成物：
+[`docs/evals/stard-lexical-summary.json`](docs/evals/stard-lexical-summary.json)、
+[`docs/evals/stard-semantic-summary.json`](docs/evals/stard-semantic-summary.json)。
+
+复现（数据落 `.tmp/stard/`，已 gitignore；`--mode semantic` 需要本机 embedding 服务）：
+
+```bash
+.venv/Scripts/python.exe evals/stard_eval.py --fetch-only
+.venv/Scripts/python.exe evals/stard_eval.py --mode lexical \
+  --write-summary docs/evals/stard-lexical-summary.json
+.venv/Scripts/python.exe evals/stard_eval.py --mode semantic --subset 8000 \
+  --write-summary docs/evals/stard-semantic-summary.json
+```
+
+**查询侧方法的消融**（每项都在真实口语 query 上跑过，数字各按自己的样本口径，不与上表混算）：
+
+| 方法 | 样本口径 | R@5 变化 | 判定 |
+|---|---|---|---|
+| 查询改写 / 槽位扩展 / 关键词视图 / 法规名视图 | 全库 200 题 | 0.5550 → 0.5550 | 持平，仅 MRR 0.4389→0.4433 |
+| 词法多查询 Fan-out + RRF（四视图） | 全库 200 题 | 0.5550 → 0.5550 | 持平 |
+| 子查询分解（`/` 分隔的复合问句） | 全库 300 题 | 0.5400 → 0.5400 | 持平 |
+| 伪相关反馈 PRF（top-5 词项扩展） | 全库 300 题 | 0.5400 → 0.4730 | 劣化 |
+| 语义多查询 Fan-out + RRF（Q1+Q2，k=10/20/60） | 子集 1,543 题 | 0.7110 → 0.6851–0.6916 | 全部低于原句单路 |
+| 语义 PRF（原句 + 首轮法规名） | 子集 1,543 题 | 0.7110 → 0.6558 | 劣化 |
+| 线性 Learning-to-Rank（10 个 query-doc 特征，train 学权重 / dev 盲测） | 全库 1,543 题 | 0.4708 → 0.4675 | 无增益，词面覆盖率权重为负 |
+| Cross-Encoder 精排（dense top-20 → top-5） | 子集 60 题方向性验证 | 0.7000 → 0.7333 | 正向，但未做全量（单题约 3 s） |
+
+诊断口径：全库 300 题里 138 题未进 top-5，其中 80 题（58%）的金标已在前 100 名候选内，
+属排序失败而非召回失败；但把金标从 20–100 位拉到前 5 需要语义信号，词法特征做不到——
+STARD 论文指出的「生活事实 ↔ 法律事实」语义鸿沟下，口语咨询里的词在正确法条中本就不出现，
+所以词面覆盖率、标题命中这类特征学出来是负权重。能稳定提升召回的是语义通道本身：
+受控子集 dev R@5 从 BM25 的 0.5812 提到 Dense 的 0.7110（**+12.98 个百分点，相对 +22.3%**），
+MRR 0.4761 → 0.6014；把 BM25 与 Dense 做 RRF 融合反而稀释语义信号（0.6591，k=10 时 0.6916，
+仍低于单路 Dense）。因此**默认检索保持 Dense 单通道**，混合总闸只在有独立词法证据时开启，
+查询改写 / 槽位扩展 / HyDE 保持默认关。
+
+生产侧对应配置：`RETRIEVAL_HYBRID_ENABLED=false`（默认）即 Dense 单通道；
+`RETRIEVAL_DENSE_RERANK_ENABLED`（默认关）把 dense 候选池放大到
+`RETRIEVAL_RERANK_CANDIDATES` 后走 Cross-Encoder 精排，再截回 `search_k`，
+服务不可用或熔断时按原召回顺序 fail-open；生效时缓存池加 `|d1` 后缀隔离。
+精排每次检索增加一次上游调用，开启前按实际 QPS 与预算评估。
 
 ## 16. 已知限制
 

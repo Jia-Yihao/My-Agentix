@@ -254,6 +254,12 @@ class _RetrievalSettingsCompat:
         "RETRIEVAL_SLOT_EXPANSION_ENABLED", "false"
     )
 
+    # Dense 单通道候选池精排：混合总闸关闭时也能对放大的候选池做 Cross-Encoder 重排。
+    # 默认关 = 基线逐位等价；服务不可用/熔断时 fail-open 保留原召回顺序。
+    RETRIEVAL_DENSE_RERANK_ENABLED = _bool_env(
+        "RETRIEVAL_DENSE_RERANK_ENABLED", "false"
+    )
+
     # 检索优化三闸 + 精排动态
     # 跳过，全部默认关 ⇒ flag-off 与基线逐位等价（检索域 env 键沿既有惯例
     # 只进 .env.example 注释示例块，不入 配置管理.md/p41 名单）。
