@@ -17,6 +17,8 @@
 - ``proj``：train qrels 学 ridge 投影 q→金标 doc 质心，再插值回原 query 向量；
 - ``ce``：Cross-Encoder（Infinity :7997/rerank）精排候选池；
   ``source`` 可为 ``dense`` / ``rrf`` / ``knn_union``（dense top-100 + knn 提名的 extra 条）。
+- ``hgbce``：仅用 train qrels 训练 HGB 候选重排器，并与 Cross-Encoder 分数融合；
+  需要外部 ``/rerank`` 服务，不作为生产默认。
 
 示例：
 
@@ -87,6 +89,27 @@ DEFAULT_PARAMS: dict[str, dict[str, Any]] = {
                "k": 10, "beta": 1.0, "power": 2.0, "knn_k": 20, "knn_power": 4.0},
     "ltr": {"model": "logreg", "C": 1.0, "n": 100, "wd": 0.3, "wr": 1.0, "wk": 0.1,
             "k": 10, "beta": 1.0, "power": 2.0, "knn_k": 20, "knn_power": 4.0},
+    "hgbce": {
+        "cand": 100,
+        "workers": 4,
+        "chars": 512,
+        "source": "blend_bm25_union",
+        "extra": 50,
+        "blend_cand": 50,
+        "feature_n": 50,
+        "ce_weight": 1.0,
+        "max_leaf_nodes": 31,
+        "knn_k": 20,
+        "knn_power": 4.0,
+        "roc_k": 10,
+        "roc_beta": 1.0,
+        "roc_power": 2.0,
+        "wd": 0.3,
+        "wr": 1.0,
+        "wk": 0.1,
+        "knn_cand_k": 20,
+        "knn_cand_power": 4.0,
+    },
     "linrank": {"reg": 10.0, "wd": 0.0, "wr": 0.0, "wk": 0.0, "k": 10, "beta": 1.0,
                 "power": 2.0, "knn_k": 20, "knn_power": 4.0, "idf": 0},
     "zrank": {"n": 20, "zd": 0.0, "zr": 0.0, "zk": 0.0, "zb": 0.0, "wd": 0.3,
@@ -496,6 +519,129 @@ class StardLab:
         y = np.concatenate(labels) if with_labels else None
         return feats, cands, y
 
+    def _hgbce_features(
+        self,
+        qids: list[int],
+        fit: list[int],
+        p: dict[str, Any],
+        candidates: list[list[str]],
+        with_labels: bool,
+    ) -> tuple[list[np.ndarray], np.ndarray | None]:
+        """Build per-query normalized retrieval features for the train-only HGB reranker."""
+        rows = [self.qindex[q] for q in qids]
+        dense = self.S[rows]
+        roc = self._rocchio_sims(
+            qids, fit, int(p["roc_k"]), float(p["roc_beta"]), float(p["roc_power"])
+        )
+        votes = self.knn_votes(qids, fit, int(p["knn_cand_k"]), float(p["knn_cand_power"]))
+        blend = float(p["wd"]) * dense + float(p["wr"]) * roc + float(p["wk"]) * votes
+        feature_n = int(p["feature_n"])
+        ranks = {
+            "dense": self._top_from_sims(dense, feature_n, qids),
+            "roc": self._top_from_sims(roc, feature_n, qids),
+            "knn": self._top_from_sims(votes, feature_n, qids),
+            "blend": self._top_from_sims(blend, feature_n, qids),
+        }
+        features: list[np.ndarray] = []
+        labels: list[np.ndarray] = []
+        for row, (qid, docs) in enumerate(zip(qids, candidates)):
+            rank_maps = {
+                name: {doc: rank + 1 for rank, doc in enumerate(channel[qid])}
+                for name, channel in ranks.items()
+            }
+            rank_maps["bm25"] = {
+                doc: rank + 1
+                for rank, doc in enumerate(self.bm25_rank_all[qid])
+            }
+            cols = np.asarray([self.id2i[doc] for doc in docs], dtype=np.int64)
+
+            def zscore(values: np.ndarray) -> np.ndarray:
+                return (values - values.mean()) / (values.std() + 1e-9)
+
+            signals = [
+                zscore(dense[row, cols].astype(np.float32)),
+                zscore(roc[row, cols].astype(np.float32)),
+                zscore(votes[row, cols].astype(np.float32)),
+                zscore(blend[row, cols].astype(np.float32)),
+                zscore(
+                    np.asarray(
+                        [self.bm25_scores_all[qid].get(doc, 0.0) for doc in docs],
+                        dtype=np.float32,
+                    )
+                ),
+            ]
+            signals.extend(
+                np.asarray(
+                    [1.0 / (60.0 + rank_maps[name].get(doc, 101)) for doc in docs],
+                    dtype=np.float32,
+                )
+                for name in ("dense", "roc", "knn", "blend", "bm25")
+            )
+            signals.extend(
+                [[float(doc in rank_maps[name]) for doc in docs] for name in ("dense", "roc", "knn", "bm25")]
+            )
+            features.append(np.column_stack(signals).astype(np.float32))
+            if with_labels:
+                gold = self.train.get(qid, set())
+                labels.append(np.asarray([doc in gold for doc in docs], dtype=np.int8))
+        return features, np.concatenate(labels) if with_labels else None
+
+    def hgbce_rank(
+        self,
+        qids_eval: list[int],
+        fit: list[int],
+        p: dict[str, Any],
+        url: str,
+        model_name: str,
+        cache_path: Path | None,
+    ) -> dict[int, list[str]]:
+        """Train a query-level HGB reranker on train qrels and fuse its score with CE."""
+        fit_set = set(fit)
+        if set(qids_eval).intersection(fit_set):
+            raise ValueError("hgbce requires evaluation queries to be disjoint from training queries")
+        if not fit_set or not fit_set.issubset(self.train):
+            raise ValueError("hgbce training queries must come from the labeled train split")
+
+        from sklearn.ensemble import HistGradientBoostingClassifier
+
+        train_qids = list(fit)
+        train_candidates = self._candidate_lists(train_qids, train_qids, p)
+        train_features, train_labels = self._hgbce_features(
+            train_qids, train_qids, p, train_candidates, with_labels=True
+        )
+        if train_labels is None:
+            raise RuntimeError("HGB reranker training labels were not constructed")
+        ranker = HistGradientBoostingClassifier(
+            max_iter=150,
+            max_leaf_nodes=int(p["max_leaf_nodes"]),
+            learning_rate=0.08,
+            l2_regularization=1.0,
+            class_weight="balanced",
+            random_state=42,
+        )
+        ranker.fit(np.concatenate(train_features), train_labels)
+
+        candidates, ce_scores = self._ce_scores(
+            qids_eval, fit, p, url, model_name, cache_path
+        )
+        eval_features, _ = self._hgbce_features(
+            qids_eval, fit, p, candidates, with_labels=False
+        )
+        out: dict[int, list[str]] = {}
+        for row, qid in enumerate(qids_eval):
+            docs = candidates[row]
+            head_n = min(len(docs), int(p["cand"]))
+            predicted = ranker.predict_proba(eval_features[row])[:, 1]
+            ce = np.asarray(ce_scores[qid], dtype=np.float32)
+
+            def zscore(values: np.ndarray) -> np.ndarray:
+                return (values - values.mean()) / (values.std() + 1e-9)
+
+            combined = zscore(predicted[:head_n]) + float(p["ce_weight"]) * zscore(ce)
+            order = np.argsort(-combined, kind="stable")
+            out[qid] = [docs[i] for i in order] + docs[head_n:]
+        return out
+
     def _qexp_embeddings(
         self,
         qids_eval: list[int],
@@ -804,6 +950,32 @@ class StardLab:
                     dense_set = set(dense)
                     added = [d for d in blend_rank[qid] if d not in dense_set][:extra]
                     base.append(dense[: POOL - len(added)] + added)
+        elif source == "blend_bm25_union":
+            self._ensure_bm25()
+            blend_rank = self.blend_rank(
+                qids_eval,
+                fit,
+                {
+                    "wd": p["wd"],
+                    "wr": p["wr"],
+                    "wk": p["wk"],
+                    "k": p["roc_k"],
+                    "beta": p["roc_beta"],
+                    "power": p["roc_power"],
+                    "knn_k": p["knn_cand_k"],
+                    "knn_power": p["knn_cand_power"],
+                },
+            )
+            blend_cand = int(p["blend_cand"])
+            extra = int(p["extra"])
+            base = []
+            for qid in qids_eval:
+                docs = list(blend_rank[qid][:blend_cand])
+                seen = set(docs)
+                docs.extend(
+                    d for d in self.bm25_rank_all[qid][:extra] if d not in seen
+                )
+                base.append(docs)
         elif source in ("rocchio", "dense_roc_union"):
             roc_rank = self.rocchio_rank(
                 qids_eval,
@@ -1107,6 +1279,10 @@ def main() -> None:
             ranked = lab.ceblend_rank(qids_eval, fit, p, args.ce_url, args.ce_model, args.ce_cache)
         elif name == "cez":
             ranked = lab.cez_rank(qids_eval, fit, p, args.ce_url, args.ce_model, args.ce_cache)
+        elif name == "hgbce":
+            ranked = lab.hgbce_rank(
+                qids_eval, fit, p, args.ce_url, args.ce_model, args.ce_cache
+            )
         else:  # pragma: no cover - parse_methods 已拦截
             raise SystemExit(name)
 
@@ -1126,7 +1302,7 @@ def main() -> None:
             "verify_all": _verify_metrics(pq),
             "seconds": round(time.perf_counter() - t0, 2),
         }
-        if name in ("ce", "ceblend", "cez") and lab._last_ce_seconds:
+        if name in ("ce", "ceblend", "cez", "hgbce") and lab._last_ce_seconds:
             secs = sorted(lab._last_ce_seconds)
             entry["ce_latency"] = {
                 "n": len(secs),
