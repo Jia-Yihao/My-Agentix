@@ -21,11 +21,10 @@ README §10 的全栈路径要 8 个容器 + 远程 LLM，演示成本压不住�
 2. **不新增 Settings 字段**（避开配置键五处同步）：只经 ``os.environ`` 提供
    默认值——pydantic-settings 里进程环境优先级高于 ``.env``，因此本机演示
    不需要改 ``.env``。
-3. **开关保持出厂语义**：混合检索/精排的代码默认值是关，本脚本默认也跑
-   dense 单通道；要看 BM25+RRF 得显式 ``--hybrid``（不静默改行为）。
-4. **口径不新造**：Recall@5/MRR 的匹配器直接复用
-   ``evals/hybrid_eval.doc_matches_gold`` 与 ``first_rank``——与 README §7
-   那张表同一套解析器，避免第二套口径互相打架。
+3. **检索方式统一**：使用项目默认的 Dense + BM25/z-score；sparse 故障时沿用
+   主检索链的 Dense 降级行为。
+4. **指标边界清晰**：此端到端 smoke eval 的 query hit rate 仅作演示诊断；
+   检索质量以统一 STARD 相关文档级 Recall@K 报告为准。
 
 用法
 ----
@@ -222,9 +221,7 @@ def cmd_seed(args: argparse.Namespace) -> int:
             # 切片文本**保留标题行**（``# 《民法典》第148条`` 与正文同条）。
             # 不是排版偏好，是口径保真：BM25 的语料只取 chunk.content
             # （``sparse._load_index`` 把 metadata 压成 id/page），标题里的法规名
-            # 一旦剥掉，"民法典"这个高频查询词在词法通道里彻底消失。实测：
-            # 剥标题 → BM25 Recall@5 0.3478；带标题 → 与 §15.1 记录的 0.6957
-            # 同量级（对照 evals/hybrid_eval.py 四通道表）。
+            # 一旦剥掉，"民法典"这个高频查询词在词法通道里彻底消失。
             chunk_text = f"# {title}\n{content}"
             doc = Document(
                 kb_id=args.kb_id,
@@ -255,7 +252,7 @@ def cmd_seed(args: argparse.Namespace) -> int:
     # 必须先 _prepare_index_dir 再 build：FAISS 后端在 __init__ 里发现 index.faiss
     # 存在就会**加载旧索引再追加**，重复 seed 于是把同一份语料灌两遍（实测
     # doc_count 40+4868+4865=9773，检索结果里《民法典》第148条连排两个名次，
-    # Recall@5/MRR 被重复槽位稀释）。生产链路由 index_worker 的重建流程负责清
+    # query hit rate / MRR 被重复槽位稀释）。生产链路由 index_worker 的重建流程负责清
     # 目录，这里直接调同一个函数，而不是自己在脚本里另写一套删除逻辑。
     index_worker._prepare_index_dir(index_path)
     index_worker._build_vector_index(args.kb_id, index_path)
@@ -600,7 +597,7 @@ def _retrieve_docs(
 class _DocView:
     """把端口的 chunk 还原成匹配器认识的 ``page_content``/``metadata`` 形状。
 
-    存在的理由只有一个：``evals/hybrid_eval.doc_matches_gold`` 的入参是检索
+    存在的理由只有一个：共享 citation matcher 的入参是检索
     文档对象，而端口对外暴露的是 TypedDict。形状对齐 ≠ 新造口径——法规名/
     条号解析、三形 ``第X条`` 归一全部由原函数完成。
     """
@@ -741,7 +738,7 @@ def _load_golden(
             if route and row.get("route_type") != route:
                 continue
             if not row.get("expected_sources"):
-                continue  # 空金标不进分母（与 hybrid_eval 同口径）
+                continue  # 空金标不进 demo 诊断的分母
             rows.append(row)
     total = len(rows)
     if limit is not None:
@@ -750,7 +747,7 @@ def _load_golden(
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
-    """小样本端到端跑分：Recall@5 / MRR + 端到端 P50/P95 + 单条 token 均值。"""
+    """小样本 smoke diagnostic: query hit rate / MRR + latency and token means."""
     # T3：不给 --golden 且默认题集不存在 ⇒ 响亮退出（列可用集 + 改道示例），
     # 不在"题集读成 0 条"的前提下继续装配环境、更不把空样本报成 0 分。
     # 显式传 --golden 时走原逻辑，行为逐位不变。
@@ -816,7 +813,7 @@ def _run_pass(
 
         rank = first_rank(docs, golds)
         ranks.append(rank)
-        hit = rank is not None and rank <= args.recall_k
+        hit = rank is not None and rank <= args.hit_k
 
         answer = ""
         pin = pout = 0
@@ -837,7 +834,7 @@ def _run_pass(
                 "route": route,
                 "status": status,
                 "rank": rank,
-                "recall_at_k": hit,
+                "query_hit_rate_at_k": hit,
                 "expected_sources": golds,
                 "retrieved_sources": sources,
                 "answer_chars": len(answer),
@@ -873,11 +870,13 @@ def _pass_summary(p: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]
     ranks = p["ranks"]
     n = p["n"]
     lat_retr, lat_gen, lat_full = p["lat_retr"], p["lat_gen"], p["lat_full"]
-    recall = sum(1 for r in ranks if r is not None and r <= args.recall_k) / n if n else 0.0
+    query_hit_rate = (
+        sum(1 for r in ranks if r is not None and r <= args.hit_k) / n if n else 0.0
+    )
     mrr = statistics.mean(
-        [(1.0 / r) if (r is not None and r <= args.recall_k) else 0.0 for r in ranks]
+        [(1.0 / r) if (r is not None and r <= args.hit_k) else 0.0 for r in ranks]
     ) if n else 0.0
-    # MRR 与 hybrid_eval 同口径：首个命中位次取倒数，位次不截断到 k
+    # MRR 首个命中位次取倒数，完整检索列表不截断到 k
     mrr_full = statistics.mean(
         [(1.0 / r) if r is not None else 0.0 for r in ranks]
     ) if n else 0.0
@@ -885,9 +884,9 @@ def _pass_summary(p: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]
         "sample_size": n,
         "route_filter": args.route,
         "search_k": args.top_k,
-        "recall_k": args.recall_k,
-        "recall_at_k": round(recall, 4),
-        "mrr_within_recall_k": round(mrr, 4),
+        "hit_k": args.hit_k,
+        "query_hit_rate_at_k": round(query_hit_rate, 4),
+        "mrr_within_hit_k": round(mrr, 4),
         "mrr_full": round(mrr_full, 4),
         "latency_ms": {
             "retrieval_p50": round(_pct(lat_retr, 0.5), 1),
@@ -907,7 +906,7 @@ def _pass_summary(p: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]
             "embedding_model": os.environ.get("EMBEDDING_MODEL"),
             "vector_backend": os.environ.get("VECTOR_STORE_BACKEND"),
             "database": os.environ.get("DATABASE_URL"),
-            "hybrid": bool(getattr(args, "hybrid", False)),
+            "retrieval_strategy": "Dense + BM25/z-score",
             "thinking_disabled": not args.keep_thinking,
             "kb_id": args.kb_id,
         },
@@ -915,7 +914,7 @@ def _pass_summary(p: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]
 
 
 def _eval_body(args: argparse.Namespace) -> int:
-    from evals.hybrid_eval import first_rank  # 复用 §15.1 匹配器，不新造第二套口径
+    from evals.retrieval_matching import first_rank
 
     golden_paths = getattr(args, "golden", None)
     rows, candidate_total = _load_golden(args.route, args.limit, golden_paths)
@@ -950,8 +949,8 @@ def _eval_body(args: argparse.Namespace) -> int:
             s = _pass_summary(p, args)
             lm = s["latency_ms"]
             print(
-                f"[eval] 第 {rep}/{repeat} 轮 done：recall@k={s['recall_at_k']} "
-                f"mrr={s['mrr_within_recall_k']} "
+                f"[eval] 第 {rep}/{repeat} 轮 done：query-hit-rate@k={s['query_hit_rate_at_k']} "
+                f"mrr@k={s['mrr_within_hit_k']} "
                 f"retrieval p50/p95={lm['retrieval_p50']}/{lm['retrieval_p95']}ms "
                 f"e2e p50/p95={lm['end_to_end_p50']}/{lm['end_to_end_p95']}ms"
             )
@@ -969,8 +968,8 @@ def _eval_body(args: argparse.Namespace) -> int:
         # ① 每轮的分位数（看同一份问题集在两轮之间差多少）
         summary["repeats"] = [
             {
-                "recall_at_k": s["recall_at_k"],
-                "mrr_within_recall_k": s["mrr_within_recall_k"],
+                "query_hit_rate_at_k": s["query_hit_rate_at_k"],
+                "mrr_within_hit_k": s["mrr_within_hit_k"],
                 "latency_ms": s["latency_ms"],
             }
             for s in per_rep
@@ -1019,11 +1018,6 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--chat-model", default=os.getenv("LLM_DEMO_MODEL", DEFAULT_CHAT_MODEL))
     parser.add_argument("--embedding-model", default=os.getenv("EMBEDDING_DEMO_MODEL", DEFAULT_EMBED_MODEL))
     parser.add_argument(
-        "--hybrid",
-        action="store_true",
-        help="显式打开 BM25+Dense 混合检索（代码默认关，见 工程约定 1）",
-    )
-    parser.add_argument(
         "--keep-thinking",
         action="store_true",
         help="不追加 /no_think（默认追加，关掉 Qwen3 思考链以测生成延迟）",
@@ -1052,7 +1046,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("question")
     p_ask.set_defaults(func=cmd_ask)
 
-    p_eval = sub.add_parser("eval", help="golden 小集端到端跑分（Recall@5/MRR/P50/P95/token）")
+    p_eval = sub.add_parser("eval", help="golden 小集 smoke diagnostic（query hit rate/MRR/latency）")
     _add_common(p_eval)
     p_eval.add_argument("--route", default="kb-query")
     p_eval.add_argument("--limit", type=int, default=23)
@@ -1068,7 +1062,7 @@ def build_parser() -> argparse.ArgumentParser:
             "多集拼接示例：--golden <基线集> <扩样集> --limit 50"
         ),
     )
-    p_eval.add_argument("--recall-k", type=int, default=5)
+    p_eval.add_argument("--hit-k", "--recall-k", dest="hit_k", type=int, default=5)
     p_eval.add_argument("--skip-route", action="store_true", help="只测检索+生成，跳过 LLM 路由分类")
     p_eval.add_argument("--retrieve-only", action="store_true", help="只测检索层，不调生成")
     p_eval.add_argument(
@@ -1091,10 +1085,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except Exception:  # noqa: BLE001 - 老/非常规终端不支持，保持默认编码即可
             pass
     args = build_parser().parse_args(argv)
-    # --hybrid 只在本进程内打开开关：不改 .env，也不改代码默认值
-    if getattr(args, "hybrid", False):
-        os.environ["RETRIEVAL_HYBRID_ENABLED"] = "true"
-        os.environ["RETRIEVAL_SPARSE_ENABLED"] = "true"
     return args.func(args)
 
 

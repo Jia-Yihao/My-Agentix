@@ -56,6 +56,9 @@ DEFAULT_IGNORED_MISSING: frozenset = frozenset(
         "GEMINI_API_KEY",
         "LLM_API_KEY",
         "KB_RERANK_API_KEY",
+        # Optional model overrides and sampling control have runtime defaults.
+        "CHAT_MODEL",
+        "LLM_TEMPERATURE",
         # 2026-09：kb_ingest 的服务间共享密钥与开关。本地通常不设
         # （kb_ingest 未开启鉴权时本应用不带 X-API-Key 头即可）。
         "KB_API_KEY",

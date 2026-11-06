@@ -146,13 +146,6 @@ class _RetrievalSettingsCompat:
     LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD = int(os.getenv("LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5"))
     LLM_CIRCUIT_BREAKER_RECOVERY_SECONDS = float(os.getenv("LLM_CIRCUIT_BREAKER_RECOVERY_SECONDS", "30"))
 
-    # 重排服务熔断器。此前 rerank.py 用 getattr(_rs, "RERANK_BREAKER_*", 默认值) 读取，
-    # 但是这两个字段从未在此声明过 ⇒ getattr 永远走字面量兜底，环境变量也永远不会被读到。
-    # 现在正式声明，默认值与原来兜底的 5 / 60 完全一致（行为零变化）。
-    # 默认值为什么与 LLM 的 30s 恢复时间不同：重排模型冷启动/排队更慢，60s 避免频繁半开探测。
-    RERANK_BREAKER_FAILURE_THRESHOLD = int(os.getenv("RERANK_BREAKER_FAILURE_THRESHOLD", "5"))
-    RERANK_BREAKER_RECOVERY_SECONDS = float(os.getenv("RERANK_BREAKER_RECOVERY_SECONDS", "60"))
-
     RATE_LIMIT_ENABLED = _bool_env("RATE_LIMIT_ENABLED", "false")
     RATE_LIMIT_RATE = float(os.getenv("RATE_LIMIT_RATE", "2"))
     RATE_LIMIT_BURST = int(os.getenv("RATE_LIMIT_BURST", "20"))
@@ -212,9 +205,6 @@ class _RetrievalSettingsCompat:
     # 另一句话的结果，陈旧窗口必须更短（时效性由这个窗口兜底，没有主动失效钩子）。
     SEMANTIC_CACHE_TTL_SECONDS = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", "120"))
     RERANKER_ENABLED = _bool_env("RERANKER_ENABLED", "false")
-    @property
-    def RERANKER_MODEL(self) -> str:
-        return os.getenv("RERANKER_MODEL", _unified_settings.CROSS_ENCODER_MODEL)
 
     RETRIEVAL_FETCH_K_MULTIPLIER = int(os.getenv("RETRIEVAL_FETCH_K_MULTIPLIER", "20"))
     RETRIEVAL_FETCH_K_MIN = int(os.getenv("RETRIEVAL_FETCH_K_MIN", "200"))
@@ -223,16 +213,12 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_FETCH_K_MAX_ESCALATIONS = int(os.getenv("RETRIEVAL_FETCH_K_MAX_ESCALATIONS", "2"))
 
     # 默认采用 Dense + BM25/z-score 混合召回；sparse 异常或超时会 fail-open 回退 Dense。
-    # 融合默认不调用 Cross-Encoder，避免隐式依赖外部 rerank 服务。
     RETRIEVAL_HYBRID_ENABLED = _bool_env("RETRIEVAL_HYBRID_ENABLED", "true")
     # sparse 子闸（需总闸开）：进程内 BM25 通道（语料 = PostgreSQL chunk 表）
     RETRIEVAL_SPARSE_ENABLED = _bool_env("RETRIEVAL_SPARSE_ENABLED", "true")
     RETRIEVAL_SPARSE_MIN_SCORE = float(os.getenv("RETRIEVAL_SPARSE_MIN_SCORE", "0.0"))
     RETRIEVAL_SPARSE_CACHE_TTL = int(os.getenv("RETRIEVAL_SPARSE_CACHE_TTL", "600"))
-    # 融合：rrf | zscore；默认 zscore alpha=0.85（STARD 原始通道分数验证）
-    # alpha = zscore 下首通道（dense）权重。
-    RETRIEVAL_FUSION_METHOD = os.getenv("RETRIEVAL_FUSION_METHOD", "zscore").strip().lower()
-    RETRIEVAL_RRF_K = int(os.getenv("RETRIEVAL_RRF_K", "60"))
+    # 唯一融合策略：Dense + BM25 原始分数 z-score；alpha 为 Dense 权重。
     RETRIEVAL_FUSION_ALPHA = float(os.getenv("RETRIEVAL_FUSION_ALPHA", "0.85"))
     RETRIEVAL_FUSION_TOP_N = int(os.getenv("RETRIEVAL_FUSION_TOP_N", "200"))
     # hybrid 两路 gather 的整体超时（秒）。开 RETRIEVAL_HYBRID_ENABLED 的前置条件：
@@ -241,16 +227,6 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS = float(
         os.getenv("RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS", "5")
     )
-    # Cross-Encoder 精排需显式开启并部署 rerank 服务；混合召回本身不依赖该服务。
-    RETRIEVAL_HYBRID_RERANK = _bool_env("RETRIEVAL_HYBRID_RERANK", "false")
-    RETRIEVAL_RERANK_CANDIDATES = int(os.getenv("RETRIEVAL_RERANK_CANDIDATES", "20"))
-    # T9（approval-recovery-optimization §T9）：rerank 候选分批，降低单请求上游负载。
-    # <=0 = 关（默认）⇒ 单次全候选调用，与基线逐位等价（约定 1）；>0 = 每批候选数，
-    # 分批调用并按全局 relevance_score 降序融合（同分按原始下标升序，见 rerank.py）。
-    # 键沿检索域惯例只同步字段本体 + .env.example 注释块（Q5 保守边，其余三处缺口
-    # 已登记台账待追认），不入 配置管理.md / p41 名单 / selfcheck。
-    RETRIEVAL_RERANK_BATCH_SIZE = int(os.getenv("RETRIEVAL_RERANK_BATCH_SIZE", "0"))
-
     # R-P2-1（F2b-b）查询改写/HyDE：双可选独立 flag、默认关 = 基线逐位等价；
     # 改写/扩展失败一律回退原 query（fail-open），键沿 GROUNDING_* 检索域三处同步。
     RETRIEVAL_QUERY_REWRITE_ENABLED = _bool_env("RETRIEVAL_QUERY_REWRITE_ENABLED", "false")
@@ -262,63 +238,13 @@ class _RetrievalSettingsCompat:
         "RETRIEVAL_SLOT_EXPANSION_ENABLED", "false"
     )
 
-    # Dense 单通道候选池精排：混合总闸关闭时也能对放大的候选池做 Cross-Encoder 重排。
-    # 默认关 = 基线逐位等价；服务不可用/熔断时 fail-open 保留原召回顺序。
-    RETRIEVAL_DENSE_RERANK_ENABLED = _bool_env(
-        "RETRIEVAL_DENSE_RERANK_ENABLED", "false"
-    )
-    # Dense 精排的分批 + 有界并发：候选池 > BATCH_SIZE 时切连续批次并发打上游，
-    # 全局按 relevance_score 降序融合（同分按原始下标升序，与 rerank.py T9 同口径）。
-    # 0 = 退回单次全候选调用（既有行为，逐位等价）；并发上限避免把上游打穿。
-    # 超时统一走既有的 RERANKER_TIMEOUT_SECONDS（下方声明），不另开第二个超时源：
-    # 它既约束单批 HTTP 请求，也约束并发批次的整体墙钟；超时/异常一律 fail-open。
-    RETRIEVAL_DENSE_RERANK_BATCH_SIZE = int(
-        os.getenv("RETRIEVAL_DENSE_RERANK_BATCH_SIZE", "20")
-    )
-    RETRIEVAL_DENSE_RERANK_MAX_CONCURRENCY = int(
-        os.getenv("RETRIEVAL_DENSE_RERANK_MAX_CONCURRENCY", "2")
-    )
-
-    # Query 侧相关性记忆（STARD 实测：受控子集 dev R@5 0.7110 → 0.7760、
-    # MRR 0.6014 → 0.6692）。离线从「历史问法 + qrels + 文档向量快照」构建 npz，
-    # 在线用 q-q 近邻投票 + 向量级 Rocchio 重排放大后的 dense 候选池。
-    # 默认关 ⇒ flag-off 与既有 Dense 单通道逐位等价；开启时缓存池加 |q1 后缀。
-    # 服务/记忆文件缺失或异常一律 fail-open 保留原召回顺序（与 dense_rerank 同口径）。
-    RETRIEVAL_QUERY_MEMORY_ENABLED = _bool_env(
-        "RETRIEVAL_QUERY_MEMORY_ENABLED", "false"
-    )
-    RETRIEVAL_QUERY_MEMORY_PATH = os.getenv("RETRIEVAL_QUERY_MEMORY_PATH", "").strip()
-    RETRIEVAL_QUERY_MEMORY_CANDIDATES = int(
-        os.getenv("RETRIEVAL_QUERY_MEMORY_CANDIDATES", "100")
-    )
-    RETRIEVAL_QUERY_MEMORY_WD = float(os.getenv("RETRIEVAL_QUERY_MEMORY_WD", "0.3"))
-    RETRIEVAL_QUERY_MEMORY_WR = float(os.getenv("RETRIEVAL_QUERY_MEMORY_WR", "1.0"))
-    RETRIEVAL_QUERY_MEMORY_WK = float(os.getenv("RETRIEVAL_QUERY_MEMORY_WK", "0.1"))
-    RETRIEVAL_QUERY_MEMORY_ROC_K = int(os.getenv("RETRIEVAL_QUERY_MEMORY_ROC_K", "10"))
-    RETRIEVAL_QUERY_MEMORY_ROC_BETA = float(
-        os.getenv("RETRIEVAL_QUERY_MEMORY_ROC_BETA", "1.0")
-    )
-    RETRIEVAL_QUERY_MEMORY_ROC_POWER = float(
-        os.getenv("RETRIEVAL_QUERY_MEMORY_ROC_POWER", "2.0")
-    )
-    RETRIEVAL_QUERY_MEMORY_KNN_K = int(os.getenv("RETRIEVAL_QUERY_MEMORY_KNN_K", "20"))
-    RETRIEVAL_QUERY_MEMORY_KNN_POWER = float(
-        os.getenv("RETRIEVAL_QUERY_MEMORY_KNN_POWER", "4.0")
-    )
-
-    # 候选池内 z(记忆融合分) + μ·z(Cross-Encoder) 的二次融合（ceblend）。
-    # 需同时开启 QUERY_MEMORY + DENSE_RERANK；默认关 ⇒ 行为不变。
-    RETRIEVAL_CE_FUSION_ENABLED = _bool_env("RETRIEVAL_CE_FUSION_ENABLED", "false")
-    RETRIEVAL_CE_FUSION_MU = float(os.getenv("RETRIEVAL_CE_FUSION_MU", "0.25"))
-
-    # 检索优化三闸 + 精排动态
+    # 检索优化两闸
     # 跳过，全部默认关 ⇒ flag-off 与基线逐位等价（检索域 env 键沿既有惯例
     # 只进 .env.example 注释示例块，不入 配置管理.md/p41 名单）。
     RETRIEVAL_SINGLEFLIGHT_ENABLED = _bool_env("RETRIEVAL_SINGLEFLIGHT_ENABLED", "false")
     RETRIEVAL_ADAPTIVE_ENABLED = _bool_env("RETRIEVAL_ADAPTIVE_ENABLED", "false")
     # 级联分数闸：0 = 关（空命中才升级）；>0 = 归一化分数低于该值升级下一级
     RETRIEVAL_CASCADE_MIN_SCORE = float(os.getenv("RETRIEVAL_CASCADE_MIN_SCORE", "0"))
-    RERANK_DYNAMIC_SKIP_ENABLED = _bool_env("RERANK_DYNAMIC_SKIP_ENABLED", "false")
 
     # R-P3（docs/已知限制.md 实测口径）：进程内检索器缓存——消灭「每次检索都
     # 重建 embedding 客户端 + 反序列化 FAISS 索引」。默认关 ⇒ 与接线前逐位等价
@@ -354,7 +280,6 @@ class _RetrievalSettingsCompat:
     VECTOR_DB_TIMEOUT_SECONDS = float(os.getenv("VECTOR_DB_TIMEOUT_SECONDS", "5"))
     POSTGRES_TIMEOUT_SECONDS = float(os.getenv("POSTGRES_TIMEOUT_SECONDS", "5"))
     OBJECT_STORAGE_TIMEOUT_SECONDS = float(os.getenv("OBJECT_STORAGE_TIMEOUT_SECONDS", "10"))
-    RERANKER_TIMEOUT_SECONDS = float(os.getenv("RERANKER_TIMEOUT_SECONDS", "10"))
 
     THUMBNAIL_MAX_WIDTH = int(os.getenv("THUMBNAIL_MAX_WIDTH", "400"))
 
@@ -394,7 +319,7 @@ def validate_app_settings() -> tuple[list[str], list[str]]:
         errors.append("DELETE_APPROVAL_TIMEOUT_SECONDS 必须为正整数")
     for name in (
         "LLM_TIMEOUT_SECONDS", "EMBEDDING_TIMEOUT_SECONDS", "VECTOR_DB_TIMEOUT_SECONDS",
-        "POSTGRES_TIMEOUT_SECONDS", "OBJECT_STORAGE_TIMEOUT_SECONDS", "RERANKER_TIMEOUT_SECONDS",
+        "POSTGRES_TIMEOUT_SECONDS", "OBJECT_STORAGE_TIMEOUT_SECONDS",
     ):
         if float(getattr(settings, name)) <= 0:
             errors.append(f"{name} 必须为正数")

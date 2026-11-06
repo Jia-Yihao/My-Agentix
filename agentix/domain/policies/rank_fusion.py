@@ -1,10 +1,10 @@
 """R-P1-2 跨通道 rank 融合（纯函数，零第三方依赖）。
 
-两个方向共用同一套算法：
+该模块保留两个消费场景：
 
-- **Channel A**（检索主链）：dense 向量路 + sparse BM25 路的融合
-  （``agentix/retrieval/usecases/retrieval_hybrid.py``）；
-- **Channel B**（KB local_search）：postgres 结构化路 + milvus 向量路的融合，
+- **主 RAG 检索链**（``agentix/retrieval/usecases/retrieval_hybrid.py``）：Dense + BM25
+  的 z-score 融合；
+- **知识图谱 local_search**：postgres 结构化路 + milvus 向量路的 RRF 融合，
   替代原先「postgres 非空则丢掉 milvus」的丢分逻辑
   （``.../multi_agent/kb_nodes/local_search_node.py``）。
 
@@ -32,8 +32,7 @@ def rrf_fuse(
 ) -> List[Tuple[str, float]]:
     """Reciprocal Rank Fusion：``score(d) = Σ_i 1 / (k + rank_i(d))``（rank 从 1 起）。
 
-    - ``k`` 越大各通道排名差异越平滑（RRF 常用默认 60；短对话/多轮场景可用
-      更小的 k 提升头部区分度，经 ``RETRIEVAL_RRF_K`` 配置）；
+    - ``k`` 越大各通道排名差异越平滑（仅知识图谱 local_search 使用 RRF）；
     - 同一通道内重复 id 只取首次出现；跨通道同 id 自动合并累加；
     - 并列分数保持首次出现顺序（稳定排序）；
     - ``top_n > 0`` 时截断。

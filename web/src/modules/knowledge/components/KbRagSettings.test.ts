@@ -16,9 +16,6 @@ vi.mock('../api/settings', () => ({
     chunk_size: 500,
     chunk_overlap: 100,
     search_k: 20,
-    sparse_k: 10,
-    dense_k: 10,
-    fusion_k: 15,
   }),
   updateKbSettings: vi.fn().mockResolvedValue({}),
 }))
@@ -135,9 +132,10 @@ describe('KbRagSettings', () => {
     await vi.dynamicImportSettled()
 
     expect(wrapper.text()).toContain('检索参数')
+    expect(wrapper.text()).toContain('Dense + BM25/z-score')
     expect(wrapper.text()).toContain('返回数 (K)')
-    expect(wrapper.text()).toContain('稀疏召回')
-    expect(wrapper.text()).toContain('稠密召回')
+    expect(wrapper.text()).not.toContain('Reranker')
+    expect(wrapper.text()).not.toContain('融合候选')
   })
 
   it('has save button', async () => {

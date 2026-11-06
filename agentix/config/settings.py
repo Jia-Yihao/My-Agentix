@@ -941,47 +941,6 @@ class Settings(BaseSettings):
     EMBEDDING_BASE_URL: Optional[str] = Field(default=None, description="Embedding API base URL")
     EMBEDDING_DIMENSION: int = 1536
 
-    # Reranker configuration
-    RERANK_ENABLED: bool = Field(default=True, description="Enable reranking")
-    RERANK_PROVIDER: str = Field(default="custom", description="Rerank provider: cohere, jina, voyage, custom")
-    RERANK_BASE_URL: Optional[str] = Field(default=None, description="Rerank API base URL")
-    RERANK_ENDPOINT: str = Field(default="/rerank", description="Rerank endpoint path")
-    RERANK_MODEL: str = Field(
-        default="bge-reranker-large",
-        description="Rerank model name",
-    )
-    CROSS_ENCODER_MODEL: str = Field(
-        default="text-embedding-bge-reranker-v2-m3",
-        description="Cross-Encoder model used by retrieval reranking",
-        validation_alias=AliasChoices("CROSS_ENCODER_MODEL", "RERANKER_MODEL"),
-    )
-    RERANK_API_KEY: Optional[str] = None
-    RERANK_MAX_CANDIDATES: int = Field(default=20, description="Max candidates for reranking")
-    RERANK_TOP_N: int = Field(default=6, description="Top N results after reranking")
-    RERANK_TIMEOUT: int = Field(default=30, description="Rerank API timeout in seconds")
-    RERANK_SCORE_FUSION_ALPHA: Optional[float] = Field(default=None, description="Score fusion alpha parameter")
-
-    # Legacy reranker compatibility
-    @property
-    def RERANKER_PROVIDER(self) -> str:
-        return self.RERANK_PROVIDER
-
-    @property
-    def RERANKER_API_KEY(self) -> Optional[str]:
-        return self.RERANK_API_KEY
-
-    @property
-    def RERANKER_MODEL(self) -> Optional[str]:
-        return self.RERANK_MODEL
-
-    @property
-    def RERANKER_API_URL(self) -> Optional[str]:
-        return self.RERANK_BASE_URL
-
-    @property
-    def RERANKER_TOP_K(self) -> int:
-        return self.RERANK_TOP_N
-
     # Web search tooling
     SERPAPI_KEY: Optional[str] = None
     SERPAPI_BASE_URL: str = Field(

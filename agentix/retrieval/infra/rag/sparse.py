@@ -5,7 +5,7 @@
 - **语料复用文档入库链**：PostgreSQL ``chunk`` 表（活动产物通过
   ``document_repo.get_chunks_for_index_artifact`` 读取），
   与向量索引共用同一 ``chunk_id``（``Chunk.id`` ↔ index_worker 写入 dense 索引的
-  ``metadata.chunk_id`` 同源）⇒ 两通道可按 chunk_id 做 RRF 去重融合。
+  ``metadata.chunk_id`` 同源）⇒ 两通道可按 chunk_id 做 z-score 去重融合。
 - **索引快照一致**：生产检索按 ``artifact_id`` 缓存 BM25，并只索引该活动产物
   manifest 中已 ``ready`` 的切片，避免重建索引后 600 秒 TTL 内继续融合旧语料，
   或把尚未激活的新切片混入当前向量快照。
@@ -19,7 +19,7 @@
 - **scope 一致**：候选一律经 ``chat_scope.meta_matches_filter`` 用与 FAISS 相同的
   filter 语义本地复算，file/folder 收窄不会被 sparse 路穿透。
 
-分数方向：BM25 分越大越相关（与 RRF 入参约定一致）。
+分数方向：BM25 分越大越相关。
 """
 
 from __future__ import annotations

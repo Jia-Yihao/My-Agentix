@@ -26,7 +26,6 @@
           <legend>Embedding</legend>
           <label>端点 URL <input v-model="form.embedding_base_url" /></label>
           <label>模型名 <input v-model="form.embedding_model" /></label>
-          <label>Reranker <input v-model="form.reranker_model" /></label>
         </fieldset>
 
         <!-- Chunk -->
@@ -47,16 +46,8 @@
         <!-- Retrieval -->
         <fieldset>
           <legend>检索参数</legend>
+          <p>默认策略：Dense + BM25/z-score（Dense 权重 α=0.85）</p>
           <label>返回数 (K) <input v-model.number="form.search_k" type="number" min="1" max="50" /></label>
-          <label>稀疏召回 <input v-model.number="form.sparse_k" type="number" min="1" max="100" /></label>
-          <label>稠密召回 <input v-model.number="form.dense_k" type="number" min="1" max="100" /></label>
-          <label>融合候选 <input v-model.number="form.fusion_k" type="number" min="1" max="100" /></label>
-          <label>重排类型
-            <select v-model="form.reranker_type">
-              <option value="embedding">embedding（向量）</option>
-              <option value="cross_encoder">cross_encoder（CE）</option>
-            </select>
-          </label>
         </fieldset>
       </div>
 
@@ -82,10 +73,9 @@ defineEmits<{ close: [] }>()
 
 const form = reactive({
   llm_provider: 'openai-compatible', llm_base_url: '', llm_model: '',
-  embedding_base_url: '', embedding_model: '', reranker_model: '',
+  embedding_base_url: '', embedding_model: '',
   chunk_strategy: 'auto', chunk_size: 500, chunk_overlap: 100,
-  search_k: 20, sparse_k: 10, dense_k: 10, fusion_k: 15,
-  reranker_type: 'embedding',
+  search_k: 20,
 })
 
 const saved = ref(false)

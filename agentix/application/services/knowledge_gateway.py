@@ -5,9 +5,9 @@ kg_sub_graph / file_handler / general_handler 等编排侧调用统一改接本�
 网关仅做协议转换：``RetrievalPort.search`` 返回 ``RetrievalResult``，
 编排层期望 ``List[Dict]``（content/score/chunk_id/doc_id/metadata）。
 
-重排说明：rerank 已内置于 RetrievalPortAdapter（见 R1.8 归档记录），
-本网关的 ``reranker`` 为语义兼容桩（``enabled=False``），编排层的
-外部重排分支因此跳过，检索质量由能力域内部重排保证。
+主 RAG 链固定使用 Dense + BM25/z-score，不调用重排服务。
+本网关保留 ``reranker`` 兼容桩，以支持知识图谱工作流中的既有阈值分支；
+该桩不会执行模型推理。
 
 kb_id 通过构造参数或环境变量 LEGELBOT_DEFAULT_KB_ID 指定，默认
 "default"；tenant_id 取 LEGELBOT_DEFAULT_TENANT_ID，默认 "default"。
@@ -34,18 +34,13 @@ def get_retrieval_port():
 
 
 class _RerankerCompatStub:
-    """重排兼容桩——开/关/熔断三态的「开关」与内层同源（R-P0-3）。
+    """兼容既有知识图谱工作流的阈值开关；不调用重排模型。
 
-    ``enabled`` 不再是写死的 False（死分支）：构造时与
-    ``RetrievalPortAdapter`` 内层重排同取 ``RERANKER_ENABLED``
-    （默认 false ⇒ 字节等价）。三态语义：
+    ``enabled`` 由 ``RERANKER_ENABLED`` 控制，默认关闭：
 
-    - **关**：``enabled=False``，编排层外部重排分支跳过（既有默认行为）；
-    - **开**：``enabled=True``，编排层按 rerank 分数双阈值过滤
-      （``KB_POSTGRES_RERANK_THRESHOLD``）；重排本体由检索域内层 / 上游
-      kb_ingest 承担——桩 ``rerank`` 直通，不重复调用外部服务；
-    - **熔断**：内层 ``rerank_documents`` 熔断打开时保序 fail-open
-      （既有实现，见 agentix/retrieval/infra/rag/rerank.py）。
+    - 关闭时按 similarity threshold 过滤；
+    - 开启时沿用既有图谱工作流的 rerank-score 阈值判定；
+    - ``rerank`` 方法保持输入顺序，不执行模型推理。
     """
 
     def __init__(self, enabled: Optional[bool] = None) -> None:

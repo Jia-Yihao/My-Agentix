@@ -4,7 +4,7 @@ Observability module for Agent and RAG pipeline monitoring.
 Tracks:
 - LLM call metrics (token consumption, latency, success rate)
 - Route distribution (which query types are most common)
-- RAG retrieval metrics (recall count, reranker scores)
+- RAG retrieval metrics (recall count, retrieval scores)
 - End-to-end request metrics (total latency, error rate)
 - Tool execution metrics (per-tool latency and success rate)
 

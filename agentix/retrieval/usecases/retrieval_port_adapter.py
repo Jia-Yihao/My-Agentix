@@ -4,7 +4,7 @@
 - 位置：``agentix/retrieval/usecases/retrieval_port_adapter.py``
 - 职责：编排 ``get_active_index_artifact → get_or_build_retriever（默认直调
   build_retriever，flag 开时复用进程内实例）→
-  retrieve_scoped_docs_cached → rerank_documents → get_citations_from_docs``
+  retrieve_scoped_docs_cached → get_citations_from_docs``
   链路，将检索域用例适配为 ``RetrievalPort`` 协议返回结构。
 - 降级语义：Milvus 超时 / worker 崩 / 索引未就绪 → ``status="degraded"``；
   空命中 → ``status="empty"``；正常 → ``status="ok"``。
@@ -90,8 +90,6 @@ class RetrievalPortAdapter:
             get_citations_from_docs,
             retrieve_scoped_docs_cached,
         )
-        from agentix.retrieval.settings import settings
-
         q = (query or "").strip()
         if not q:
             return RetrievalResult(status="empty", chunks=[], error=None)
@@ -130,18 +128,6 @@ class RetrievalPortAdapter:
                     session=session,
                     tenant_id=tenant_id,  # W2：端口路径显式租户，缓存键免查库分池
                 )
-
-                if getattr(settings, "RERANKER_ENABLED", False) and len(docs) > 1:
-                    from agentix.retrieval.infra.rag.rerank import (
-                        dynamic_rerank_skip_reason,
-                        rerank_documents,
-                    )
-
-                    # W2 动态跳过（默认关）：候选过少/首位分已高 ⇒ 保序直过
-                    if dynamic_rerank_skip_reason(docs) is None:
-                        docs = await rerank_documents(
-                            q, docs, getattr(settings, "RERANKER_MODEL", None)
-                        )
 
                 if not docs:
                     return RetrievalResult(

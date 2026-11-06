@@ -118,17 +118,15 @@ def _normalize_question(q: str) -> str:
 
 
 def _fusion_fingerprint() -> str:
-    """W2 缓存键升级：融合/裁剪配置指纹（调参或翻融合开关 ⇒ 不读旧池）。
+    """W2 缓存键升级：z-score/裁剪配置指纹（调参后不读旧池）。
 
-    只取**影响结果集合**的融合旋钮（方法/k/alpha/池上限/sparse 裁剪）；
+    只取**影响结果集合**的配置（Dense 权重/池上限/sparse 裁剪）；
     归一化摘要 8 位十六进制，键长可控。改这些参数 ⇒ 指纹变 ⇒ 旧缓存自然
     不命中（无需手动清池）。
     """
     parts = "|".join(
         str(getattr(settings, name, ""))
         for name in (
-            "RETRIEVAL_FUSION_METHOD",
-            "RETRIEVAL_RRF_K",
             "RETRIEVAL_FUSION_ALPHA",
             "RETRIEVAL_FUSION_TOP_N",
             "RETRIEVAL_SPARSE_MIN_SCORE",
@@ -308,7 +306,7 @@ def _as_page_content_doc(doc):
     三个真实后端（faiss/milvus/qdrant）的 ``similarity_search`` 都返回
     ``tuple[VectorDoc-like, score]``，其中 VectorDoc 只有 ``.text``，没有
     ``.page_content``；而下游（docs_from_scored_pairs / hit_chunks_from_docs /
-    rerank_documents / 引用构建）一律按 langchain Document 契约访问。
+    引用构建）一律按 langchain Document 契约访问。
     已带 ``.page_content`` 的对象原样返回（幂等）。
     """
     if hasattr(doc, "page_content"):
@@ -575,12 +573,6 @@ async def retrieve_scoped_docs_cached(
             key += "|h1"
         # R-P2-1：改写/HyDE 实际生效的结果与 flag-off 结果不共池
         key += cache_suffix
-        # Dense 候选池精排改变了检索集合与顺序，独立分池
-        if settings.RETRIEVAL_DENSE_RERANK_ENABLED:
-            key += "|d1"
-        # Query 相关性记忆重排改变了检索集合与顺序，独立分池（与 |d1 不共池）
-        if settings.RETRIEVAL_QUERY_MEMORY_ENABLED:
-            key += "|q1"
         return key
 
     cache_key = ""
@@ -645,42 +637,13 @@ async def retrieve_scoped_docs_cached(
 
         async def _dense_miss() -> list:
             async with span("rag.retrieve", kb_id=kb_id) as _step:
-                memory_on = bool(settings.RETRIEVAL_QUERY_MEMORY_ENABLED)
-                dense_rerank_on = bool(settings.RETRIEVAL_DENSE_RERANK_ENABLED)
-                effective_k = search_k
-                if memory_on:
-                    effective_k = max(
-                        int(search_k), int(settings.RETRIEVAL_QUERY_MEMORY_CANDIDATES)
-                    )
-                if dense_rerank_on and not memory_on:
-                    effective_k = max(
-                        int(search_k), int(settings.RETRIEVAL_RERANK_CANDIDATES)
-                    )
                 miss_docs = await asyncio.to_thread(
                     retrieve_docs_with_retry,
                     vectorstore,
                     effective_norm,
-                    search_k=effective_k,
+                    search_k=search_k,
                     metadata_filter=metadata_filter,
                 )
-                if effective_k > search_k and memory_on:
-                    # Query 记忆重排自带可选 CE 二次融合；两条重排链互斥，
-                    # 避免同一候选池被两次 Cross-Encoder 调用。
-                    from agentix.retrieval.usecases.query_memory_rerank import (
-                        rerank_docs_with_query_memory,
-                    )
-
-                    miss_docs = await rerank_docs_with_query_memory(
-                        question, miss_docs, search_k, vectorstore
-                    )
-                elif effective_k > search_k and dense_rerank_on:
-                    from agentix.retrieval.usecases.dense_rerank import (
-                        rerank_dense_candidates,
-                    )
-
-                    miss_docs = await rerank_dense_candidates(
-                        question, miss_docs, search_k
-                    )
                 _step.set_attribute("docs_count", len(miss_docs or []))
             return miss_docs
 
@@ -702,10 +665,10 @@ async def retrieve_scoped_docs_cached(
             levels = [dense_level]
             if hybrid_on:
                 hybrid_level = CascadeLevel(
-                    "bm25_rrf_rerank", _hybrid_miss, higher_is_better=True
+                    "bm25_zscore", _hybrid_miss, higher_is_better=True
                 )
                 # multi_hop（graph 未注入的现实档）：融合召回前置，dense 兜底；
-                # statute/general：exact 直取前置，低分/空再升级融合精排。
+                # statute/general：exact 直取前置，低分/空再升级融合检索。
                 levels = (
                     [hybrid_level, dense_level]
                     if kind == "multi_hop"
@@ -1835,8 +1798,8 @@ async def _stream_answer_events_impl(
     # --- 2.5 进度事件（SSE progress；前端 chatStreamHandlers 消费）---
     # 后端此前从不产出 progress，前端处理分支是死代码（审查 2026-09-27 接线）。
     # 只在编排层**真实边界**打点：loading（准备）→ retrieval（检索预检）→
-    # llm_generate（出答）；hybrid 开启时检索内部产出的四阶段（R-P1-5）在预检
-    # 后追加一帧 breakdown（flag-off 三段帧逐字节不变）。
+    # llm_generate（出答）；hybrid 开启时检索内部产出的阶段明细（R-P1-5）在
+    # 预检后追加一帧 breakdown（flag-off 三段帧逐字节不变）。
     yield {
         "type": "progress",
         "stage": "loading",
@@ -1889,7 +1852,7 @@ async def _stream_answer_events_impl(
         yield think_delta
 
     # --- 6. 检索预检：内容题无命中则拒答；元问题（统计/列表）跳过 ---
-    # R-P1-5：hybrid 四阶段报告由检索在预检内部产出（ContextVar 旁路，生成器
+    # R-P1-5：hybrid 阶段报告由检索在预检内部产出（ContextVar 旁路，生成器
     # 无法逐步 yield）——预检前清空、预检后取走；flag-off 恒为 None ⇒ 三段帧不变。
     from agentix.retrieval.usecases.retrieval_hybrid import (
         pop_stage_report,
@@ -1926,12 +1889,12 @@ async def _stream_answer_events_impl(
         yield preflight_result
         return
     if stage_report:
-        # R-P1-5 检索阶段观测帧：rewrite → dense/sparse → fusion → rerank
-        # （每阶段耗时/命中数/TopK id/熔断位，供前端与评测归因）
+        # 检索阶段观测帧：rewrite → dense/sparse → fusion
+        # （每阶段耗时/命中数/TopK id，供前端与评测归因）
         yield {
             "type": "progress",
             "stage": "retrieval",
-            "message": "检索完成（四阶段）",
+            "message": "检索完成（Dense + BM25/z-score）",
             "detail": {
                 "step": 2,
                 "total": 3,

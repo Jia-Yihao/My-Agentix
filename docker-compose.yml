@@ -111,21 +111,6 @@ services:
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION}
 
-      # Rerank配置
-      - RERANK_ENABLED=${RERANK_ENABLED}
-      - RERANK_PROVIDER=${RERANK_PROVIDER}
-      - RERANK_BASE_URL=${RERANK_BASE_URL}
-      - RERANK_ENDPOINT=${RERANK_ENDPOINT}
-      - RERANK_API_KEY=${RERANK_API_KEY}
-      - RERANK_MODEL=${RERANK_MODEL}
-      - RERANK_TIMEOUT=${RERANK_TIMEOUT:-30}
-      - RERANK_MAX_CANDIDATES=${RERANK_MAX_CANDIDATES}
-      - RERANK_TOP_N=${RERANK_TOP_N}
-      - RERANK_SCORE_FUSION_ALPHA=${RERANK_SCORE_FUSION_ALPHA}
-      # retrieval/infra/rag/rerank.py 使用的 Cross-Encoder 专用配置。
-      - RERANKER_BASE_URL=${RERANKER_BASE_URL:-http://reranker:7997}
-      - RERANKER_ENABLED=${RERANKER_ENABLED:-false}
-      - RERANKER_MODEL=${RERANKER_MODEL:-text-embedding-bge-reranker-v2-m3}
 
       # Vision模型配置
       - VISION_API_KEY=${VISION_API_KEY}
@@ -144,6 +129,7 @@ services:
       - KB_POSTGRES_SIMILARITY_THRESHOLD=${KB_POSTGRES_SIMILARITY_THRESHOLD:-0.5}
       - KB_POSTGRES_RERANK_THRESHOLD=${KB_POSTGRES_RERANK_THRESHOLD:-0.8}
       - KB_RERANK_SCORE_THRESHOLD=${KB_RERANK_SCORE_THRESHOLD:-0.8}
+      - RERANKER_ENABLED=${RERANKER_ENABLED:-false}
       - KB_CHUNK_SIZE=${KB_CHUNK_SIZE:-512}
       - KB_CHUNK_OVERLAP=${KB_CHUNK_OVERLAP:-80}
       - KB_ENABLE_EXTERNAL_SEARCH=false
@@ -416,45 +402,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    networks:
-      - agentix-network
-
-  # 可选的 Cross-Encoder 精排服务（Infinity）；首次启动会从 Hugging Face 下载模型。
-  reranker:
-    image: michaelf34/infinity:latest-cpu
-    profiles:
-      - reranker
-    restart: unless-stopped
-    command:
-      - v2
-      - --engine
-      - torch
-      - --model-id
-      - ${RERANKER_MODEL_SOURCE:-BAAI/bge-reranker-v2-m3}
-      - --served-model-name
-      - text-embedding-bge-reranker-v2-m3
-      - --port
-      - "7997"
-      - --batch-size
-      - "4"
-    ports:
-      - "127.0.0.1:${RERANKER_PORT:-7997}:7997"
-    environment:
-      HF_HOME: /app/.cache/huggingface
-      HF_HUB_ENABLE_HF_TRANSFER: "0"
-      HF_HUB_DISABLE_XET: "1"
-    volumes:
-      - ${RERANKER_CACHE_DIR:-./.cache/reranker}:/app/.cache
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7997/health', timeout=3)"
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 180s
     networks:
       - agentix-network
 

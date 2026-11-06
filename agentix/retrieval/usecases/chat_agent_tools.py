@@ -205,15 +205,6 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
             scope_token=retrieval_cache_scope_token(ctx.scope_token, named_doc_id),
             session=ctx.session,
         )
-        if settings.RERANKER_ENABLED and len(docs) > 1:
-            from agentix.retrieval.infra.rag.rerank import (
-                dynamic_rerank_skip_reason,
-                rerank_documents,
-            )
-
-            # W2 动态跳过（默认关）：候选过少/首位分已高 ⇒ 保序直过
-            if dynamic_rerank_skip_reason(docs) is None:
-                docs = await rerank_documents(q, docs, settings.RERANKER_MODEL)
         if not docs:
             return INSUFFICIENT_RETRIEVAL_MSG
 

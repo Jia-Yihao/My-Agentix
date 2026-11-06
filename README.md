@@ -52,7 +52,7 @@ My Agentix 是一套**领域无关的 Agent 平台内核**。它不是某个垂�
 - **可恢复的失败**：错误分类 → 退避重试 → 模型与工具 Fallback 链 → 降级拒答，不悬挂。
 - **统一的工具面**：所有工具经 Tool Gateway（权限 → 风险 → 超时 → 重试 → 轨迹），支持 MCP 远端工具与本机 stdio Server。
 - **真隔离的执行位置**：`ToolSpec.sandbox` 声明执行位置，`subprocess` 档一次调用一个进程 + 子进程侧 `RLIMIT_AS/CPU/FSIZE` + 环境白名单 + 可杀进程组；拿不到的档位**拒绝执行**，不静默退回进程内。
-- **多路检索**：BM25 / Dense / RRF 融合 / Cross-Encoder 精排 / 图谱 Cypher / Text2SQL / 社区摘要，缺一路有兜底，来源回填成引用。
+- **混合检索**：知识库检索统一使用 Dense + BM25/z-score（Dense 权重 α=0.85）；图谱 Cypher、Text2SQL 与社区摘要提供专门的领域检索能力，来源回填成引用。
 - **分层记忆**：user / knowledge / task 3 scope 的记忆写入与召回，写路径零 PII 留存，召回按 scope 过滤并按置信度排序。
 - **可评估的质量**：确定性打分（路由 / 引用 / 拒答 / 引用正确性 / must_contain / pass^k）、轨迹前缀回归、延迟基准与每日性能巡检。
 - **可观测的轨迹**：trace_id 全链路、步骤级轨迹落盘可回放、Prometheus 指标、OTel GenAI 语义 span。
@@ -116,7 +116,7 @@ pip install -e ".[dev,test]"
 # 2. 环境变量（至少填 LLM_API_KEY / EMBEDDING_API_KEY / SECRET_KEY）
 cp .env.example .env
 
-# 3. 基础设施：compose 共 15 个 service，web 是第 15 个
+# 3. 基础设施：compose 共 14 个 service，web 是第 14 个
 docker compose up -d postgres redis neo4j mysql milvus kb_ingest prometheus alertmanager grafana
 
 # 4. 后端（本机进程，故意不放进 compose，避免先占住 8000）
@@ -129,8 +129,6 @@ cd web && npm install && npm run dev
 ```
 
 访问 `http://localhost:5173`（开发服务器，走 Vite proxy）；容器化部署时由 nginx 同源反代到 `http://localhost:8080`。
-
-可选精排服务：`docker compose --profile reranker up -d reranker`（首次会下载 `BAAI/bge-reranker-v2-m3`）。精排模型名由 `RERANKER_MODEL` 决定，平台配置里的 `RERANK_MODEL` 在检索侧没有消费者。
 
 ## 5. 配置
 
@@ -167,25 +165,20 @@ make init-data      # 建运行时数据目录
 
 ## 7. 检索与评测
 
-检索质量以公开数据集 **STARD**（真实非专业用户法律咨询，1,543 题、精确 docid 金标）为准，命中判定按 qrels 的精确 docid，不用文本匹配来猜。`dev` 是盲测集（权重与参数在 `train` 上定），下表 dev 列是唯一对外读数。
+检索质量统一以公开数据集 **STARD 的 8,000 文档受控子集**和精确 docid qrels 为准。Recall@K 是每题检出的相关法条占该题全部相关法条的比例，再对题目宏平均；不是查询命中率或分类准确率。融合参数只由 train 内固定 300 题 validation 选择，官方 `dev` 308 题留作最终盲测；首页只展示项目当前唯一默认方案的 dev 指标。
 
 <!-- STARD_TABLE_START -->
-> 本表由 `evals/stard_summary_governance.py` 从两份进仓 JSON 自动生成；每个数字都可由 `docs/evals/stard-lexical-summary.json` 与 `docs/evals/stard-semantic-summary.json` 回算，手工改动会被守卫拦下。
+> 本表由 `evals/stard_summary_governance.py` 从唯一基准报告自动生成；手工改动会被守卫拦下。
 
-| 语料 | 通道 | dev R@5 | dev R@10 | dev R@20 | dev MRR | dev NDCG@5 | 全量 R@5 | 全量 R@20 |
+| 数据集 | 默认方案 | 通道候选深度 | dev Recall@1 | dev Recall@5 | dev Recall@10 | dev Recall@20 | dev MRR | dev NDCG@5 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| 全库 55,348 | BM25 | 0.4708 | 0.5422 | 0.6071 | 0.3942 | 0.3327 | 0.5217 | 0.6436 |
-| 受控子集 8,000 | BM25 | 0.5812 | 0.6494 | 0.7240 | 0.4761 | 0.4192 | 0.6060 | 0.7492 |
-| 受控子集 8,000 | **Dense** | **0.7110** | **0.7760** | **0.8409** | **0.6014** | **0.5455** | **0.7207** | **0.8542** |
-| 受控子集 8,000 | RRF(BM25+Dense, k=60) | 0.6591 | 0.7565 | 0.8247 | 0.5584 | 0.4994 | 0.6889 | 0.8315 |
+| STARD 8,000 文档受控子集 | Dense + BM25/z-score (α=0.85) | 80 | 0.3757 | 0.5976 | 0.6899 | 0.7689 | 0.5972 | 0.5443 |
 <!-- STARD_TABLE_END -->
 
-上表是 Dense、BM25 与普通 RRF 的基线对照，不代表当前离线最佳排序方案。在同一受控 8,000 文档子集上，train qrels 驱动的 HGB 候选重排器与 Cross-Encoder 融合目前是最佳离线方案：train 查询 3 折 OOF Recall@20 为 91.50%，官方 dev 盲测为 282/308（91.56%）。完整指标、训练/盲测口径和适用边界见[评测报告](docs/evals/stard-hgbce-summary.json)。
-
-此结果是依赖 STARD 标注数据的离线评测，不是通用模型，也不代表项目统一默认链路达到了该指标。项目统一默认采用 `KB_TOP_K=20` 的 Dense + BM25/z-score 混合召回（Dense 权重 0.85）；Cross-Encoder 精排仍关闭（`RETRIEVAL_HYBRID_RERANK=false`、`RETRIEVAL_DENSE_RERANK_ENABLED=false`），不加载 STARD qrels 或 HGB 排序器。STARD 实测中该原始分数融合较普通 RRF 更稳，并在 dev 与全量查询的 Recall@20 均略高于 Dense；目标知识库仍应独立验证。STARD 的 91%+ HGB+CE 结果不能视作项目质量承诺。
+项目唯一默认检索为 Dense + BM25 原始分数 z-score 融合（Dense 权重 0.85、每通道候选深度 80、输出 Top-20），无额外重排。验证集参数扫描与锁定后的 dev 结果、指标口径和复现方式见[评测说明](evals/README.md)。
 
 ```bash
-python evals/stard_eval.py --help            # 公开集评测
+python evals/stard_default_retrieval.py --help # 唯一检索基准与调参评测
 python evals/run_eval.py --help              # 离线打分（需一份题集，缺输入会明确报错）
 python evals/trajectory_regression.py --help # 轨迹前缀回归（-b 指向已录制的轨迹包目录）
 ```
@@ -259,7 +252,7 @@ My-Agentix/
 | 编排 | LangGraph · Agent Core 2.0（Harness + Capabilities） |
 | 前端 | Vue 3 · TypeScript · Vite · Vitest |
 | 存储 | PostgreSQL（结构化）· Redis（缓存 / Checkpointer）· Neo4j（图谱）· Milvus（向量）· MySQL（统计） |
-| 检索 | FAISS / Milvus 向量 · BM25 · RRF 融合 · Cross-Encoder 精排（BGE / Cohere / Jina / Voyage） |
+| 检索 | FAISS / Milvus 向量 · BM25 · Dense + BM25/z-score 混合召回 |
 | 扩展 | MCP（stdio JSON-RPC）· 声明式 ToolRegistry |
 | 可观测 | Prometheus · Grafana · Alertmanager · OTel |
 | 质量 | pytest · ruff · black · mypy · 确定性打分 · 轨迹前缀回归 |

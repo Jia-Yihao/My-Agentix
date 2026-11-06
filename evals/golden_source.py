@@ -1,8 +1,8 @@
 """评测入口的 ``--golden`` 缺省解析：默认题集不存在时**响亮退出**（T3）。
 
 **为什么存在**：两支旧题集文件已于
-2026-10-26 随评测集下线删除，但 6 个评测入口的 ``--golden`` 缺省串还指向它们
-（``run_eval.py`` / ``hybrid_eval.py`` / ``ragas_report.py`` / ``golden_to_promptfoo.py``
+2026-10-26 随评测集下线删除，但 5 个评测入口的 ``--golden`` 缺省串还指向它们
+（``run_eval.py`` / ``ragas_report.py`` / ``golden_to_promptfoo.py``
 / ``feedback_ingest.py`` / ``scripts/demo/local_kb_demo.py``）。缺省指向一个不存在的
 文件，最坏的收法不是报错而是**静默跑空**：题集读成 0 条 → 指标 0 或整表空白 →
 退出码 0 → 看的人以为"评测跑过了"。本模块把这条路径统一成**非零退出 + 可用题集清单

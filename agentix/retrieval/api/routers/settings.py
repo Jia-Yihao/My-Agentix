@@ -40,8 +40,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "embedding_base_url": app_settings.EMBEDDING_BASE_URL or "",
     "embedding_api_key": app_settings.EMBEDDING_API_KEY or "",
     "embedding_model": app_settings.EMBEDDING_MODEL,
-    # Reranker
-    "reranker_model": app_settings.CROSS_ENCODER_MODEL,
     # Chunk
     "chunk_strategy": os.getenv("CHUNK_STRATEGY", "auto"),
     "chunk_mode": os.getenv("CHUNK_MODE", "single"),
@@ -49,10 +47,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "chunk_overlap": app_settings.KB_CHUNK_OVERLAP,
     # Retrieval
     "search_k": app_settings.KB_TOP_K,
-    "sparse_k": int(os.getenv("SPARSE_K", "10")),
-    "dense_k": int(os.getenv("DENSE_K", "10")),
-    "fusion_k": int(os.getenv("FUSION_K", "15")),
-    "reranker_type": os.getenv("RERANKER_TYPE", "embedding"),
 }
 
 #: PUT 只允许这些键，避免任意负载把无关结构写进 model_config 表。
@@ -94,7 +88,9 @@ def get_merged_config(session: Session, kb_id: str | None = None) -> dict[str, A
             select(ModelConfig).where(ModelConfig.kb_id == kb_id)
         ).first()
         if row and row.config:
-            config.update(row.config)
+            config.update(
+                {key: value for key, value in row.config.items() if key in ALLOWED_CONFIG_KEYS}
+            )
     return mask_config(config)
 
 

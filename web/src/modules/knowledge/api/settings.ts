@@ -9,15 +9,10 @@ export type RagConfig = {
   llm_model: string
   embedding_base_url: string
   embedding_model: string
-  reranker_model: string
   chunk_strategy: string
   chunk_size: number
   chunk_overlap: number
   search_k: number
-  sparse_k: number
-  dense_k: number
-  fusion_k: number
-  reranker_type: string
 }
 
 export async function fetchKbSettings(kbId: string): Promise<RagConfig> {

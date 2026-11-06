@@ -29,8 +29,8 @@ from loguru import logger
 
 from agentix.config import settings
 
-#: 任务分档（§43 Model Routing）。vision/embedding 由既有独立配置覆盖
-#: （RERANKER_MODEL / 向量库 embedding 配置），不在本 Gateway 重复建档。
+#: 任务分档（§43 Model Routing）。vision/embedding 由既有独立配置覆盖，
+#: 不在本 Gateway 重复建档。
 TaskType = Literal["fast", "standard", "reasoning"]
 
 #: 分档 → settings 键（Model Registry）

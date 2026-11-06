@@ -197,22 +197,6 @@ try:
         ["component"],
     )
 
-    # Dense 候选池精排链路的三类旁路事件（零 label ⇒ 不引入新标签名，
-    # 沿用 rerank_calls_total 的无标签口径；与 DEGRADED_TOTAL 分工：
-    # 这里只记「精排有没有真的作用到结果」，不重复记通用降级态）。
-    RERANK_BREAKER_TOTAL = Counter(
-        "rerank_breaker_total",
-        "Dense rerank requests short-circuited because the upstream breaker is open",
-    )
-    RERANK_FAILOPEN_TOTAL = Counter(
-        "rerank_failopen_total",
-        "Dense rerank requests that delivered the original recall order",
-    )
-    RERANK_SKIPPED_TOTAL = Counter(
-        "rerank_skipped_total",
-        "Dense rerank requests skipped (candidate pool not larger than search_k)",
-    )
-
     # T22：checkpointer 降级后的升级重试结果（`result` 封闭 ok|fail，有界；已在
     # p100 ALLOWED_METRIC_LABELS 白名单）。与 `degraded_total` 分工：那条记"进了降级态"，
     # 这条记"有没有从降级态回来"——只有它能在降级后告诉运维"多久没回来"。
@@ -536,9 +520,6 @@ except ImportError:
     LLM_COST = _NoopMetric()
     RATE_LIMIT_TRIGGERED = _NoopMetric()
     DEGRADED_TOTAL = _NoopMetric()
-    RERANK_BREAKER_TOTAL = _NoopMetric()
-    RERANK_FAILOPEN_TOTAL = _NoopMetric()
-    RERANK_SKIPPED_TOTAL = _NoopMetric()
     GROUNDING_LOW_SCORE = _NoopMetric()
     EVIDENCE_GATE = _NoopMetric()
     GATEWAY_FALLBACK = _NoopMetric()
@@ -883,21 +864,6 @@ def record_rate_limit_triggered(scope: str = "global"):
 def record_degraded(component: str) -> None:
     """企业化 P1-2.1：记录组件降级事件（component: checkpointer / chat / retrieval...）"""
     DEGRADED_TOTAL.labels(component=component or "unknown").inc()
-
-
-def record_rerank_breaker() -> None:
-    """精排熔断 OPEN/HALF_OPEN 快失败（未发上游请求），直接按原召回顺序交付。"""
-    RERANK_BREAKER_TOTAL.inc()
-
-
-def record_rerank_failopen() -> None:
-    """精排未生效（上游异常 / 熔断 / 返回不可用），按原召回顺序交付。"""
-    RERANK_FAILOPEN_TOTAL.inc()
-
-
-def record_rerank_skipped() -> None:
-    """候选池未大于 search_k，精排被跳过（保序，不是失败）。"""
-    RERANK_SKIPPED_TOTAL.inc()
 
 
 def record_checkpointer_upgrade(result: str) -> None:

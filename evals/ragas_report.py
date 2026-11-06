@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 r"""Ragas 忠实度/相关性独立报告（P2-2，observe-only）。
 
-完全沿 `evals/hybrid_eval.py` 先例：独立脚本、报告键固定、**只增不进门禁**
+作为独立脚本运行，报告键固定、**只增不进门禁**
 （绝不进 ci.yml 的 ``METRICS`` 五键元组与质量门基线的门键），
 缺环境 exit 2 诚实降级——不出假分数。
 

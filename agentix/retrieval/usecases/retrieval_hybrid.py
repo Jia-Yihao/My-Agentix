@@ -1,9 +1,9 @@
-"""R-P1（F1a）混合检索四阶段编排：rewrite → dense/sparse → fusion → rerank。
+"""项目唯一混合检索链：rewrite → dense/sparse → z-score fusion。
 
 默认由 ``RETRIEVAL_HYBRID_ENABLED=true`` 时被 ``retrieve_scoped_docs_cached``
 调用；可通过显式关闭总闸回退至原 Dense 路径。
 
-阶段职责（检索增强深度优化.md §5）：
+阶段职责：
 
 - **rewrite**：问题归一（计时；由调用方传入 ``rewrite_ms``）；
 - **dense**：既有 ``retrieve_docs_with_retry`` 向量路（fetch_k/阈值/有效性过滤口径不变，
@@ -11,17 +11,12 @@
 - **sparse**（R-P1-1，子闸 ``RETRIEVAL_SPARSE_ENABLED``）：进程内 BM25，
   语料 = PostgreSQL chunk 表；无 session 或异常时 fail-open 跳过；
 - **dense / sparse 并行**：两路候选相互独立时并发执行，融合仍等待两路完成；
-- **fusion**（R-P1-2）：rank 级 RRF 或 z-score 分数融合
-  （``RETRIEVAL_FUSION_METHOD`` = rrf|zscore；默认 zscore、Dense 权重 0.85；
-  ``RETRIEVAL_FUSION_TOP_N`` 截断候选池）——融合后**不再**
-  复用 dense 的距离/相似度阈值（RRF 分数与向量分数不同口径），只按 TopN 截断；
-- **rerank**（R-P1-3）：``RETRIEVAL_HYBRID_RERANK=true``（默认关，需显式启用）时
-  对 ``RETRIEVAL_RERANK_CANDIDATES`` 候选精排取 TopK；服务失败/熔断开路 =
-  既有 fail-open（保序返回），熔断位记入阶段报告。
+- **fusion**：z-score 归一 dense/BM25 分数后融合，Dense 权重由
+  ``RETRIEVAL_FUSION_ALPHA`` 固定配置，候选池受 ``RETRIEVAL_FUSION_TOP_N`` 限制。
 
-观测（R-P1-5）：阶段报告落 ContextVar（SSE 在预检后取走产四阶段帧），
+观测（R-P1-5）：阶段报告落 ContextVar（SSE 在预检后取走阶段帧），
 同时经 ``span("rag.hybrid_stages", **attrs)`` 写入 trajectory（入口 kwargs）
-与结构化日志，供评测归因（每阶段耗时/命中数/TopK id/熔断位）。
+与结构化日志，供评测归因（每阶段耗时/命中数/TopK id）。
 """
 
 from __future__ import annotations
@@ -37,7 +32,7 @@ from agentix.retrieval.settings import settings
 
 logger = get_logger(service="retrieval-hybrid")
 
-#: SSE 侧（R-P1-5）在检索预检之后取走本请求的四阶段报告。
+#: SSE 侧（R-P1-5）在检索预检之后取走本请求的阶段报告。
 _STAGE_REPORT: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
     "agentix_retrieval_stage_report", default=None
 )
@@ -74,20 +69,6 @@ def _topk_ids(docs: List[Any], limit: int = 10) -> str:
     return ",".join(_chunk_key(d) for d in docs[:limit])
 
 
-def _rerank_breaker_state() -> str:
-    """读 rerank 熔断位（R-P1-5 归因供数）；读取失败记 unknown，绝不抛出。"""
-    try:
-        from agentix.reliability.circuit_breaker import registry
-
-        breaker = registry.get("rerank_service")
-        if breaker is None:
-            return "none"
-        state = breaker.state
-        return str(getattr(state, "value", state)).lower()
-    except Exception:  # noqa: BLE001 - 观测绝不打挂检索
-        return "unknown"
-
-
 def _fused_meta_score(doc: Any) -> float:
     """zscore 口径下把 dense 分数换向为「越大越好」。"""
     meta = getattr(doc, "metadata", None) or {}
@@ -109,10 +90,10 @@ async def retrieve_hybrid_docs(
     rewrite_ms: float,
     session: Any = None,
 ) -> Tuple[List[Any], Dict[str, Any]]:
-    """四阶段混合检索，返回 ``(docs, stage_report)``。
+    """混合检索并返回 ``(docs, stage_report)``。
 
     ``docs`` 与 flag-off 路径同契约：langchain Document 列表，
-    ``metadata["_retrieval_score"]`` 已写入（单通道 = 各通道原分；融合 = RRF/z-score 融合分）。
+    ``metadata["_retrieval_score"]`` 已写入（单通道为原分，双通道为 z-score 融合分）。
     """
     # 懒加载：chat_service 在其内部懒加载本模块（避免 usecases 环状顶层 import）
     from agentix.retrieval.usecases.chat_service import retrieve_docs_with_retry
@@ -183,7 +164,7 @@ async def retrieve_hybrid_docs(
     else:
         # 整体 timeout + return_exceptions=True：任一路慢/异常都不许把整链挂死。
         # sparse 是可旁路通道，超时先掐它；dense 是主通道，再等一个同长窗口，
-        # 仍不返回才按空结果降级（下游 RRF 拿 dense 单路继续走）。
+        # 仍不返回才按空结果降级（下游 z-score 拿 dense 单路继续走）。
         timeout = float(settings.RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS)
         if timeout <= 0:
             timeout = 5.0
@@ -221,34 +202,20 @@ async def retrieve_hybrid_docs(
             sparse_pairs, sparse_stage = sparse_result
     stages.extend((dense_stage, sparse_stage))
 
-    # --- 分数融合（R-P1-2） ---
+    # --- 唯一分数融合策略：Dense + BM25/z-score ---
     t0 = time.perf_counter()
-    from agentix.domain.policies.rank_fusion import rrf_fuse, zscore_fuse
+    from agentix.domain.policies.rank_fusion import zscore_fuse
 
-    method = settings.RETRIEVAL_FUSION_METHOD
-    if method not in ("rrf", "zscore"):
-        logger.warning(
-            "unsupported retrieval fusion method {}; falling back to project default zscore",
-            method,
-        )
-        method = "zscore"
     sparse_docs = [d for d, _ in sparse_pairs]
     fused: List[Tuple[str, float]] = []
     if dense_docs and sparse_docs:
-        if method == "zscore":
-            dense_channel = [(_chunk_key(d), _fused_meta_score(d)) for d in dense_docs]
-            sparse_channel = [(_chunk_key(doc), float(s)) for doc, s in sparse_pairs]
-            fused = zscore_fuse(
-                [dense_channel, sparse_channel],
-                alpha=float(settings.RETRIEVAL_FUSION_ALPHA),
-                top_n=top_n_cap,
-            )
-        else:
-            fused = rrf_fuse(
-                [[_chunk_key(d) for d in dense_docs], [_chunk_key(d) for d in sparse_docs]],
-                k=int(settings.RETRIEVAL_RRF_K),
-                top_n=top_n_cap,
-            )
+        dense_channel = [(_chunk_key(d), _fused_meta_score(d)) for d in dense_docs]
+        sparse_channel = [(_chunk_key(doc), float(s)) for doc, s in sparse_pairs]
+        fused = zscore_fuse(
+            [dense_channel, sparse_channel],
+            alpha=float(settings.RETRIEVAL_FUSION_ALPHA),
+            top_n=top_n_cap,
+        )
         # dense 文档优先（索引 metadata 更全），仅有 sparse 命中的用 sparse 文档
         doc_by_key: Dict[str, Any] = {}
         for d in sparse_docs:
@@ -279,68 +246,14 @@ async def retrieve_hybrid_docs(
             "fusion",
             (time.perf_counter() - t0) * 1000.0,
             hits=len(ordered),
-            method=method,
+            method="zscore",
         )
     )
-
-    # --- rerank（R-P1-3：hybrid 链内默认开；失败/熔断 = 既有 fail-open 保序；
-    #     W2 动态跳过（RERANK_DYNAMIC_SKIP_ENABLED，默认关）：候选过少/首位分
-    #     已高 ⇒ 保序直过，stage 留痕 applied=false + skipped=原因） ---
-    t0 = time.perf_counter()
-    breaker = "disabled"
-    rerank_skip: Optional[str] = None
-    if settings.RETRIEVAL_HYBRID_RERANK and len(ordered) >= 2:
-        from agentix.retrieval.infra.rag.rerank import dynamic_rerank_skip_reason
-
-        rerank_skip = dynamic_rerank_skip_reason(ordered)
-    if rerank_skip is None and settings.RETRIEVAL_HYBRID_RERANK and len(ordered) >= 2:
-        from agentix.retrieval.infra.rag.rerank import (
-            rerank_documents_with_status,
-        )
-
-        candidate_n = max(2, int(settings.RETRIEVAL_RERANK_CANDIDATES))
-        candidates = ordered[:candidate_n]
-        try:
-            try:
-                ordered, rerank_applied = await rerank_documents_with_status(
-                    question, candidates, getattr(settings, "RERANKER_MODEL", None)
-                )
-            except Exception as exc:  # noqa: BLE001 - 双保险 fail-open（rerank_documents 内部已兜底）
-                logger.warning("hybrid rerank degraded (fail-open): {}", exc)
-                ordered = candidates
-                rerank_applied = False
-        finally:
-            breaker = _rerank_breaker_state()
-        stages.append(
-            _stage(
-                "rerank",
-                (time.perf_counter() - t0) * 1000.0,
-                hits=len(candidates),
-                breaker=breaker,
-                applied=rerank_applied,
-            )
-        )
-    else:
-        skip_extra: Dict[str, Any] = {}
-        if rerank_skip:
-            # 动态跳过：如实记录观测态（不触上游 ⇒ breaker 取注册表现状）
-            breaker = _rerank_breaker_state()
-            skip_extra["skipped"] = rerank_skip
-        stages.append(
-            _stage(
-                "rerank",
-                0.0,
-                hits=0,
-                breaker=breaker,
-                applied=False,
-                **skip_extra,
-            )
-        )
 
     docs = ordered[: max(1, int(search_k))]
     report: Dict[str, Any] = {
         "stages": stages,
-        "fusion_method": method,
+        "fusion_method": "zscore",
         "sparse": sparse_skipped or ("on" if settings.RETRIEVAL_SPARSE_ENABLED else "off"),
         "docs_count": len(docs),
     }
@@ -352,8 +265,7 @@ async def retrieve_hybrid_docs(
         attrs: Dict[str, Any] = {
             "kb_id": kb_id,
             "search_k": int(search_k),
-            "fusion_method": method,
-            "rerank_breaker": breaker,
+            "fusion_method": "zscore",
             "docs_count": len(docs),
         }
         for st in stages:
@@ -371,12 +283,11 @@ async def retrieve_hybrid_docs(
         logger.debug("hybrid stage span degraded: {}", exc)
 
     logger.info(
-        "hybrid retrieval kb={} dense={} sparse={} fused={} rerank={} docs={}",
+        "hybrid retrieval kb={} dense={} sparse={} fused={} docs={}",
         kb_id,
         len(dense_docs),
         report["sparse"],
         len(ordered),
-        breaker,
         len(docs),
     )
     return docs, report
