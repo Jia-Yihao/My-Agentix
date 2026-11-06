@@ -46,7 +46,7 @@
     {
       "id": "G_full",
       "label": "Full Agentix",
-      "description": "全能力默认管线（= 生产默认配置，含 rerank/citation/grounding）",
+      "description": "全能力管线（含 rerank/citation/grounding）",
       "flags": { "retrieval_enabled": true, "router_enabled": true, "tools_enabled": true, "multi_agent": true, "memory_enabled": true, "full_pipeline": true }
     }
   ]

@@ -20,7 +20,7 @@
       {{ progress?.message || currentStep.label }}
     </div>
 
-    <!-- R-P1-5 检索四阶段子步骤：rewrite/sparse/rrf/rerank + 各阶段 ms -->
+    <!-- R-P1-5 检索阶段子步骤：rewrite/dense/sparse/fusion/rerank + 各阶段 ms -->
     <div v-if="!compact && subSteps.length" class="stepper-substeps">
       <span v-for="(st, i) in subSteps" :key="i" class="substep">
         {{ subStepLabel(st) }}
@@ -81,6 +81,7 @@ const SUB_STEP_LABELS: Record<string, string> = {
   rewrite: '查询重写',
   sparse: '稀疏检索',
   dense: '稠密检索',
+  fusion: '融合排序',
   rrf: '融合排序',
   rerank: '重排序',
 }

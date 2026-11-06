@@ -1,16 +1,17 @@
-"""线上默认链路（runtime-default）端到端基线：质量 + 六层延迟 + 调用面 + 配置指纹。
+"""项目统一默认链路端到端基线：质量 + 六层延迟 + 调用面 + 配置指纹。
 
 与 ``evals/stard_eval.py`` 的边界：后者只报「某检索形态在某语料上的离线排序质量」；
-本文件把**生产默认配置**当作被测对象，逐阶段计时跑完整条链：
+本文件把**项目统一默认配置**当作被测对象，逐阶段计时跑完整条链：
 
     cache_read → embedding → vector_retrieval → fusion → rerank →
     citation_hydration → cache_write
 
-默认链路配置画像（从 ``agentix.config.settings`` 经兼容层运行时读值，不手写）：
+项目统一默认配置画像（从 ``agentix.config.settings`` 经兼容层运行时读值，不手写）：
 
-    hybrid=false, sparse=false, dense_rerank=false, query_memory=false,
-    semantic_cache=false, singleflight=false, adaptive=false,
-    candidate_pool = search_k = KB_TOP_K, fusion=none,
+    hybrid=true, sparse=true, fusion=zscore(alpha=0.85),
+    dense_rerank=false, hybrid_rerank=false,
+    query_memory=false, semantic_cache=false, singleflight=false, adaptive=false,
+    candidate_pool = min(FUSION_TOP_N, search_k * 4),
     embedding_model=text-embedding-bge-m3,
     rerank_model=text-embedding-bge-reranker-v2-m3（未调用）
 
@@ -68,12 +69,13 @@ LAYERS = (
     "cache_io",
 )
 
-# 默认画像的期望值：任何一项与运行时 settings 不符都直接拒绝出数，
-# 避免「以为在测默认链路、其实环境里某个 flag 被打开」而不自知。
+# 项目统一默认画像的期望值：任何一项与运行时 settings 不符都直接拒绝出数，
+# 避免「以为在测项目统一默认、其实环境里某个 flag 被打开」而不自知。
 EXPECTED_FLAGS: dict[str, bool] = {
-    "hybrid": False,
-    "sparse": False,
+    "hybrid": True,
+    "sparse": True,
     "dense_rerank": False,
+    "hybrid_rerank": False,
     "query_memory": False,
     "semantic_cache": False,
     "singleflight": False,
@@ -83,11 +85,12 @@ EXPECTED_FLAGS: dict[str, bool] = {
 
 
 def _config_fingerprint() -> dict[str, Any]:
-    """从真实 settings 读值组装配置指纹，并强制校验 runtime-default 画像。"""
+    """从真实 settings 读值组装配置指纹，并强制校验项目统一默认画像。"""
     fp: dict[str, Any] = {
         "hybrid": bool(settings.RETRIEVAL_HYBRID_ENABLED),
         "sparse": bool(settings.RETRIEVAL_SPARSE_ENABLED),
         "dense_rerank": bool(settings.RETRIEVAL_DENSE_RERANK_ENABLED),
+        "hybrid_rerank": bool(settings.RETRIEVAL_HYBRID_RERANK),
         "query_memory": bool(settings.RETRIEVAL_QUERY_MEMORY_ENABLED),
         "semantic_cache": bool(settings.SEMANTIC_CACHE_ENABLED),
         "singleflight": bool(settings.RETRIEVAL_SINGLEFLIGHT_ENABLED),
@@ -95,16 +98,21 @@ def _config_fingerprint() -> dict[str, Any]:
         "reranker_enabled": bool(settings.RERANKER_ENABLED),
         "rerank_model": str(settings.RERANKER_MODEL),
         "embedding_model": str(settings.EMBEDDING_MODEL),
-        "candidate_pool": SEARCH_K,
+        "candidate_pool": max(
+            SEARCH_K,
+            min(int(settings.RETRIEVAL_FUSION_TOP_N), SEARCH_K * 4),
+        ),
         "search_k": SEARCH_K,
-        "fusion": "none (hybrid=false)",
+        "fusion": (
+            f"{settings.RETRIEVAL_FUSION_METHOD} (dense+bm25, alpha={settings.RETRIEVAL_FUSION_ALPHA})"
+            if settings.RETRIEVAL_FUSION_METHOD == "zscore"
+            else f"{settings.RETRIEVAL_FUSION_METHOD} (dense+bm25)"
+        ),
         "settings_source": "agentix/config/settings.py via retrieval settings compatibility wrapper",
     }
     drift = {k: (fp[k], v) for k, v in EXPECTED_FLAGS.items() if fp[k] != v}
     if drift:
-        raise SystemExit(f"runtime-default profile drifted, refuse to report: {drift}")
-    if fp["candidate_pool"] != fp["search_k"]:
-        raise SystemExit("default chain requires candidate_pool == search_k")
+        raise SystemExit(f"project-default profile drifted, refuse to report: {drift}")
     canonical = json.dumps(fp, ensure_ascii=False, sort_keys=True)
     fp["sha1"] = hashlib.sha1(  # nosec B324 - 非安全用途：配置指纹
         canonical.encode("utf-8"), usedforsecurity=False
@@ -279,6 +287,7 @@ def _run_pass(
     Q: np.ndarray,
     ids: list[str],
     id2text: dict[str, str],
+    bm25_index: Any,
     engine_session: tuple[Any, Any],
     mirror: tuple[Any, Any],
     cache: dict[str, bytes],
@@ -317,7 +326,7 @@ def _run_pass(
 
     with SessionCls(_engine) as session:
         for qid in qids:
-            key = f"agentix_retrieval:retrieve:stard|{qid}|k{SEARCH_K}"
+            key = f"agentix_retrieval:retrieve:stard|{qid}|k{SEARCH_K}|h1"
             started = time.perf_counter()
 
             # 1) 缓存读（精确键）
@@ -363,20 +372,49 @@ def _run_pass(
                 qvec = Q[qid].astype(np.float32)
             layers["embedding"].append(time.perf_counter() - t0)
 
-            # 3) 向量检索：8000x1024 点积 + top-k（默认 candidate_pool=search_k=KB_TOP_K）
-            t0 = time.perf_counter()
+            # 3) Dense/BM25 两路召回，通道深度沿用线上 hybrid 的 4x search_k 上限。
+            channel_n = max(
+                SEARCH_K,
+                min(int(settings.RETRIEVAL_FUSION_TOP_N), SEARCH_K * 4),
+            )
+            t0 = time.perf_counter(            )
             sims = D @ qvec
-            top_k_docs = _top_ids(sims, ids, SEARCH_K)
-            rank100 = _top_ids(sims, ids, POOL)
+            dense_order = np.argpartition(-sims, channel_n - 1)[:channel_n]
+            dense_order = dense_order[np.argsort(-sims[dense_order], kind="stable")]
+            dense_channel = [
+                (ids[int(i)], float(sims[int(i)])) for i in dense_order
+            ]
+            dense_docs = [doc_id for doc_id, _score in dense_channel]
             counters["vector_retrieval_calls"] += 1
             layers["vector_retrieval"].append(time.perf_counter() - t0)
 
-            # 4) 融合：hybrid=false ⇒ 无融合算子，恒等通过（仍计入阶段耗时）
+            # 4) BM25 补充召回与配置指定的分数融合。
             t0 = time.perf_counter()
-            fused = list(top_k_docs)
+            from agentix.domain.policies.rank_fusion import rrf_fuse
+
+            sparse_channel = [
+                (doc_id, float(score))
+                for doc_id, score in bm25_index.search(qs[qid][:400], top_n=channel_n)
+            ]
+            if settings.RETRIEVAL_FUSION_METHOD == "zscore":
+                from agentix.domain.policies.rank_fusion import zscore_fuse
+
+                fused_pairs = zscore_fuse(
+                    [dense_channel, sparse_channel],
+                    alpha=float(settings.RETRIEVAL_FUSION_ALPHA),
+                    top_n=int(settings.RETRIEVAL_FUSION_TOP_N),
+                )
+            else:
+                fused_pairs = rrf_fuse(
+                    [dense_docs, [doc_id for doc_id, _score in sparse_channel]],
+                    k=int(settings.RETRIEVAL_RRF_K),
+                    top_n=int(settings.RETRIEVAL_FUSION_TOP_N),
+                )
+            fused = [doc_id for doc_id, _score in fused_pairs]
+            counters["fusion_calls"] += 1
             layers["fusion"].append(time.perf_counter() - t0)
 
-            # 5) rerank：dense_rerank=false 且 pool==search_k ⇒ 跳过（0 次上游调用）
+            # 5) Cross-Encoder 默认关闭；线上实际开启时另行实测服务延迟。
             t0 = time.perf_counter()
             ranked = fused[:SEARCH_K]
             layers["rerank"].append(time.perf_counter() - t0)
@@ -406,7 +444,7 @@ def _run_pass(
             layers["cache_io"].append(cache_io_detail["read"][-1] + write_s)
 
             served[qid] = [str(d.metadata["doc_id"]) for d in docs]
-            canonical[qid] = rank100
+            canonical[qid] = fused[:POOL]
             totals.append(time.perf_counter() - started)
 
     return {
@@ -452,12 +490,41 @@ def main() -> None:
     gold = {**train, **dev}
     all_qids = sorted(gold)
 
-    # 用缓存 query 向量先算全量 dense 排名（诊断用，不参与冷启动计时），
-    # 同时确定引用还原 SQLite 镜像需要覆盖的文档集合。
+    # 用缓存 query 向量与 STARD 子集 BM25 先算全量 hybrid 排名（诊断用，不参与
+    # 冷启动计时），同时确定引用还原 SQLite 镜像需要覆盖的文档集合。
     S = Q @ D.T
-    dense_rank_all = {q: _top_ids(S[i], ids, POOL) for i, q in enumerate(cached_qids)}
+    from agentix.domain.policies.rank_fusion import rrf_fuse, zscore_fuse
+    from agentix.retrieval.infra.rag.sparse import BM25Index
+
+    bm25_index = BM25Index([(row[0], row[2], {}) for row in subset])
+    channel_n = max(SEARCH_K, min(int(settings.RETRIEVAL_FUSION_TOP_N), SEARCH_K * 4))
+    hybrid_rank_all: dict[int, list[str]] = {}
+    for i, qid in enumerate(cached_qids):
+        dense_order = np.argpartition(-S[i], channel_n - 1)[:channel_n]
+        dense_order = dense_order[np.argsort(-S[i, dense_order], kind="stable")]
+        dense_channel = [(ids[int(j)], float(S[i, int(j)])) for j in dense_order]
+        sparse_channel = [
+            (doc_id, float(score))
+            for doc_id, score in bm25_index.search(qs[qid][:400], top_n=channel_n)
+        ]
+        if settings.RETRIEVAL_FUSION_METHOD == "zscore":
+            fused_pairs = zscore_fuse(
+                [dense_channel, sparse_channel],
+                alpha=float(settings.RETRIEVAL_FUSION_ALPHA),
+                top_n=int(settings.RETRIEVAL_FUSION_TOP_N),
+            )
+        else:
+            fused_pairs = rrf_fuse(
+                [
+                    [doc_id for doc_id, _score in dense_channel],
+                    [doc_id for doc_id, _score in sparse_channel],
+                ],
+                k=int(settings.RETRIEVAL_RRF_K),
+                top_n=int(settings.RETRIEVAL_FUSION_TOP_N),
+            )
+        hybrid_rank_all[qid] = [doc_id for doc_id, _score in fused_pairs]
     mirror_doc_ids = list(
-        dict.fromkeys(d for q in cached_qids for d in dense_rank_all[q])
+        dict.fromkeys(d for q in cached_qids for d in hybrid_rank_all[q][:POOL])
     )
     qids_dev = sorted(dev)
     qids_eval = qids_dev[:60] if args.split == "dev60" else (
@@ -466,7 +533,7 @@ def main() -> None:
 
     # 镜像只需覆盖本次评测 query 的候选文档；引用还原只会命中 served top-k。
     mirror_doc_ids = list(
-        dict.fromkeys(d for q in qids_eval for d in dense_rank_all[q])
+        dict.fromkeys(d for q in qids_eval for d in hybrid_rank_all[q][:POOL])
     )
     engine_session, mirror = _build_sqlite_mirror(mirror_doc_ids)
 
@@ -478,6 +545,7 @@ def main() -> None:
         Q=Q,
         ids=ids,
         id2text=id2text,
+        bm25_index=bm25_index,
         engine_session=engine_session,
         mirror=mirror,
         cache=cache,
@@ -490,6 +558,7 @@ def main() -> None:
         Q=Q,
         ids=ids,
         id2text=id2text,
+        bm25_index=bm25_index,
         engine_session=engine_session,
         mirror=mirror,
         cache=cache,
@@ -503,9 +572,9 @@ def main() -> None:
             "dev": _quality(cold["served"], dev, qids_eval) if args.split != "all" else _quality(cold["served"], gold, qids_eval),
         },
         "canonical_pool100": {
-            "dev": _quality({q: dense_rank_all[q] for q in qids_dev}, dev, qids_dev),
-            "dev60": _quality({q: dense_rank_all[q] for q in dev60_qids}, dev, dev60_qids),
-            "all": _quality(dense_rank_all, gold, all_qids),
+            "dev": _quality({q: hybrid_rank_all[q] for q in qids_dev}, dev, qids_dev),
+            "dev60": _quality({q: hybrid_rank_all[q] for q in dev60_qids}, dev, dev60_qids),
+            "all": _quality(hybrid_rank_all, gold, all_qids),
         },
     }
     if args.split != "all":
@@ -531,8 +600,10 @@ def main() -> None:
     report: dict[str, Any] = {
         "schema": 1,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "reproduce": " ".join([sys.executable, "evals/runtime_default_baseline.py", *sys.argv[1:]]),
-        "profile": "runtime-default",
+        "reproduce": " ".join(
+            [".venv/Scripts/python.exe", "evals/runtime_default_baseline.py", *sys.argv[1:]]
+        ),
+        "profile": "project-default",
         "config_fingerprint": fp,
         "corpus": {
             "name": "STARD 受控子集 8,000 条（全部金标法条 + seed=42 干扰文档）",
@@ -541,6 +612,7 @@ def main() -> None:
             "full_corpus_rows": 55348,
             "seed": SEED,
             "embedding_cache": str(EMB_CACHE.relative_to(ROOT)).replace("\\", "/"),
+            "artifact_note": "embedding_cache 指向 .tmp/ 下的本地缓存，仅本地使用，已由 .gitignore 排除。",
             "boundary": "子集只用于同一子集内的方法间比较，绝对值不可与全库 55,348 互读",
         },
         "split": {
@@ -557,7 +629,7 @@ def main() -> None:
             "judgement": "精确 docid（qrels），命中定义 = 至少一条相关法条进入 top-k",
             "implementation": "evals/stard_eval.py::evaluate（本文件不另写打分口径）",
             "search_k": SEARCH_K,
-            "candidate_pool": SEARCH_K,
+            "candidate_pool": fp["candidate_pool"],
             "pool": POOL,
             "pool_note": (
                 "canonical_pool100 是既有发布读数的排序表口径（MRR 用候选池内首个命中位置）；"
@@ -566,9 +638,10 @@ def main() -> None:
             ),
         },
         "measurement_scope": {
-            "kind": "默认链路的离线等价复刻（stage-instrumented in-process harness）",
+            "kind": "项目统一默认链路的离线等价复刻（stage-instrumented in-process harness）",
             "not_measured": [
                 "PGVector / 真实向量库网络 RTT",
+                "线上从 PostgreSQL 加载 BM25 语料与索引构建时间（harness 使用 STARD 子集内存 BM25）",
                 "真实 Redis 网络 RTT（进程内 dict + 真实 chat_service 序列化函数）",
                 "FastAPI 路由、LLM 生成、流式输出",
                 "线上 QPS / 并发（本基线为串行逐题）",
@@ -583,6 +656,7 @@ def main() -> None:
                 "引用还原：真实 document_repo.get_chunks_by_ids / get_document_file_metas + SQLite 真 SQL",
                 "缓存读写：真实 chat_service._serialize_docs_for_cache / _deserialize_docs_from_cache",
                 "向量检索：8000x1024 真实点积 + top-k（线上等价计算形态）",
+                "BM25：同一 8,000 篇 STARD 受控子集的进程内 BM25 检索，索引预先构建",
             ],
             "passes": {
                 "cold": "首次全 miss，六层全部执行",
@@ -591,6 +665,15 @@ def main() -> None:
             "latency_unit": "毫秒，time.perf_counter 真值，P50/P95/P99 用最近秩",
         },
         "quality": quality,
+        "dense_only_reference": {
+            "dev": {
+                "recall@5": 0.711039,
+                "recall@20": 0.840909,
+                "mrr": 0.601445,
+                "ndcg@5": 0.545482,
+            },
+            "note": "Published Dense-only STARD baseline for historical comparison; not the current project default.",
+        },
         "latency": {
             "cold": {
                 "total": cold["total"],
@@ -618,7 +701,7 @@ def main() -> None:
                 "errors": warm["call_surface"]["errors"],
             },
             "note": (
-                "默认链路 dense_rerank=false ⇒ rerank 上游调用 0 次、熔断/fail-open 恒为 0；"
+                "项目统一默认 hybrid_rerank=false / dense_rerank=false ⇒ rerank 上游调用 0 次、熔断/fail-open 恒为 0；"
                 "此处 0 是真实计数，不是默认值填充。重试只统计 embedding 上游。"
             ),
         },
@@ -640,16 +723,14 @@ def main() -> None:
         else "本次使用本地预计算向量（--no-live-embedding），未测 LM Studio 上游延迟"
     )
 
-    # 与既有发布读数交叉锚定：canonical pool=100 必须逐位复算，防止基线漂移
+    # 质量结果使用统一评测指标；Dense-only 发布基线作为对照而非当前配置锚点。
     got_dev = quality["canonical_pool100"]["dev"]
     got_all = quality["canonical_pool100"]["all"]
-    anchors = ((got_dev["recall@5"], 0.7110), (got_dev["mrr"], 0.6014),
-               (got_dev["ndcg@5"], 0.5455), (got_all["recall@5"], 0.7207))
-    for got, want in anchors:
-        if abs(got - want) > 1e-4:
-            raise SystemExit(f"canonical baseline drifted: got {got}, published {want}")
+    for split_name, metrics in (("dev", got_dev), ("all", got_all)):
+        if any(not 0.0 <= float(value) <= 1.0 for value in metrics.values()):
+            raise SystemExit(f"invalid {split_name} quality metrics: {metrics}")
     print(json.dumps({
-        "profile": "runtime-default",
+        "profile": "project-default",
         "config_fingerprint_sha1": fp["sha1"],
         "split": args.split,
         "eval_n": len(qids_eval),

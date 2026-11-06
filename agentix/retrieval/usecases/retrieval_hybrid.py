@@ -1,7 +1,7 @@
-"""R-P1（F1a）混合检索四阶段编排：rewrite → dense/sparse → rrf → rerank。
+"""R-P1（F1a）混合检索四阶段编排：rewrite → dense/sparse → fusion → rerank。
 
-只在 ``RETRIEVAL_HYBRID_ENABLED=true`` 时被 ``retrieve_scoped_docs_cached``
-调用（总闸默认关 ⇒ flag-off 与现基线字节等价；总纲：P1 全部 flag 门控）。
+默认由 ``RETRIEVAL_HYBRID_ENABLED=true`` 时被 ``retrieve_scoped_docs_cached``
+调用；可通过显式关闭总闸回退至原 Dense 路径。
 
 阶段职责（检索增强深度优化.md §5）：
 
@@ -11,10 +11,11 @@
 - **sparse**（R-P1-1，子闸 ``RETRIEVAL_SPARSE_ENABLED``）：进程内 BM25，
   语料 = PostgreSQL chunk 表；无 session 或异常时 fail-open 跳过；
 - **dense / sparse 并行**：两路候选相互独立时并发执行，融合仍等待两路完成；
-- **rrf**（R-P1-2）：rank 级融合（``RETRIEVAL_FUSION_METHOD`` = rrf|zscore，
-  默认 rrf 免调参；``RETRIEVAL_FUSION_TOP_N`` 截断候选池）——融合后**不再**
+- **fusion**（R-P1-2）：rank 级 RRF 或 z-score 分数融合
+  （``RETRIEVAL_FUSION_METHOD`` = rrf|zscore；默认 zscore、Dense 权重 0.85；
+  ``RETRIEVAL_FUSION_TOP_N`` 截断候选池）——融合后**不再**
   复用 dense 的距离/相似度阈值（RRF 分数与向量分数不同口径），只按 TopN 截断；
-- **rerank**（R-P1-3）：``RETRIEVAL_HYBRID_RERANK=true``（hybrid 链内默认开）时
+- **rerank**（R-P1-3）：``RETRIEVAL_HYBRID_RERANK=true``（默认关，需显式启用）时
   对 ``RETRIEVAL_RERANK_CANDIDATES`` 候选精排取 TopK；服务失败/熔断开路 =
   既有 fail-open（保序返回），熔断位记入阶段报告。
 
@@ -111,7 +112,7 @@ async def retrieve_hybrid_docs(
     """四阶段混合检索，返回 ``(docs, stage_report)``。
 
     ``docs`` 与 flag-off 路径同契约：langchain Document 列表，
-    ``metadata["_retrieval_score"]`` 已写入（单通道 = 各通道原分；融合 = RRF/zscore 融合分）。
+    ``metadata["_retrieval_score"]`` 已写入（单通道 = 各通道原分；融合 = RRF/z-score 融合分）。
     """
     # 懒加载：chat_service 在其内部懒加载本模块（避免 usecases 环状顶层 import）
     from agentix.retrieval.usecases.chat_service import retrieve_docs_with_retry
@@ -220,13 +221,17 @@ async def retrieve_hybrid_docs(
             sparse_pairs, sparse_stage = sparse_result
     stages.extend((dense_stage, sparse_stage))
 
-    # --- rrf / zscore 融合（R-P1-2） ---
+    # --- 分数融合（R-P1-2） ---
     t0 = time.perf_counter()
     from agentix.domain.policies.rank_fusion import rrf_fuse, zscore_fuse
 
     method = settings.RETRIEVAL_FUSION_METHOD
     if method not in ("rrf", "zscore"):
-        method = "rrf"
+        logger.warning(
+            "unsupported retrieval fusion method {}; falling back to project default zscore",
+            method,
+        )
+        method = "zscore"
     sparse_docs = [d for d, _ in sparse_pairs]
     fused: List[Tuple[str, float]] = []
     if dense_docs and sparse_docs:
@@ -271,7 +276,7 @@ async def retrieve_hybrid_docs(
     ordered = ordered[:top_n_cap]
     stages.append(
         _stage(
-            "rrf",
+            "fusion",
             (time.perf_counter() - t0) * 1000.0,
             hits=len(ordered),
             method=method,

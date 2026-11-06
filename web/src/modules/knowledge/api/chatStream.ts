@@ -1,6 +1,6 @@
 import { readSseData } from '../../../api/sse'
 
-/** progress.detail.stages：R-P1-5 检索四阶段（rewrite/sparse/rrf/rerank 等）观测项 */
+/** progress.detail.stages：R-P1-5 检索阶段观测项（rewrite/dense/sparse/fusion/rerank 等） */
 export type ProgressStageItem = {
   stage?: string
   ms?: number

@@ -5,7 +5,7 @@ export type StreamProgress = {
   message: string
   step?: number
   total?: number
-  /** R-P1-5 检索四阶段观测（rewrite/sparse/rrf/rerank + ms/hits） */
+  /** R-P1-5 检索阶段观测（rewrite/dense/sparse/fusion/rerank + ms/hits） */
   stages?: ProgressStageItem[]
 }
 

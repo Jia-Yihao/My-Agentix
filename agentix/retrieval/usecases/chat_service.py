@@ -470,8 +470,8 @@ async def retrieve_scoped_docs_cached(
     """带 Redis 缓存的范围内向量检索（供 query_knowledge_base 工具调用）。
 
     R-P1（F1a）：``session`` 供 hybrid sparse 路读取 BM25 语料（可选——缺省时
-    sparse 通道 fail-open 跳过；``RETRIEVAL_HYBRID_ENABLED`` 默认关，flag-off
-    路径语义与接线前完全一致）。
+    sparse 通道 fail-open 跳过；``RETRIEVAL_HYBRID_ENABLED`` 默认开，可显式关闭
+    回到原 Dense 路径）。
 
     R-P2-1（F2b-b）：``history`` 供多轮改写做意图补全（预检路径传入；工具/端口
     适配路径缺省为空 ⇒ 单轮意图补全）。改写/HyDE 两 flag 默认关 = 基线逐位等价。
@@ -1926,7 +1926,7 @@ async def _stream_answer_events_impl(
         yield preflight_result
         return
     if stage_report:
-        # R-P1-5 四阶段观测帧：rewrite → dense/sparse → rrf → rerank
+        # R-P1-5 检索阶段观测帧：rewrite → dense/sparse → fusion → rerank
         # （每阶段耗时/命中数/TopK id/熔断位，供前端与评测归因）
         yield {
             "type": "progress",

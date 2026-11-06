@@ -222,17 +222,18 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_FETCH_K_ESCALATE = _bool_env("RETRIEVAL_FETCH_K_ESCALATE", "true")
     RETRIEVAL_FETCH_K_MAX_ESCALATIONS = int(os.getenv("RETRIEVAL_FETCH_K_MAX_ESCALATIONS", "2"))
 
-    # R-P1（F1a）混合检索：BM25 sparse + RRF/zscore 融合 + 精排 + 四阶段观测。
-    # 总闸默认关 ⇒ flag-off 与现基线字节等价（总纲：P1/P2 全部 flag 门控，默认关）。
-    RETRIEVAL_HYBRID_ENABLED = _bool_env("RETRIEVAL_HYBRID_ENABLED", "false")
+    # 默认采用 Dense + BM25/z-score 混合召回；sparse 异常或超时会 fail-open 回退 Dense。
+    # 融合默认不调用 Cross-Encoder，避免隐式依赖外部 rerank 服务。
+    RETRIEVAL_HYBRID_ENABLED = _bool_env("RETRIEVAL_HYBRID_ENABLED", "true")
     # sparse 子闸（需总闸开）：进程内 BM25 通道（语料 = PostgreSQL chunk 表）
-    RETRIEVAL_SPARSE_ENABLED = _bool_env("RETRIEVAL_SPARSE_ENABLED", "false")
+    RETRIEVAL_SPARSE_ENABLED = _bool_env("RETRIEVAL_SPARSE_ENABLED", "true")
     RETRIEVAL_SPARSE_MIN_SCORE = float(os.getenv("RETRIEVAL_SPARSE_MIN_SCORE", "0.0"))
     RETRIEVAL_SPARSE_CACHE_TTL = int(os.getenv("RETRIEVAL_SPARSE_CACHE_TTL", "600"))
-    # 融合：rrf（默认，免调参）| zscore；alpha = zscore 下首通道（dense）权重
-    RETRIEVAL_FUSION_METHOD = os.getenv("RETRIEVAL_FUSION_METHOD", "rrf").strip().lower()
+    # 融合：rrf | zscore；默认 zscore alpha=0.85（STARD 原始通道分数验证）
+    # alpha = zscore 下首通道（dense）权重。
+    RETRIEVAL_FUSION_METHOD = os.getenv("RETRIEVAL_FUSION_METHOD", "zscore").strip().lower()
     RETRIEVAL_RRF_K = int(os.getenv("RETRIEVAL_RRF_K", "60"))
-    RETRIEVAL_FUSION_ALPHA = float(os.getenv("RETRIEVAL_FUSION_ALPHA", "0.5"))
+    RETRIEVAL_FUSION_ALPHA = float(os.getenv("RETRIEVAL_FUSION_ALPHA", "0.85"))
     RETRIEVAL_FUSION_TOP_N = int(os.getenv("RETRIEVAL_FUSION_TOP_N", "200"))
     # hybrid 两路 gather 的整体超时（秒）。开 RETRIEVAL_HYBRID_ENABLED 的前置条件：
     # 一路慢/异常时掐掉可旁路的 sparse、保留 dense 再等一个窗口，绝不让整链挂死。
@@ -240,8 +241,8 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS = float(
         os.getenv("RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS", "5")
     )
-    # R-P1-3：hybrid 链默认精排（只在总闸开时生效）；候选上限 → 截断 TopK
-    RETRIEVAL_HYBRID_RERANK = _bool_env("RETRIEVAL_HYBRID_RERANK", "true")
+    # Cross-Encoder 精排需显式开启并部署 rerank 服务；混合召回本身不依赖该服务。
+    RETRIEVAL_HYBRID_RERANK = _bool_env("RETRIEVAL_HYBRID_RERANK", "false")
     RETRIEVAL_RERANK_CANDIDATES = int(os.getenv("RETRIEVAL_RERANK_CANDIDATES", "20"))
     # T9（approval-recovery-optimization §T9）：rerank 候选分批，降低单请求上游负载。
     # <=0 = 关（默认）⇒ 单次全候选调用，与基线逐位等价（约定 1）；>0 = 每批候选数，

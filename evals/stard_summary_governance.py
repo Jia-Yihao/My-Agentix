@@ -102,8 +102,9 @@ CALIBER_NOTES: dict[str, str] = {
         "served_top_k（默认链实际交付 KB_TOP_K 条，MRR 受 search_k 截断）"
         "与 canonical_pool100（既有发布读数口径）是两套不可互读的读数："
         "recall@5 / recall@10 / recall@20 / NDCG@5 两者逐位一致，MRR 因候选池深度不同而可能不同。"
-        "「既有数字不退步」的锚点统一用发布口径 dev R@5 0.7110 / MRR 0.6014 / "
-        "NDCG@5 0.5455 / 全量 R@5 0.7207；served_top_k 另列，不可把不同候选池深度下的 MRR 直接比较。"
+        "Dense-only 发布基线 dev R@5 0.7110 / MRR 0.6014 / NDCG@5 0.5455 / "
+        "全量 R@5 0.7207 仅作为历史对照，不是当前项目默认策略的质量承诺；"
+        "served_top_k 另列，不可把不同候选池深度下的 MRR 直接比较。"
     ),
     "rerank_noop_vs_online_ce": (
         "latency.cold.layers.rerank 是 dense_rerank=false 下的 no-op 占位"
@@ -138,8 +139,8 @@ _LAYER_NOTES: dict[str, str] = {
         "warm 命中缓存后不调用上游。"
     ),
     "fusion": (
-        "默认链路 hybrid=false / sparse=false，融合层是单路直通 no-op，"
-        "不是 RRF 或 weighted fusion 的成本。"
+        "项目统一默认运行 Dense + BM25/z-score 混合（Dense 权重 0.85）；此层计入融合耗时，"
+        "BM25 索引构建与 PostgreSQL 语料加载不在该层计时。"
     ),
 }
 
@@ -258,7 +259,7 @@ def _dual_column_note() -> dict[str, Any]:
         "rerank_forms": {
             "pure_ce_rank_override": "ce: 纯 CE 名次覆盖（已实测在 blend 上有害，不得与 z 融合混算）",
             "same_candidate_z_fusion": "ceblend: 同候选集 z(原分数) + mu*z(CE)，不覆盖名次",
-            "rerank_off": "dense: 精排关闭，默认链路基线",
+            "rerank_off": "dense: 精排关闭的 Dense-only 对照",
         },
         "p95_scope": (
             "ce_latency 的 p50/p95 是 CE 缓存离线重算的逐题上游 /rerank seconds"

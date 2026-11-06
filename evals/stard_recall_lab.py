@@ -18,7 +18,7 @@
 - ``ce``：Cross-Encoder（Infinity :7997/rerank）精排候选池；
   ``source`` 可为 ``dense`` / ``rrf`` / ``knn_union``（dense top-100 + knn 提名的 extra 条）。
 - ``hgbce``：仅用 train qrels 训练 HGB 候选重排器，并与 Cross-Encoder 分数融合；
-  需要外部 ``/rerank`` 服务，不作为生产默认。
+  需要外部 ``/rerank`` 服务，不由项目统一默认启用。
 
 示例：
 

@@ -2,8 +2,8 @@
 
 复用 evals/stard_recall_lab.py 的同一份 8,000 受控子集、缓存向量与
 stard_eval.evaluate 打分口径；dense 与 BM25 两路的候选均来自同一实验台
-（BM25 top-100 落 .tmp 缓存）。不改动任何生产开关：结论只决定是否保持
-``RETRIEVAL_HYBRID_ENABLED=false``。
+（BM25 top-100 落 .tmp 缓存）。该实验只记录 STARD 上不同融合配置的相对表现；
+项目统一默认策略需结合目标知识库评测，不由单一公开集结果自动决定。
 
 用法：
   .venv/Scripts/python.exe evals/stard_fusion_sweep.py --split both \
@@ -206,9 +206,9 @@ def main() -> None:
             "all_dense_recall_at5": all_dense["recall@5"],
             "hyperparameters_stable": dev_best["config"] == all_best["config"],
             "verdict": (
-                "dev 最优超参与全量 1,543 最优超参不一致，且 dev 增益仅 +1 题、"
-                "MRR 基本持平；没有稳定优于 Dense 单路的融合，"
-                "保持 RETRIEVAL_HYBRID_ENABLED=false。"
+                "dev 与全量 1,543 的最优 zscore 超参不一致；STARD 上普通 RRF "
+                "低于 Dense。该离线结果不自动决定目标知识库的部署检索策略，"
+                "应以目标语料评测和运行监控验证混合召回。"
             ),
         }
         print(

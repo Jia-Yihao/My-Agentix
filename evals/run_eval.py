@@ -2086,7 +2086,7 @@ def build_parser() -> argparse.ArgumentParser:
             "② 录制前自检（端点/图谱/SQL/Redis 够不够得到，kb_ingest 不可用如实报），\n"
             "③ 套用本地模型适配（结构化输出方式按能力探测、router 超时抬到 60s）。\n"
             "①②见 evals/recording_env.py，③本体复用 scripts/demo/local_kb_demo.py，\n"
-            "都不改 .env、不改生产默认。缺省关闭 = 录制路径与今天逐字节等价。"
+            "都不改 .env、不改项目统一默认配置。缺省关闭 = 录制路径与今天逐字节等价。"
         ),
     )
 

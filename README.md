@@ -182,7 +182,7 @@ make init-data      # 建运行时数据目录
 
 上表是 Dense、BM25 与普通 RRF 的基线对照，不代表当前离线最佳排序方案。在同一受控 8,000 文档子集上，train qrels 驱动的 HGB 候选重排器与 Cross-Encoder 融合目前是最佳离线方案：train 查询 3 折 OOF Recall@20 为 91.50%，官方 dev 盲测为 282/308（91.56%）。完整指标、训练/盲测口径和适用边界见[评测报告](docs/evals/stard-hgbce-summary.json)。
 
-此结果是依赖 STARD 标注数据的离线评测，不是通用生产模型。生产默认仍为 `KB_TOP_K=20`、Dense 召回；`RETRIEVAL_HYBRID_ENABLED=false`、`RETRIEVAL_DENSE_RERANK_ENABLED=false`，不自动加载 STARD qrels 或在线调用 Cross-Encoder。只有在目标知识库具备自己的标注/反馈、完成重训及延迟和分布外验证后，才应考虑启用类似融合方案。
+此结果是依赖 STARD 标注数据的离线评测，不是通用模型，也不代表项目统一默认链路达到了该指标。项目统一默认采用 `KB_TOP_K=20` 的 Dense + BM25/z-score 混合召回（Dense 权重 0.85）；Cross-Encoder 精排仍关闭（`RETRIEVAL_HYBRID_RERANK=false`、`RETRIEVAL_DENSE_RERANK_ENABLED=false`），不加载 STARD qrels 或 HGB 排序器。STARD 实测中该原始分数融合较普通 RRF 更稳，并在 dev 与全量查询的 Recall@20 均略高于 Dense；目标知识库仍应独立验证。STARD 的 91%+ HGB+CE 结果不能视作项目质量承诺。
 
 ```bash
 python evals/stard_eval.py --help            # 公开集评测
