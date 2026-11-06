@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 import time
 from contextvars import ContextVar
 from typing import Any, Dict, List, Optional, Tuple
@@ -65,8 +66,9 @@ def _chunk_key(doc: Any) -> str:
     return "c:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:24]
 
 
-def _topk_ids(docs: List[Any], limit: int = 10) -> str:
-    return ",".join(_chunk_key(d) for d in docs[:limit])
+def _topk_ids(docs: List[Any], limit: Optional[int] = None) -> str:
+    n = int(limit if limit is not None else settings.RETRIEVAL_STAGE_TOPK_IDS)
+    return ",".join(_chunk_key(d) for d in docs[: max(0, n)])
 
 
 def _fused_meta_score(doc: Any) -> float:
@@ -76,6 +78,130 @@ def _fused_meta_score(doc: Any) -> float:
     if settings.INDEX_SCORE_IS_SIMILARITY:
         return raw
     return -raw  # 距离口径：越小越相关 → 取负
+
+
+def apply_fusion_min_score(
+    docs: List[Any], *, min_score: Optional[float], fused: bool
+) -> Tuple[List[Any], Dict[str, Any]]:
+    """融合后分数闸：只在**双通道真融合**（z-score 口径）时生效。
+
+    单通道保留的是 dense 距离原分（越小越好）或 BM25 原分，量纲与方向都不同，
+    拿同一道下限过滤会反向误杀，故 ``fused=False`` 一律原样返回。
+    过滤后为空不制造空答：fail-open 回退原序 Top1。
+    """
+    stats: Dict[str, Any] = {"applied": False, "dropped": 0, "fallback_top1": False}
+    if not fused or min_score is None or not docs:
+        return list(docs), stats
+    kept = []
+    for doc in docs:
+        meta = getattr(doc, "metadata", None) or {}
+        try:
+            score = float(meta.get("_retrieval_score", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            score = 0.0
+        if score >= float(min_score):
+            kept.append(doc)
+    stats["applied"] = True
+    stats["dropped"] = len(docs) - len(kept)
+    if not kept:
+        stats["fallback_top1"] = True
+        return list(docs[:1]), stats
+    return kept, stats
+
+
+async def rerank_fused_docs(
+    docs: List[Any], *, question: str
+) -> Tuple[Optional[List[Any]], Dict[str, Any]]:
+    """精排融合候选；任何失败/超时/空结果返回 ``(None, stats)`` 由调用方保留原序。
+
+    ``metadata`` 写入 ``_rerank_score``（精排分，越大越相关）、把原融合分留痕为
+    ``_fusion_score``，并把 ``_retrieval_score`` 换成精排分供下游排序/归因复用。
+    """
+    from agentix.retrieval.infra.rag.rerank import (
+        rerank_candidates,
+        resolve_endpoint,
+    )
+
+    started = time.perf_counter()
+    max_candidates = max(1, int(settings.RETRIEVAL_RERANK_MAX_CANDIDATES))
+    top_n = max(1, int(settings.RETRIEVAL_RERANK_TOP_N))
+    candidates = list(docs[:max_candidates])
+    stats: Dict[str, Any] = {
+        "applied": False,
+        "candidates": len(candidates),
+        "ms": 0.0,
+        "skipped": None,
+        "dropped": 0,
+    }
+
+    def _finish() -> Tuple[Optional[List[Any]], Dict[str, Any]]:
+        stats["ms"] = (time.perf_counter() - started) * 1000.0
+        return None, stats
+
+    endpoint = resolve_endpoint(
+        settings.RETRIEVAL_RERANK_BASE_URL, settings.RETRIEVAL_RERANK_ENDPOINT
+    )
+    if not endpoint:
+        stats["skipped"] = "no_endpoint"
+        return _finish()
+    # 模板占位符/空 key 直接快速跳过：不发起注定 401 的请求，也不白等一个超时窗口。
+    if settings.RETRIEVAL_RERANK_REQUIRE_API_KEY:
+        key = (settings.RETRIEVAL_RERANK_API_KEY or "").strip()
+        pattern = settings.RETRIEVAL_RERANK_PLACEHOLDER_PATTERN
+        if not key or (pattern and re.search(pattern, key, flags=re.IGNORECASE)):
+            stats["skipped"] = "no_credentials"
+            return _finish()
+    min_candidates = max(1, int(settings.RETRIEVAL_RERANK_MIN_CANDIDATES))
+    if len(candidates) < min_candidates:
+        stats["skipped"] = "too_few_candidates"
+        return _finish()
+
+    max_chars = max(1, int(settings.RETRIEVAL_RERANK_MAX_DOC_CHARS))
+    texts = [(getattr(d, "page_content", "") or "")[:max_chars] for d in candidates]
+    # 让服务多返回一批，min_score 裁完仍有余量凑满 top_n
+    multiplier = max(1, int(settings.RETRIEVAL_RERANK_SERVICE_TOP_N_MULTIPLIER))
+    service_min = max(1, int(settings.RETRIEVAL_RERANK_SERVICE_TOP_N_MIN))
+    service_top_n = min(len(texts), max(top_n * multiplier, service_min))
+    try:
+        paired = await asyncio.to_thread(
+            rerank_candidates,
+            query=question,
+            texts=texts,
+            endpoint=endpoint,
+            api_key=settings.RETRIEVAL_RERANK_API_KEY,
+            model=settings.RETRIEVAL_RERANK_MODEL,
+            top_n=service_top_n,
+            timeout_seconds=float(settings.RETRIEVAL_RERANK_TIMEOUT_SECONDS),
+        )
+    except Exception as exc:  # noqa: BLE001 - 精排绝不打挂检索链
+        logger.warning("rerank task failed (fail-open): {}", exc)
+        stats["skipped"] = f"error:{type(exc).__name__}"
+        return _finish()
+    if paired is None:
+        stats["skipped"] = "unavailable"
+        return _finish()
+
+    kept: List[Any] = []
+    min_score = float(settings.RETRIEVAL_RERANK_MIN_SCORE)
+    for idx, score in paired:
+        if score < min_score:
+            continue
+        doc = candidates[idx]
+        meta = dict(getattr(doc, "metadata", None) or {})
+        meta["_fusion_score"] = float(meta.get("_retrieval_score", 0.0) or 0.0)
+        meta["_rerank_score"] = float(score)
+        meta["_retrieval_score"] = float(score)
+        doc.metadata = meta
+        kept.append(doc)
+        if len(kept) >= top_n:
+            break
+    stats["dropped"] = len(candidates) - len(kept)
+    if not kept:
+        stats["skipped"] = "min_score_filtered_all"
+        return _finish()
+    stats["applied"] = True
+    stats["ms"] = (time.perf_counter() - started) * 1000.0
+    return kept, stats
 
 
 async def retrieve_hybrid_docs(
@@ -99,7 +225,8 @@ async def retrieve_hybrid_docs(
     from agentix.retrieval.usecases.chat_service import retrieve_docs_with_retry
 
     top_n_cap = max(1, int(settings.RETRIEVAL_FUSION_TOP_N))
-    channel_n = max(int(search_k), min(top_n_cap, int(search_k) * 4))
+    channel_mult = max(1, int(settings.RETRIEVAL_CHANNEL_MULTIPLIER))
+    channel_n = max(int(search_k), min(top_n_cap, int(search_k) * channel_mult))
     stages: List[Dict[str, Any]] = [_stage("rewrite", rewrite_ms)]
 
     async def _retrieve_dense() -> Tuple[List[Any], Dict[str, Any]]:
@@ -167,7 +294,7 @@ async def retrieve_hybrid_docs(
         # 仍不返回才按空结果降级（下游 z-score 拿 dense 单路继续走）。
         timeout = float(settings.RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS)
         if timeout <= 0:
-            timeout = 5.0
+            timeout = float(settings.RETRIEVAL_HYBRID_GATHER_TIMEOUT_FALLBACK_SECONDS)
         gathered = asyncio.gather(dense_task, sparse_task, return_exceptions=True)
         try:
             dense_result, sparse_result = await asyncio.wait_for(
@@ -208,7 +335,8 @@ async def retrieve_hybrid_docs(
 
     sparse_docs = [d for d, _ in sparse_pairs]
     fused: List[Tuple[str, float]] = []
-    if dense_docs and sparse_docs:
+    fused_only = bool(dense_docs and sparse_docs)
+    if fused_only:
         dense_channel = [(_chunk_key(d), _fused_meta_score(d)) for d in dense_docs]
         sparse_channel = [(_chunk_key(doc), float(s)) for doc, s in sparse_pairs]
         fused = zscore_fuse(
@@ -250,6 +378,43 @@ async def retrieve_hybrid_docs(
         )
     )
 
+    # --- R-P4 融合后质量闸（默认关：min_score 未设置 ⇒ 逐位等价）---
+    gate_stats: Dict[str, Any] = {}
+    if settings.RETRIEVAL_FUSION_MIN_SCORE is not None:
+        ordered, gate_stats = apply_fusion_min_score(
+            ordered,
+            min_score=settings.RETRIEVAL_FUSION_MIN_SCORE,
+            fused=fused_only,
+        )
+        if gate_stats.get("applied"):
+            stages.append(
+                _stage(
+                    "fusion_gate",
+                    0.0,
+                    dropped=gate_stats["dropped"],
+                    fallback_top1=gate_stats["fallback_top1"],
+                )
+            )
+
+    # --- R-P4 精排（默认关：flag-off 一段帧都不加）---
+    rerank_stats: Dict[str, Any] = {}
+    if settings.RETRIEVAL_RERANK_ENABLED:
+        reranked, rerank_stats = await rerank_fused_docs(
+            ordered, question=question or question_norm
+        )
+        if reranked is not None:
+            ordered = reranked
+        stages.append(
+            _stage(
+                "rerank",
+                float(rerank_stats.get("ms", 0.0)),
+                hits=len(ordered),
+                applied=bool(rerank_stats.get("applied")),
+                candidates=int(rerank_stats.get("candidates", 0)),
+                skipped=rerank_stats.get("skipped"),
+            )
+        )
+
     docs = ordered[: max(1, int(search_k))]
     report: Dict[str, Any] = {
         "stages": stages,
@@ -257,6 +422,10 @@ async def retrieve_hybrid_docs(
         "sparse": sparse_skipped or ("on" if settings.RETRIEVAL_SPARSE_ENABLED else "off"),
         "docs_count": len(docs),
     }
+    if gate_stats.get("applied"):
+        report["fusion_gate"] = gate_stats
+    if rerank_stats:
+        report["rerank"] = rerank_stats
 
     # R-P1-5 归因：trajectory span（入口 kwargs 进轨迹）+ 结构化日志；观测绝不打挂检索
     try:

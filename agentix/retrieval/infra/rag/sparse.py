@@ -31,6 +31,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from agentix.infrastructure.core.logger import get_logger
+from agentix.retrieval.settings import settings
 
 logger = get_logger(service="rag-sparse")
 
@@ -53,7 +54,7 @@ _CN_NUMBER_DIGITS = {
 }
 _CN_NUMBER_UNITS = {"十": 10, "百": 100, "千": 1000}
 
-_CACHE_MAX_ENTRIES = 8
+_CACHE_MAX_ENTRIES = max(1, int(settings.RETRIEVAL_SPARSE_CACHE_MAX_ENTRIES))
 _CACHE: Dict[Tuple[str, str | None], Tuple[float, "BM25Index"]] = {}
 _CACHE_LOCK = threading.Lock()
 
@@ -111,13 +112,20 @@ def tokenize(text: str) -> List[str]:
 
 
 class BM25Index:
-    """BM25 Okapi（k1=1.5, b=0.75）的进程内倒排实现。"""
+    """BM25 Okapi 的进程内倒排实现；k1/b 由 settings 注入，代码里不留形状参数。"""
 
-    K1 = 1.5
-    B = 0.75
-
-    def __init__(self, records: Sequence[Tuple[str, str, Dict[str, Any]]]) -> None:
+    def __init__(
+        self,
+        records: Sequence[Tuple[str, str, Dict[str, Any]]],
+        *,
+        k1: Optional[float] = None,
+        b: Optional[float] = None,
+    ) -> None:
         # records: (doc_id, text, metadata)
+        self.K1 = float(
+            k1 if k1 is not None else settings.RETRIEVAL_SPARSE_BM25_K1
+        )
+        self.B = float(b if b is not None else settings.RETRIEVAL_SPARSE_BM25_B)
         self._ids: List[str] = []
         self._contents: List[str] = []
         self._metas: List[Dict[str, Any]] = []
@@ -206,7 +214,11 @@ def _load_index(session, kb_id: str, ttl_seconds: int, artifact_id: str | None =
         )
         for chunk in chunks
     ]
-    index = BM25Index(records)
+    index = BM25Index(
+        records,
+        k1=settings.RETRIEVAL_SPARSE_BM25_K1,
+        b=settings.RETRIEVAL_SPARSE_BM25_B,
+    )
     with _CACHE_LOCK:
         if len(_CACHE) >= _CACHE_MAX_ENTRIES and cache_key not in _CACHE:
             oldest = min(_CACHE.items(), key=lambda kv: kv[1][0])
@@ -245,8 +257,9 @@ def sparse_search(
         from agentix.retrieval.domain.services.chat_scope import meta_matches_filter
 
         index = _load_index(session, kb_id, ttl_seconds, artifact_id)
-        # 过滤可能裁掉候选：多取一倍再截断，保证过滤后仍能凑满 top_n
-        hits = index.search(query, top_n=max(1, int(top_n) * 2))
+        # 过滤可能裁掉候选：按配置倍数多取再截断，保证过滤后仍能凑满 top_n
+        multiplier = max(1, int(settings.RETRIEVAL_SPARSE_CANDIDATE_MULTIPLIER))
+        hits = index.search(query, top_n=max(1, int(top_n) * multiplier))
         from langchain_core.documents import Document as LCDocument
 
         out: List[Tuple[Any, float]] = []

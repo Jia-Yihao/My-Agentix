@@ -125,8 +125,18 @@ class _RetrievalSettingsCompat:
     # R3-5 Context Engine（架构文档 §24-28 + 指南 L1⑦）
     # authority 排序：缺失 source_authority_level 的存量数据档位 0，稳定排序顺序不变
     CONTEXT_AUTHORITY_RANKING_ENABLED = _bool_env("CONTEXT_AUTHORITY_RANKING_ENABLED", "true")
+    # 仅主链 RAG（query_knowledge_base）：本批片段确实经过精排时，跳过全局 authority
+    # 重排，让 query-specific 的 CE 相关性顺序直接进入预算装配，避免高相关低档位
+    # 片段被预算挤掉。默认关 = 逐位等价。
+    CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK = _bool_env(
+        "CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK", "false"
+    )
     # Context Budget（token 级）：0 = 不限额（默认，行为不变）
     CONTEXT_BUDGET_TOKENS = int(os.getenv("CONTEXT_BUDGET_TOKENS", "0"))
+    # 放不下整段时按剩余预算的比例截断（留一点余量给分隔符与状态栏）
+    CONTEXT_BUDGET_TRUNCATE_RATIO = float(
+        os.getenv("CONTEXT_BUDGET_TRUNCATE_RATIO", "0.9")
+    )
     # 大文档隔离（复用 artifact_store）：0 = 关闭（默认——启用需配合取回通道）
     CONTEXT_ISOLATE_THRESHOLD = int(os.getenv("CONTEXT_ISOLATE_THRESHOLD", "0"))
 
@@ -206,6 +216,61 @@ class _RetrievalSettingsCompat:
     SEMANTIC_CACHE_TTL_SECONDS = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", "120"))
     RERANKER_ENABLED = _bool_env("RERANKER_ENABLED", "false")
 
+    # R-P4 主 RAG 链精排：独立总闸，默认关 = 基线逐位等价。
+    # 刻意不复用 RERANKER_ENABLED——那是知识图谱工作流阈值分支的兼容 flag
+    # （.env.example 明确写「不启用主 RAG 重排」），把它接到主链会牵动另一条链路。
+    # 连接参数默认回落 .env 已有的 RERANK_* 组（dashscope qwen3-rerank），
+    # 同一套凭据不配两遍；这是按量计费端点，启用前须确认每次检索的新增调用量。
+    RETRIEVAL_RERANK_ENABLED = _bool_env("RETRIEVAL_RERANK_ENABLED", "false")
+    RETRIEVAL_RERANK_BASE_URL = os.getenv(
+        "RETRIEVAL_RERANK_BASE_URL", os.getenv("RERANK_BASE_URL", "")
+    )
+    RETRIEVAL_RERANK_ENDPOINT = os.getenv(
+        "RETRIEVAL_RERANK_ENDPOINT", os.getenv("RERANK_ENDPOINT", "")
+    )
+    RETRIEVAL_RERANK_API_KEY = os.getenv(
+        "RETRIEVAL_RERANK_API_KEY", os.getenv("RERANK_API_KEY", "")
+    )
+    RETRIEVAL_RERANK_MODEL = os.getenv(
+        "RETRIEVAL_RERANK_MODEL", os.getenv("RERANK_MODEL", "")
+    )
+    # 送检候选上限：只精排融合池前 N 条（z-score 排序已把弱候选压到尾部）
+    RETRIEVAL_RERANK_MAX_CANDIDATES = int(
+        os.getenv("RETRIEVAL_RERANK_MAX_CANDIDATES", "50")
+    )
+    # 精排后返回条数；默认回落 RERANK_TOP_N（.env=6）
+    RETRIEVAL_RERANK_TOP_N = int(
+        os.getenv("RETRIEVAL_RERANK_TOP_N", os.getenv("RERANK_TOP_N", "8"))
+    )
+    # 主链超时独立于 kb_ingest 的 RERANK_TIMEOUT=30：精排在关键路径上，3s 是上限
+    RETRIEVAL_RERANK_TIMEOUT_SECONDS = float(
+        os.getenv("RETRIEVAL_RERANK_TIMEOUT_SECONDS", "3")
+    )
+    # 精排分下限（0=关）。分数越大越相关；全被裁掉时 fail-open 保留融合原序
+    RETRIEVAL_RERANK_MIN_SCORE = float(os.getenv("RETRIEVAL_RERANK_MIN_SCORE", "0.0"))
+    # 送检文本截断、服务返回余量、最少候选：全部可配，代码里不留魔法数字
+    RETRIEVAL_RERANK_MAX_DOC_CHARS = int(
+        os.getenv("RETRIEVAL_RERANK_MAX_DOC_CHARS", "2000")
+    )
+    RETRIEVAL_RERANK_SERVICE_TOP_N_MULTIPLIER = int(
+        os.getenv("RETRIEVAL_RERANK_SERVICE_TOP_N_MULTIPLIER", "2")
+    )
+    RETRIEVAL_RERANK_SERVICE_TOP_N_MIN = int(
+        os.getenv("RETRIEVAL_RERANK_SERVICE_TOP_N_MIN", "10")
+    )
+    RETRIEVAL_RERANK_MIN_CANDIDATES = int(
+        os.getenv("RETRIEVAL_RERANK_MIN_CANDIDATES", "2")
+    )
+    # 凭据门槛：模板占位符（sk-xxxx / your_xxx / <...>）视为未配置，启用后直接
+    # 快速跳过而不是每次空等一个超时窗口。自建无需鉴权的端点可显式置 false。
+    RETRIEVAL_RERANK_REQUIRE_API_KEY = _bool_env(
+        "RETRIEVAL_RERANK_REQUIRE_API_KEY", "true"
+    )
+    RETRIEVAL_RERANK_PLACEHOLDER_PATTERN = os.getenv(
+        "RETRIEVAL_RERANK_PLACEHOLDER_PATTERN",
+        r"^(?:sk-)?x{3,}$|^your_.*|^changeme.*|^<.*>$",
+    )
+
     RETRIEVAL_FETCH_K_MULTIPLIER = int(os.getenv("RETRIEVAL_FETCH_K_MULTIPLIER", "20"))
     RETRIEVAL_FETCH_K_MIN = int(os.getenv("RETRIEVAL_FETCH_K_MIN", "200"))
     RETRIEVAL_MAX_FETCH_K = int(os.getenv("RETRIEVAL_MAX_FETCH_K", "0"))
@@ -218,19 +283,55 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_SPARSE_ENABLED = _bool_env("RETRIEVAL_SPARSE_ENABLED", "true")
     RETRIEVAL_SPARSE_MIN_SCORE = float(os.getenv("RETRIEVAL_SPARSE_MIN_SCORE", "0.0"))
     RETRIEVAL_SPARSE_CACHE_TTL = int(os.getenv("RETRIEVAL_SPARSE_CACHE_TTL", "600"))
+    # BM25 Okapi 形状参数 / 过滤前多取的倍数 / 索引缓存容量
+    RETRIEVAL_SPARSE_BM25_K1 = float(os.getenv("RETRIEVAL_SPARSE_BM25_K1", "1.5"))
+    RETRIEVAL_SPARSE_BM25_B = float(os.getenv("RETRIEVAL_SPARSE_BM25_B", "0.75"))
+    RETRIEVAL_SPARSE_CANDIDATE_MULTIPLIER = int(
+        os.getenv("RETRIEVAL_SPARSE_CANDIDATE_MULTIPLIER", "2")
+    )
+    RETRIEVAL_SPARSE_CACHE_MAX_ENTRIES = int(
+        os.getenv("RETRIEVAL_SPARSE_CACHE_MAX_ENTRIES", "8")
+    )
+    # 单通道候选数 = min(fusion_top_n, search_k × 倍数)
+    RETRIEVAL_CHANNEL_MULTIPLIER = int(os.getenv("RETRIEVAL_CHANNEL_MULTIPLIER", "4"))
+    # 阶段帧里携带的 TopK id 条数（纯观测，不影响召回）
+    RETRIEVAL_STAGE_TOPK_IDS = int(os.getenv("RETRIEVAL_STAGE_TOPK_IDS", "10"))
     # 唯一融合策略：Dense + BM25 原始分数 z-score；alpha 为 Dense 权重。
     RETRIEVAL_FUSION_ALPHA = float(os.getenv("RETRIEVAL_FUSION_ALPHA", "0.85"))
     RETRIEVAL_FUSION_TOP_N = int(os.getenv("RETRIEVAL_FUSION_TOP_N", "200"))
+    # 融合后分数闸（R-P4）：未设置 = 关（基线逐位等价）。刻意用 Optional 而非
+    # 「0 = 关」——z-score 融合分的均值就是 0，「只保留高于平均」是常见阈值，
+    # 用 0 兼作关闭值会让这个最有用的档位无法表达。仅在**双通道真融合**时生效
+    # ——单通道保留的是 dense 距离原分（越小越好），同一道闸会反向误杀。
+    # 可设负值（如 -0.5）只砍明显低于平均的尾部；过滤后为空 fail-open 回退 Top1。
+    _raw_fusion_min_score = os.getenv("RETRIEVAL_FUSION_MIN_SCORE", "").strip()
+    RETRIEVAL_FUSION_MIN_SCORE = (
+        float(_raw_fusion_min_score) if _raw_fusion_min_score else None
+    )
     # hybrid 两路 gather 的整体超时（秒）。开 RETRIEVAL_HYBRID_ENABLED 的前置条件：
     # 一路慢/异常时掐掉可旁路的 sparse、保留 dense 再等一个窗口，绝不让整链挂死。
     # 默认 5s；<=0 视为 5s（不允许"关掉超时"的表达方式）。
     RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS = float(
         os.getenv("RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS", "5")
     )
+    # 配了 <=0 时的兜底窗口（不允许「关掉超时」的表达方式）
+    RETRIEVAL_HYBRID_GATHER_TIMEOUT_FALLBACK_SECONDS = float(
+        os.getenv("RETRIEVAL_HYBRID_GATHER_TIMEOUT_FALLBACK_SECONDS", "5")
+    )
     # R-P2-1（F2b-b）查询改写/HyDE：双可选独立 flag、默认关 = 基线逐位等价；
     # 改写/扩展失败一律回退原 query（fail-open），键沿 GROUNDING_* 检索域三处同步。
     RETRIEVAL_QUERY_REWRITE_ENABLED = _bool_env("RETRIEVAL_QUERY_REWRITE_ENABLED", "false")
     RETRIEVAL_HYDE_ENABLED = _bool_env("RETRIEVAL_HYDE_ENABLED", "false")
+    # 改写/HyDE 的 LLM 超时与输出上界：原为 query_rewrite.py 模块常量，统一收敛到此
+    RETRIEVAL_QUERY_REWRITE_TIMEOUT_SECONDS = float(
+        os.getenv("RETRIEVAL_QUERY_REWRITE_TIMEOUT_SECONDS", "8")
+    )
+    RETRIEVAL_QUERY_REWRITE_MAX_QUERY_CHARS = int(
+        os.getenv("RETRIEVAL_QUERY_REWRITE_MAX_QUERY_CHARS", "512")
+    )
+    RETRIEVAL_QUERY_REWRITE_MAX_DOC_CHARS = int(
+        os.getenv("RETRIEVAL_QUERY_REWRITE_MAX_DOC_CHARS", "1200")
+    )
 
     # 5W1H 槽位扩展：纯确定性、零 LLM 调用，只往检索文本追加规范词。默认关 =
     # 基线逐位等价；词法通道的召回收益以实测消融为准，不假定一定为正。
@@ -367,5 +468,40 @@ def validate_app_settings() -> tuple[list[str], list[str]]:
         errors.append(f"SEMANTIC_CACHE_TAU 必须落在 (0, 1]（当前 {settings.SEMANTIC_CACHE_TAU}）")
     if settings.SEMANTIC_CACHE_TTL_SECONDS <= 0:
         errors.append("SEMANTIC_CACHE_TTL_SECONDS 必须为正整数（关掉缓存请用 SEMANTIC_CACHE_ENABLED=false）")
+    # R-P4：精排参数非法要在配置期就红，而不是等开 flag 那天静默空跑。
+    # 不为 flag 加前提（与 E4/E7 同口径）：「关」由 RETRIEVAL_RERANK_ENABLED 表达。
+    if settings.RETRIEVAL_RERANK_MAX_CANDIDATES <= 0:
+        errors.append("RETRIEVAL_RERANK_MAX_CANDIDATES 必须为正整数")
+    if settings.RETRIEVAL_RERANK_TOP_N <= 0:
+        errors.append("RETRIEVAL_RERANK_TOP_N 必须为正整数")
+    if settings.RETRIEVAL_RERANK_TIMEOUT_SECONDS <= 0:
+        errors.append("RETRIEVAL_RERANK_TIMEOUT_SECONDS 必须为正数")
+    if not 0.0 <= settings.RETRIEVAL_RERANK_MIN_SCORE < 1.0:
+        errors.append("RETRIEVAL_RERANK_MIN_SCORE 必须落在 [0, 1)")
+    # 精排与装配的数值参数：同样在配置期就红，避免上线后静默空跑/全量送检
+    for name, minimum in (
+        ("RETRIEVAL_RERANK_MAX_DOC_CHARS", 1),
+        ("RETRIEVAL_RERANK_SERVICE_TOP_N_MULTIPLIER", 1),
+        ("RETRIEVAL_RERANK_SERVICE_TOP_N_MIN", 1),
+        ("RETRIEVAL_RERANK_MIN_CANDIDATES", 1),
+        ("RETRIEVAL_SPARSE_CANDIDATE_MULTIPLIER", 1),
+        ("RETRIEVAL_SPARSE_CACHE_MAX_ENTRIES", 1),
+        ("RETRIEVAL_CHANNEL_MULTIPLIER", 1),
+        ("RETRIEVAL_STAGE_TOPK_IDS", 1),
+        ("RETRIEVAL_QUERY_REWRITE_MAX_QUERY_CHARS", 1),
+        ("RETRIEVAL_QUERY_REWRITE_MAX_DOC_CHARS", 1),
+    ):
+        if getattr(settings, name) < minimum:
+            errors.append(f"{name} 必须 >= {minimum}")
+    if settings.RETRIEVAL_QUERY_REWRITE_TIMEOUT_SECONDS <= 0:
+        errors.append("RETRIEVAL_QUERY_REWRITE_TIMEOUT_SECONDS 必须为正数")
+    if settings.RETRIEVAL_SPARSE_BM25_K1 <= 0:
+        errors.append("RETRIEVAL_SPARSE_BM25_K1 必须为正数")
+    if not 0.0 <= settings.RETRIEVAL_SPARSE_BM25_B <= 1.0:
+        errors.append("RETRIEVAL_SPARSE_BM25_B 必须落在 [0, 1]")
+    if not 0.0 < settings.CONTEXT_BUDGET_TRUNCATE_RATIO <= 1.0:
+        errors.append("CONTEXT_BUDGET_TRUNCATE_RATIO 必须落在 (0, 1]")
+    if settings.RETRIEVAL_HYBRID_GATHER_TIMEOUT_FALLBACK_SECONDS <= 0:
+        errors.append("RETRIEVAL_HYBRID_GATHER_TIMEOUT_FALLBACK_SECONDS 必须为正数")
 
     return errors, warnings

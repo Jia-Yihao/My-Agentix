@@ -25,8 +25,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,7 @@ def apply_context_budget(
     docs: list,
     *,
     budget_tokens: int = 0,
+    truncate_ratio: float = 0.9,
 ) -> tuple[list, dict]:
     """按 token 预算贪心装配片段，返回 (保留的 [(doc, text, truncated)] 列表, 统计)。
 
@@ -167,7 +169,7 @@ def apply_context_budget(
             remaining -= cost
             continue
         if remaining > 0:
-            ratio = (remaining * 0.9) / max(cost, 1)
+            ratio = (remaining * float(truncate_ratio)) / max(cost, 1)
             cut = max(1, int(len(text) * ratio))
             kept.append((doc, text[:cut], True))
             stats["truncated"] += 1
@@ -248,6 +250,20 @@ def isolate_oversize_docs(
 # 6. 统一装配管线（Builder：Ranking → Isolation → Budget → 拼接）
 # ---------------------------------------------------------------------------
 
+def context_doc_key(doc: Any) -> str:
+    """装配层稳定键：优先 chunk_id，缺失时回退**原文**内容哈希。
+
+    与检索层的去重口径一致；用原文而非隔离/截断后的文本，保证调用方能拿这个键
+    把「实际进 Prompt 的片段」与 citations / hit_chunks / eval contexts 对齐。
+    """
+    meta = getattr(doc, "metadata", None) or {}
+    chunk_id = meta.get("chunk_id")
+    if chunk_id not in (None, ""):
+        return str(chunk_id)
+    text = getattr(doc, "page_content", "") or ""
+    return "c:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:24]
+
+
 def assemble_context(
     docs: list,
     *,
@@ -257,11 +273,13 @@ def assemble_context(
     trace_id: str = "-",
     source: str = "",
     separator: str = "\n\n",
+    truncate_ratio: Optional[float] = None,
 ) -> tuple[str, dict]:
     """检索片段 → Prompt 正文 的统一入口。
 
-    返回 (context 字符串, meta 字典)。meta 含 ranking/budget/isolation 统计，
-    可直接喂给 ``build_prompt(status_fields=...)`` 的状态栏或轨迹记录。
+    返回 (context 字符串, meta 字典)。meta 除 ranking/budget/isolation 统计外，
+    还回传 ``kept_doc_keys`` / ``kept_texts``——预算生效被裁剪时，调用方据此把
+    引用列表与评测 contexts 收窄到模型真正看过的片段，避免「引用未读片段」。
     """
     meta: dict[str, Any] = {
         "input_docs": len(docs),
@@ -281,15 +299,25 @@ def assemble_context(
     if iso_records:
         meta["isolated"] = iso_records
 
-    # 隔离后文本可能变短，Budget 以隔离后的文本计（隔离记录的 preview 是 LLM 实际可见量）
-    kept, budget_stats = apply_context_budget(
-        [
-            type("_CtxDoc", (), {"page_content": text, "metadata": getattr(doc, "metadata", None)})()
-            for doc, text, _ in isolated
-        ],
-        budget_tokens=budget_tokens,
-    )
+    # 隔离后文本可能变短，Budget 以隔离后的文本计（隔离记录的 preview 是 LLM 实际可见量）。
+    # 每个临时 doc 带回原文 key，供调用方做引用/评测对齐。
+    ordered_keys = [context_doc_key(d) for d in ordered]
+    CtxDoc = type("_CtxDoc", (), {})
+    wrapped: list = []
+    for (doc, text, _), key in zip(isolated, ordered_keys):
+        item = CtxDoc()
+        item.page_content = text
+        item.metadata = getattr(doc, "metadata", None)
+        item._src_key = key
+        wrapped.append(item)
+
+    budget_kwargs: dict[str, Any] = {"budget_tokens": budget_tokens}
+    if truncate_ratio is not None:
+        budget_kwargs["truncate_ratio"] = truncate_ratio
+    kept, budget_stats = apply_context_budget(wrapped, **budget_kwargs)
     meta["budget"] = budget_stats
+    meta["kept_doc_keys"] = [getattr(d, "_src_key", "") for d, _, _ in kept]
+    meta["kept_texts"] = [text for _, text, _ in kept]
 
     context = separator.join(text for _, text, _ in kept)
     meta["final_docs"] = len(kept)

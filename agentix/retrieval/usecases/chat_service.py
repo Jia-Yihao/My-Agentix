@@ -130,6 +130,20 @@ def _fusion_fingerprint() -> str:
             "RETRIEVAL_FUSION_ALPHA",
             "RETRIEVAL_FUSION_TOP_N",
             "RETRIEVAL_SPARSE_MIN_SCORE",
+            "RETRIEVAL_CHANNEL_MULTIPLIER",
+            "RETRIEVAL_SPARSE_BM25_K1",
+            "RETRIEVAL_SPARSE_BM25_B",
+            "RETRIEVAL_SPARSE_CANDIDATE_MULTIPLIER",
+            # R-P4：融合后闸 / 精排 / fetch_k 都会改变结果集合，翻开关或调参
+            # 必须换缓存池，否则会读到开关前的结果（同 |h1 先例）。
+            "RETRIEVAL_FUSION_MIN_SCORE",
+            "RETRIEVAL_RERANK_ENABLED",
+            "RETRIEVAL_RERANK_TOP_N",
+            "RETRIEVAL_RERANK_MAX_CANDIDATES",
+            "RETRIEVAL_RERANK_MIN_SCORE",
+            "RETRIEVAL_RERANK_MODEL",
+            "RETRIEVAL_FETCH_K_MULTIPLIER",
+            "RETRIEVAL_MAX_FETCH_K",
         )
     )
     return hashlib.sha1(  # nosec B324 —— 非安全用途：缓存键配置指纹

@@ -52,7 +52,7 @@ My Agentix 是一套**领域无关的 Agent 平台内核**。它不是某个垂�
 - **可恢复的失败**：错误分类 → 退避重试 → 模型与工具 Fallback 链 → 降级拒答，不悬挂。
 - **统一的工具面**：所有工具经 Tool Gateway（权限 → 风险 → 超时 → 重试 → 轨迹），支持 MCP 远端工具与本机 stdio Server。
 - **真隔离的执行位置**：`ToolSpec.sandbox` 声明执行位置，`subprocess` 档一次调用一个进程 + 子进程侧 `RLIMIT_AS/CPU/FSIZE` + 环境白名单 + 可杀进程组；拿不到的档位**拒绝执行**，不静默退回进程内。
-- **混合检索**：知识库检索统一使用 Dense + BM25/z-score（Dense 权重 α=0.85）；图谱 Cypher、Text2SQL 与社区摘要提供专门的领域检索能力，来源回填成引用。
+- **混合检索**：知识库检索统一使用 Dense + BM25/z-score（Dense 权重 α=0.85），之后可接交叉编码器精排与融合后分数闸（默认关、fail-open、关 = 基线逐位等价）；上下文按 token 预算装配，引用与评测 contexts 只取模型真正读过的片段。图谱 Cypher、Text2SQL 与社区摘要提供专门的领域检索能力，来源回填成引用。
 - **分层记忆**：user / knowledge / task 3 scope 的记忆写入与召回，写路径零 PII 留存，召回按 scope 过滤并按置信度排序。
 - **可评估的质量**：确定性打分（路由 / 引用 / 拒答 / 引用正确性 / must_contain / pass^k）、轨迹前缀回归、延迟基准与每日性能巡检。
 - **可观测的轨迹**：trace_id 全链路、步骤级轨迹落盘可回放、Prometheus 指标、OTel GenAI 语义 span。
@@ -175,7 +175,13 @@ make init-data      # 建运行时数据目录
 | STARD 8,000 文档受控子集 | Dense + BM25/z-score (α=0.85) | 80 | 0.3757 | 0.5976 | 0.6899 | 0.7689 | 0.5972 | 0.5443 |
 <!-- STARD_TABLE_END -->
 
-项目唯一默认检索为 Dense + BM25 原始分数 z-score 融合（Dense 权重 0.85、每通道候选深度 80、输出 Top-20），无额外重排。验证集参数扫描与锁定后的 dev 结果、指标口径和复现方式见[评测说明](evals/README.md)。
+默认检索为 Dense + BM25 原始分数 z-score 融合（Dense 权重 0.85、每通道候选深度 80、输出 Top-20）。融合之后还有两处质量闸与一处装配策略，都默认关闭、关闭时与上表逐位等价：
+
+- **交叉编码器精排**（`RETRIEVAL_RERANK_ENABLED`）：把融合池前 50 条交给交叉编码器重打分（本地参考实现用 bge-reranker-v2-m3），取前 20 条进回答。端点可以是按量计费的云端 text-rerank，也可以是自建的 `/v1/rerank` 服务——仓库附一个本地 CUDA 实现 `scripts/local_rerank_server.py`，输出 `sigmoid(logit)` 与云端 relevance_score 同量纲，`MIN_SCORE` 两边可直接互换。超时、协议异常、无凭据一律 fail-open 回融合原序：精排是加分项，不许把检索链打挂或打空。
+- **融合后分数闸**（`RETRIEVAL_FUSION_MIN_SCORE`）：仅在双通道真融合时按 z-score 下限裁掉尾部；裁空了回退 Top-1，不制造空答。单通道保留的是距离原分，量纲与方向都不同，这道闸对它一律不生效。
+- **预算对齐装配**（`CONTEXT_BUDGET_TOKENS`）：按 token 预算贪心装配，并把引用列表、命中片段与评测 contexts 一起收窄到真正进了 Prompt 的那几条，避免「引用一段模型没读过的文本」、faithfulness 拿全量片段评估。本批片段确实经过精排时，`CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK` 让查询相关的精排顺序直接进预算，不再被与问题无关的全局档位重排挤出窗口。
+
+精排的收益全在排序前端：dev 308 题上 Recall@20 抬高 1.7 个百分点、MRR 1.4 个、NDCG@5 1.7 个；全量 1,543 题复跑同向，三项分别 +3.0 / +2.9 / +2.5 个百分点。精排只重排不增召回——候选池里本来没有的文档仍然找不回来，所以收益随首发召回率见顶。验证集参数扫描与锁定后的 dev 结果、指标口径和复现方式见[评测说明](evals/README.md)。
 
 ```bash
 python evals/stard_default_retrieval.py --help # 唯一检索基准与调参评测
@@ -252,7 +258,7 @@ My-Agentix/
 | 编排 | LangGraph · Agent Core 2.0（Harness + Capabilities） |
 | 前端 | Vue 3 · TypeScript · Vite · Vitest |
 | 存储 | PostgreSQL（结构化）· Redis（缓存 / Checkpointer）· Neo4j（图谱）· Milvus（向量）· MySQL（统计） |
-| 检索 | FAISS / Milvus 向量 · BM25 · Dense + BM25/z-score 混合召回 |
+| 检索 | FAISS / Milvus 向量 · BM25 · Dense + BM25/z-score 混合召回 · 交叉编码器精排（可选）· token 预算装配 |
 | 扩展 | MCP（stdio JSON-RPC）· 声明式 ToolRegistry |
 | 可观测 | Prometheus · Grafana · Alertmanager · OTel |
 | 质量 | pytest · ruff · black · mypy · 确定性打分 · 轨迹前缀回归 |
@@ -275,6 +281,7 @@ My-Agentix/
 ## 13. 已知限制
 
 - **检索结论只在 STARD 的法律咨询场景成立**，换语料需重测；受控子集只覆盖 8,000 条候选。
+- **精排依赖外部端点**：云端按量计费、本地要自备 GPU 与权重，端点不可用时静默回退融合原序——收益归零但不报错，排查看阶段帧里的 `rerank.skipped`。
 - **执行沙箱不隔离文件系统与网络**：`subprocess` 档挡住资源与环境污染，但进程仍可读宿主可读的文件、仍可出网。
 - **`in_process` / `thread` 两档不是隔离边界**：同进程、同 GIL、同环境变量。
 - **评测门禁未武装**：仓库内的题集是公开 MCQ 集，旧的人工金标已下线，门禁代码保留但不阻塞合入。

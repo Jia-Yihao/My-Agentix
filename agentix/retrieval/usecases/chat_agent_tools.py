@@ -108,6 +108,28 @@ def build_agent_system_prompt(ctx: AgentToolContext) -> str:
 """
 
 
+def rag_authority_ranking_enabled(docs: list) -> bool:
+    """主链 RAG 的 authority 排序开关决策（仅服务 ``query_knowledge_base``）。
+
+    本批片段确实经过精排（带 ``_rerank_score``）且开关打开时跳过 authority 重排：
+    CE 分数是 query-specific 的相关性，而 ``source_authority_level`` 是与本次问题
+    无关的全局档位，重排会把高相关低档位片段推到 token 预算之外。开关关闭或精排
+    fail-open（无标记）时返回值与原实现一致，逐位等价。
+    """
+    if not settings.CONTEXT_AUTHORITY_RANKING_ENABLED:
+        return False
+    if not (
+        settings.CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK
+        and settings.RETRIEVAL_RERANK_ENABLED
+    ):
+        return True
+    reranked = any(
+        (getattr(doc, "metadata", None) or {}).get("_rerank_score") is not None
+        for doc in docs
+    )
+    return not reranked
+
+
 def build_chat_agent_tools(ctx: AgentToolContext) -> list:
     """构建闭包注入范围后的工具列表。"""
 
@@ -208,23 +230,47 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
         if not docs:
             return INSUFFICIENT_RETRIEVAL_MSG
 
-        ctx.last_citations = await asyncio.to_thread(
-            get_citations_from_docs, docs, ctx.session
+        # R3-5 Context Engine：ranking（authority）→ isolation → budget 统一装配。
+        # 本批经过精排时按开关跳过全局 authority 重排，让 CE 相关性顺序直接进预算。
+        from agentix.retrieval.domain.services.context_engine import (
+            assemble_context,
+            context_doc_key,
         )
-        ctx.last_hit_chunks = hit_chunks_from_docs(docs)
-        ctx.last_contexts = [d.page_content for d in docs]
 
-        # R3-5 Context Engine：ranking（authority）→ isolation → budget 统一装配
-        from agentix.retrieval.domain.services.context_engine import assemble_context
-
+        ranking_enabled = rag_authority_ranking_enabled(docs)
         context_str, context_meta = assemble_context(
             docs,
-            ranking_enabled=settings.CONTEXT_AUTHORITY_RANKING_ENABLED,
+            ranking_enabled=ranking_enabled,
             budget_tokens=settings.CONTEXT_BUDGET_TOKENS,
             isolate_threshold=settings.CONTEXT_ISOLATE_THRESHOLD,
             source="query_knowledge_base",
+            truncate_ratio=settings.CONTEXT_BUDGET_TRUNCATE_RATIO,
         )
+        if not ranking_enabled and settings.CONTEXT_AUTHORITY_RANKING_ENABLED:
+            context_meta["authority_ranking_skipped_for_rerank"] = True
         ctx.last_context_meta = context_meta
+
+        # 预算裁剪后只把「模型真正看过的片段」暴露给引用卡、命中记录与评测 contexts，
+        # 否则会出现引用了未进 Prompt 的文本、faithfulness 拿全量片段评估的失真。
+        # budget<=0 或未发生裁剪时 kept_doc_keys 覆盖全量，下列三处逐位不变。
+        budget = context_meta.get("budget") or {}
+        trimmed = bool(budget.get("dropped") or budget.get("truncated"))
+        kept_keys = set(context_meta.get("kept_doc_keys") or ())
+        if trimmed and kept_keys:
+            visible = [d for d in docs if context_doc_key(d) in kept_keys]
+            evidence_docs = visible or docs
+        else:
+            evidence_docs = docs
+
+        ctx.last_citations = await asyncio.to_thread(
+            get_citations_from_docs, evidence_docs, ctx.session
+        )
+        ctx.last_hit_chunks = hit_chunks_from_docs(evidence_docs)
+        ctx.last_contexts = (
+            list(context_meta["kept_texts"])
+            if trimmed and context_meta.get("kept_texts")
+            else [d.page_content for d in docs]
+        )
 
         target_title = document_title_for_id(ctx.session, named_doc_id)
         prompt = build_prompt(

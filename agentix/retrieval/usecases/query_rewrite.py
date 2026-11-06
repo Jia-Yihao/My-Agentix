@@ -19,13 +19,16 @@ import asyncio
 import logging
 import re
 
+from agentix.retrieval.settings import settings
+
 logger = logging.getLogger(__name__)
 
+# 数值一律来自 settings（可 env 覆盖），模块级别名仅为兼容既有调用/测试。
 # LLM 调用有界：超时按失败处理（fail-open 回原 query）。
-_REWRITE_TIMEOUT_S = 8.0
+_REWRITE_TIMEOUT_S = float(settings.RETRIEVAL_QUERY_REWRITE_TIMEOUT_SECONDS)
 # 输出有界：改写查询 / 假设性文档各自截断。
-_MAX_QUERY_CHARS = 512
-_MAX_DOC_CHARS = 1200
+_MAX_QUERY_CHARS = int(settings.RETRIEVAL_QUERY_REWRITE_MAX_QUERY_CHARS)
+_MAX_DOC_CHARS = int(settings.RETRIEVAL_QUERY_REWRITE_MAX_DOC_CHARS)
 
 REWRITE_PROMPT = """你是一名检索查询改写助手。把用户的查询改写为一条自足、可直接检索的检索式：
 - 结合【历史对话】补全省略的主语、指代与领域限定（意图补全），去掉与检索无关的寒暄；
