@@ -161,7 +161,7 @@ make test           # pytest tests/ -v
 make init-data      # 建运行时数据目录
 ```
 
-**当前测试基线（2026-11-06 实测）**：`env -u PYTHONPATH .venv/Scripts/python.exe -m pytest -m "not integration" -q` → **6052 passed / 40 skipped / 6 deselected / 0 failed**（Python 3.12.13，单机离线，未开并行）；`ruff check agentix scripts evals kb_ingest` 全绿。
+**当前测试基线（2026-11-06 实测）**：`env -u PYTHONPATH .venv/Scripts/python.exe -m pytest -m "not integration" -q` → **6089 passed / 40 skipped / 6 deselected / 0 failed**（Python 3.12.13，单机离线，未开并行）；`ruff check agentix scripts evals kb_ingest` 全绿。
 
 > `PYTHONPATH` 必须先清空，否则沙箱相关用例会假失败。
 
