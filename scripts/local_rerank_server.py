@@ -13,6 +13,12 @@ relevance_score 同量纲；sigmoid 单调，排序与原始 logit 完全一致�
 
     D:/conda_envs/py312/python.exe scripts/local_rerank_server.py
 
+依赖只装在那个解释器里，不进项目 ``requirements*.txt``——主服务本身不 import
+torch，精排是通过 HTTP 旁路调用的::
+
+    pip install torch --index-url https://download.pytorch.org/whl/cu128
+    pip install transformers fastapi uvicorn pydantic
+
 所有可调项走环境变量（登记在 .env.example），不写死在代码里。
 """
 

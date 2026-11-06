@@ -143,11 +143,17 @@ def rank_docs_by_authority(docs: list) -> list:
 # 4. Context Budget（架构文档 §27）
 # ---------------------------------------------------------------------------
 
+#: 截断比例的唯一字面量：domain 层不 import settings（分层约束），生产调用方
+#: 由 ``Settings.CONTEXT_BUDGET_TRUNCATE_RATIO`` 传入，该键的默认值也取自这里，
+#: 避免同一个数在代码与配置里各写一遍。
+DEFAULT_BUDGET_TRUNCATE_RATIO = 0.9
+
+
 def apply_context_budget(
     docs: list,
     *,
     budget_tokens: int = 0,
-    truncate_ratio: float = 0.9,
+    truncate_ratio: float = DEFAULT_BUDGET_TRUNCATE_RATIO,
 ) -> tuple[list, dict]:
     """按 token 预算贪心装配片段，返回 (保留的 [(doc, text, truncated)] 列表, 统计)。
 

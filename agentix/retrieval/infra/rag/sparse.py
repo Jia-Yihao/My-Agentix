@@ -54,9 +54,17 @@ _CN_NUMBER_DIGITS = {
 }
 _CN_NUMBER_UNITS = {"十": 10, "百": 100, "千": 1000}
 
-_CACHE_MAX_ENTRIES = max(1, int(settings.RETRIEVAL_SPARSE_CACHE_MAX_ENTRIES))
 _CACHE: Dict[Tuple[str, str | None], Tuple[float, "BM25Index"]] = {}
 _CACHE_LOCK = threading.Lock()
+
+
+def _cache_capacity() -> int:
+    """缓存容量每次现读 settings：进程内改配置/测试 monkeypatch 都即时生效。
+
+    模块级常量会把首次 import 时的值钉死——那一份值既不随配置变化，也让
+    「调小容量」需要重启进程才能验证。
+    """
+    return max(1, int(settings.RETRIEVAL_SPARSE_CACHE_MAX_ENTRIES))
 
 
 def _article_number(value: str) -> int | None:
@@ -220,7 +228,8 @@ def _load_index(session, kb_id: str, ttl_seconds: int, artifact_id: str | None =
         b=settings.RETRIEVAL_SPARSE_BM25_B,
     )
     with _CACHE_LOCK:
-        if len(_CACHE) >= _CACHE_MAX_ENTRIES and cache_key not in _CACHE:
+        capacity = _cache_capacity()
+        if len(_CACHE) >= capacity and cache_key not in _CACHE:
             oldest = min(_CACHE.items(), key=lambda kv: kv[1][0])
             _CACHE.pop(oldest[0], None)
         _CACHE[cache_key] = (time.monotonic(), index)

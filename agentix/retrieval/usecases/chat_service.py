@@ -142,6 +142,10 @@ def _fusion_fingerprint() -> str:
             "RETRIEVAL_RERANK_MAX_CANDIDATES",
             "RETRIEVAL_RERANK_MIN_SCORE",
             "RETRIEVAL_RERANK_MODEL",
+            # 换端点（云端 ⇄ 自建、换本地权重目录）会换掉实际打分器，
+            # 不带进指纹就会在 TTL 内继续命中上一套端点的结果
+            "RETRIEVAL_RERANK_BASE_URL",
+            "RETRIEVAL_RERANK_ENDPOINT",
             "RETRIEVAL_FETCH_K_MULTIPLIER",
             "RETRIEVAL_MAX_FETCH_K",
         )

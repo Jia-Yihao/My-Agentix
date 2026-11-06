@@ -23,12 +23,25 @@ from agentix.retrieval.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# 数值一律来自 settings（可 env 覆盖），模块级别名仅为兼容既有调用/测试。
-# LLM 调用有界：超时按失败处理（fail-open 回原 query）。
-_REWRITE_TIMEOUT_S = float(settings.RETRIEVAL_QUERY_REWRITE_TIMEOUT_SECONDS)
-# 输出有界：改写查询 / 假设性文档各自截断。
-_MAX_QUERY_CHARS = int(settings.RETRIEVAL_QUERY_REWRITE_MAX_QUERY_CHARS)
-_MAX_DOC_CHARS = int(settings.RETRIEVAL_QUERY_REWRITE_MAX_DOC_CHARS)
+
+def rewrite_timeout_seconds() -> float:
+    """LLM 调用有界：超时按失败处理（fail-open 回原 query）。
+
+    三个界限值都在**调用时**读 settings——模块级常量会把 import 时的值钉死，
+    运行时改配置或测试 monkeypatch 都不生效，等于给同一份配置造了第二个取值时机。
+    """
+    return float(settings.RETRIEVAL_QUERY_REWRITE_TIMEOUT_SECONDS)
+
+
+def max_query_chars() -> int:
+    """改写查询的输出上界。"""
+    return int(settings.RETRIEVAL_QUERY_REWRITE_MAX_QUERY_CHARS)
+
+
+def max_doc_chars() -> int:
+    """假设性文档（HyDE）的输出上界。"""
+    return int(settings.RETRIEVAL_QUERY_REWRITE_MAX_DOC_CHARS)
+
 
 REWRITE_PROMPT = """你是一名检索查询改写助手。把用户的查询改写为一条自足、可直接检索的检索式：
 - 结合【历史对话】补全省略的主语、指代与领域限定（意图补全），去掉与检索无关的寒暄；
@@ -70,8 +83,9 @@ def normalize_query_output(raw: str, original: str) -> tuple[str, bool]:
     text = text.strip().strip("\"'`“”‘’「」").strip()
     if not text:
         return original, False
-    if len(text) > _MAX_QUERY_CHARS:
-        text = text[:_MAX_QUERY_CHARS]
+    limit = max_query_chars()
+    if len(text) > limit:
+        text = text[:limit]
     if _same_query(text, original):
         return original, False
     return text, True
@@ -85,8 +99,9 @@ def normalize_document_output(raw: str, original: str) -> tuple[str, bool]:
     text = text.strip("\"'`“”‘’「」").strip()
     if not text:
         return original, False
-    if len(text) > _MAX_DOC_CHARS:
-        text = text[:_MAX_DOC_CHARS]
+    limit = max_doc_chars()
+    if len(text) > limit:
+        text = text[:limit]
     if _same_query(text, original):
         return original, False
     return text, True
@@ -104,7 +119,7 @@ async def _invoke_llm(
         invoke_with_breaker(
             llm, [{"role": "user", "content": prompt}], name=name
         ),
-        timeout=_REWRITE_TIMEOUT_S,
+        timeout=rewrite_timeout_seconds(),
     )
     return str(getattr(resp, "content", "") or resp or "")
 

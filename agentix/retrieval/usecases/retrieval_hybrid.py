@@ -114,8 +114,10 @@ async def rerank_fused_docs(
 ) -> Tuple[Optional[List[Any]], Dict[str, Any]]:
     """精排融合候选；任何失败/超时/空结果返回 ``(None, stats)`` 由调用方保留原序。
 
-    ``metadata`` 写入 ``_rerank_score``（精排分，越大越相关）、把原融合分留痕为
-    ``_fusion_score``，并把 ``_retrieval_score`` 换成精排分供下游排序/归因复用。
+    ``metadata`` 只写 ``_rerank_score``（精排分，越大越相关），并把
+    ``_retrieval_score`` 换成精排分供下游排序/归因复用。不再额外留一份
+    ``_fusion_score``：它没有任何消费方，而 metadata 会随文档一起写进结果缓存，
+    多一个键就是每缓存一条多一份体积。
     """
     from agentix.retrieval.infra.rag.rerank import (
         rerank_candidates,
@@ -188,7 +190,6 @@ async def rerank_fused_docs(
             continue
         doc = candidates[idx]
         meta = dict(getattr(doc, "metadata", None) or {})
-        meta["_fusion_score"] = float(meta.get("_retrieval_score", 0.0) or 0.0)
         meta["_rerank_score"] = float(score)
         meta["_retrieval_score"] = float(score)
         doc.metadata = meta

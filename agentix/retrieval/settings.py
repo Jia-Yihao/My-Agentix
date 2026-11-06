@@ -23,6 +23,11 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(_REPO_ROOT / ".env", override=False)
 
 from agentix.config.settings import settings as _unified_settings  # noqa: E402
+# 截断比例的默认值取自 domain 常量：domain 不 import settings（分层约束），
+# 配置侧反过来只取一个数，同一个值不在两处各写一遍。
+from agentix.retrieval.domain.services.context_engine import (  # noqa: E402
+    DEFAULT_BUDGET_TRUNCATE_RATIO,
+)
 
 
 def _csv_env(name: str, default: str) -> list[str]:
@@ -135,7 +140,7 @@ class _RetrievalSettingsCompat:
     CONTEXT_BUDGET_TOKENS = int(os.getenv("CONTEXT_BUDGET_TOKENS", "0"))
     # 放不下整段时按剩余预算的比例截断（留一点余量给分隔符与状态栏）
     CONTEXT_BUDGET_TRUNCATE_RATIO = float(
-        os.getenv("CONTEXT_BUDGET_TRUNCATE_RATIO", "0.9")
+        os.getenv("CONTEXT_BUDGET_TRUNCATE_RATIO", str(DEFAULT_BUDGET_TRUNCATE_RATIO))
     )
     # 大文档隔离（复用 artifact_store）：0 = 关闭（默认——启用需配合取回通道）
     CONTEXT_ISOLATE_THRESHOLD = int(os.getenv("CONTEXT_ISOLATE_THRESHOLD", "0"))
