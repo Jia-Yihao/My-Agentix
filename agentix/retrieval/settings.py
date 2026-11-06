@@ -212,7 +212,9 @@ class _RetrievalSettingsCompat:
     # 另一句话的结果，陈旧窗口必须更短（时效性由这个窗口兜底，没有主动失效钩子）。
     SEMANTIC_CACHE_TTL_SECONDS = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", "120"))
     RERANKER_ENABLED = _bool_env("RERANKER_ENABLED", "false")
-    RERANKER_MODEL = os.getenv("RERANKER_MODEL", "text-embedding-bge-reranker-v2-m3")
+    @property
+    def RERANKER_MODEL(self) -> str:
+        return os.getenv("RERANKER_MODEL", _unified_settings.CROSS_ENCODER_MODEL)
 
     RETRIEVAL_FETCH_K_MULTIPLIER = int(os.getenv("RETRIEVAL_FETCH_K_MULTIPLIER", "20"))
     RETRIEVAL_FETCH_K_MIN = int(os.getenv("RETRIEVAL_FETCH_K_MIN", "200"))

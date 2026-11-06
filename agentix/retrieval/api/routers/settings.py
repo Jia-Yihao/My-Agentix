@@ -31,24 +31,24 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 
 DEFAULT_CONFIG: dict[str, Any] = {
     # LLM
-    "llm_provider": os.getenv("LLM_PROVIDER", "openai-compatible"),
-    "llm_base_url": os.getenv("LLM_BASE_URL", "http://127.0.0.1:1234/v1"),
-    "llm_api_key": os.getenv("LLM_API_KEY", ""),
-    "llm_model": os.getenv("LLM_MODEL", "qwen2.5-7b-instruct"),
+    "llm_provider": app_settings.LLM_PROVIDER,
+    "llm_base_url": app_settings.LLM_BASE_URL or "",
+    "llm_api_key": app_settings.LLM_API_KEY or "",
+    "llm_model": app_settings.CHAT_MODEL or app_settings.LLM_MODEL,
     # Embedding
-    "embedding_provider": os.getenv("EMBEDDING_PROVIDER", "openai-compatible"),
-    "embedding_base_url": os.getenv("EMBEDDING_BASE_URL", "http://127.0.0.1:1234/v1"),
-    "embedding_api_key": os.getenv("EMBEDDING_API_KEY", ""),
-    "embedding_model": os.getenv("EMBEDDING_MODEL", "text-embedding-bge-m3"),
+    "embedding_provider": app_settings.EMBEDDING_PROVIDER,
+    "embedding_base_url": app_settings.EMBEDDING_BASE_URL or "",
+    "embedding_api_key": app_settings.EMBEDDING_API_KEY or "",
+    "embedding_model": app_settings.EMBEDDING_MODEL,
     # Reranker
-    "reranker_model": os.getenv("RERANKER_MODEL", "text-embedding-bge-reranker-v2-m3"),
+    "reranker_model": app_settings.CROSS_ENCODER_MODEL,
     # Chunk
     "chunk_strategy": os.getenv("CHUNK_STRATEGY", "auto"),
     "chunk_mode": os.getenv("CHUNK_MODE", "single"),
-    "chunk_size": int(os.getenv("PDF_CHUNK_SIZE", "500")),
-    "chunk_overlap": int(os.getenv("PDF_CHUNK_OVERLAP", "100")),
+    "chunk_size": app_settings.KB_CHUNK_SIZE,
+    "chunk_overlap": app_settings.KB_CHUNK_OVERLAP,
     # Retrieval
-    "search_k": int(os.getenv("SEARCH_K", str(app_settings.KB_TOP_K))),
+    "search_k": app_settings.KB_TOP_K,
     "sparse_k": int(os.getenv("SPARSE_K", "10")),
     "dense_k": int(os.getenv("DENSE_K", "10")),
     "fusion_k": int(os.getenv("FUSION_K", "15")),

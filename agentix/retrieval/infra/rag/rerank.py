@@ -32,8 +32,6 @@ from agentix.retrieval.settings import settings
 
 logger = logging.getLogger(__name__)
 _RERANK_BREAKER_NAME = "rerank_service"
-_DEFAULT_RERANK_MODEL = "text-embedding-bge-reranker-v2-m3"
-
 # 上游异常判定集合——"什么算一次失败的上游调用"的唯一真源（约定 6 ④）：
 # 分批路径的失败记账与外层 fail-open 捕获都用本常量，不得再另写字面量元组。
 _RERANK_UPSTREAM_ERRORS = (httpx.HTTPError, KeyError, TypeError, ValueError)
@@ -198,7 +196,7 @@ async def _rerank_scored(
     单批请求与整次重排共用同一个 ``timeout``。
     """
     endpoint = _rerank_endpoint()
-    model_name = model or os.getenv("RERANKER_MODEL", _DEFAULT_RERANK_MODEL)
+    model_name = model or settings.RERANKER_MODEL
     size = len(docs) if batch_size <= 0 else max(1, int(batch_size))
     cap = max(0.1, float(timeout))
     semaphore = asyncio.Semaphore(max(1, int(max_concurrency)))

@@ -1,7 +1,6 @@
 """
 LLM / Embedding 统一配置
 """
-import os
 from typing import Dict, Any
 
 from agentix.retrieval.settings import settings
@@ -9,26 +8,25 @@ from agentix.retrieval.settings import settings
 
 def get_default_config() -> Dict[str, Any]:
     """获取默认配置（LLM + Embedding + 分块参数）"""
-    llm_api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
-    llm_base_url = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-    llm_model = os.getenv("LLM_MODEL", "deepseek-v4-flash")
+    llm_api_key = settings.LLM_API_KEY
+    llm_base_url = settings.LLM_BASE_URL
+    llm_model = settings.LLM_MODEL
 
-    embedding_api_key = os.getenv("EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY")
-    embedding_base_url = os.getenv("EMBEDDING_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-    embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    embedding_api_key = settings.EMBEDDING_API_KEY or llm_api_key
+    embedding_base_url = settings.EMBEDDING_BASE_URL or llm_base_url
 
     return {
-        "chunk_size": 500,
-        "chunk_overlap": 100,
+        "chunk_size": settings.KB_CHUNK_SIZE,
+        "chunk_overlap": settings.KB_CHUNK_OVERLAP,
         "search_k": settings.KB_TOP_K,
         "memory_window": 10,
-        "temperature": 0.1,
+        "temperature": settings.LLM_TEMPERATURE,
         # LLM
-        "model": llm_model,
+        "model": settings.CHAT_MODEL or llm_model,
         "llm_api_key": llm_api_key,
         "llm_base_url": llm_base_url,
         # Embedding
-        "embedding_model": embedding_model,
+        "embedding_model": settings.EMBEDDING_MODEL,
         "embedding_api_key": embedding_api_key,
         "embedding_base_url": embedding_base_url,
         "embedding_chunk_size": 32,

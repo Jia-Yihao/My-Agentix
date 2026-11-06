@@ -101,7 +101,7 @@ def _ce_scores(question: str, docs: list, cand: int) -> list[float] | None:
     head = docs[:cand]
     payload = json.dumps(
         {
-            "model": os.getenv("RERANKER_MODEL", "text-embedding-bge-reranker-v2-m3"),
+            "model": settings.RERANKER_MODEL,
             "query": question,
             "documents": [str(getattr(d, "page_content", ""))[:512] for d in head],
             "top_n": len(head),

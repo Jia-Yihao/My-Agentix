@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any, Literal
 
 from langchain_openai import ChatOpenAI
@@ -14,14 +13,11 @@ from agentix.retrieval.settings import settings
 
 ChatMode = Literal["fast", "deep"]
 
-DEFAULT_CHAT_MODEL = "deepseek-v4-flash"
-
-
 def resolve_chat_model(explicit: str | None = None) -> str:
     if explicit:
         return explicit
     cfg = get_default_config()
-    return os.getenv("CHAT_MODEL") or cfg.get("model") or DEFAULT_CHAT_MODEL
+    return cfg.get("model") or settings.LLM_MODEL
 
 
 def thinking_extra_body(chat_mode: ChatMode) -> dict[str, Any]:
@@ -47,7 +43,7 @@ def create_chat_llm(
     extra = deep_thinking_extra_body() if for_thinking_stream else thinking_extra_body(chat_mode)
     return ChatOpenAI(
         model=model,
-        temperature=temperature if temperature is not None else cfg.get("temperature", 0.1),
+        temperature=temperature if temperature is not None else cfg.get("temperature", settings.LLM_TEMPERATURE),
         timeout=cfg.get("llm_timeout", 60 if for_thinking_stream else 30),
         max_retries=cfg.get("llm_max_retries", 3),
         api_key=cfg["llm_api_key"],

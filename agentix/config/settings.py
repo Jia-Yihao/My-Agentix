@@ -155,6 +155,10 @@ class Settings(BaseSettings):
         description="LLM model name",
         validation_alias=AliasChoices("LLM_MODEL", "OPENAI_MODEL"),
     )
+    CHAT_MODEL: str | None = Field(
+        default=None,
+        description="Optional retrieval-chat model override; empty uses LLM_MODEL",
+    )
     # R3-7 Model Gateway（架构文档 §42-44）：任务分档路由 + Fallback 链
     # 分档模型：空 = 回退 LLM_MODEL（单模型部署零行为变化）
     LLM_MODEL_FAST: str = Field(
@@ -197,12 +201,22 @@ class Settings(BaseSettings):
     )
     LLM_API_KEY: Optional[str] = Field(
         default=None,
-        validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY"),
+        validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"),
     )
     LLM_BASE_URL: Optional[str] = Field(
         default=None,
         description="LLM API base URL",
-        validation_alias=AliasChoices("LLM_BASE_URL", "OPENAI_API_BASE"),
+        validation_alias=AliasChoices(
+            "LLM_BASE_URL",
+            "OPENAI_API_BASE",
+            "OPENAI_BASE_URL",
+            "DEEPSEEK_BASE_URL",
+        ),
+    )
+    LLM_TEMPERATURE: float = Field(
+        default=0.7,
+        ge=0.0,
+        description="Sampling temperature for chat completions",
     )
     # P2-2：成本估算单价（每 1K token）。默认 0.0 是诚实默认——本地 LM Studio
     # 端点免费，不假装有价格；接商用 API 时通过环境变量覆盖即可。
@@ -932,7 +946,15 @@ class Settings(BaseSettings):
     RERANK_PROVIDER: str = Field(default="custom", description="Rerank provider: cohere, jina, voyage, custom")
     RERANK_BASE_URL: Optional[str] = Field(default=None, description="Rerank API base URL")
     RERANK_ENDPOINT: str = Field(default="/rerank", description="Rerank endpoint path")
-    RERANK_MODEL: str = Field(default="bge-reranker-large", description="Rerank model name")
+    RERANK_MODEL: str = Field(
+        default="bge-reranker-large",
+        description="Rerank model name",
+    )
+    CROSS_ENCODER_MODEL: str = Field(
+        default="text-embedding-bge-reranker-v2-m3",
+        description="Cross-Encoder model used by retrieval reranking",
+        validation_alias=AliasChoices("CROSS_ENCODER_MODEL", "RERANKER_MODEL"),
+    )
     RERANK_API_KEY: Optional[str] = None
     RERANK_MAX_CANDIDATES: int = Field(default=20, description="Max candidates for reranking")
     RERANK_TOP_N: int = Field(default=6, description="Top N results after reranking")
@@ -1652,15 +1674,21 @@ class Settings(BaseSettings):
     )
 
     # Knowledge base retrieval
-    KB_TOP_K: int = Field(default=20, ge=1)
+    KB_TOP_K: int = Field(
+        default=20,
+        ge=1,
+        validation_alias=AliasChoices("KB_TOP_K", "SEARCH_K"),
+    )
     KB_SIMILARITY_THRESHOLD: float = 0.2
     KB_CHUNK_SIZE: int = Field(
         default=512,
         description="Chunk size used when splitting documents for the knowledge base",
+        validation_alias=AliasChoices("KB_CHUNK_SIZE", "PDF_CHUNK_SIZE"),
     )
     KB_CHUNK_OVERLAP: int = Field(
         default=80,
         description="Chunk overlap used when splitting documents",
+        validation_alias=AliasChoices("KB_CHUNK_OVERLAP", "PDF_CHUNK_OVERLAP"),
     )
     # 测试数据集领域知识库语料文件（供 kb_ingest 导入）
     KB_DATA_FILE: str = "data/kb/legal_corpus.txt"
