@@ -2,7 +2,7 @@
 
 感谢你愿意为 **My Agentix** 做出贡献！本文档说明本项目的开发流程、代码规范与提交约定，帮助你快速融入协作。
 
-> 阅读顺序建议：本文件 → [`docs/architecture/README.md`](docs/architecture/README.md)（架构总览）→ [`docs/architecture/扩展机制.md`](docs/architecture/扩展机制.md)（扩展机制）→ [`docs/版本管理策略.md`](docs/版本管理策略.md)（版本策略）。
+> 阅读顺序建议：本文件 → [`docs/architecture/README.md`](docs/architecture/README.md)（架构总览）→ [`docs/architecture/扩展机制.md`](docs/architecture/扩展机制.md)（扩展机制）→ `docs/版本管理策略.md`（版本策略）。
 
 ---
 
@@ -266,7 +266,7 @@ pytest --cov=agentix --cov-report=term-missing
 - `feat/*` / `fix/*` / `docs/*`：功能分支，生命周期短
 - `release/x.y`：发布维护分支（仅在需要 backport 时创建）
 
-版本号遵循 [语义化版本 SemVer 2.0.0](https://semver.org/lang/zh-CN/)，详见 [`docs/版本管理策略.md`](docs/版本管理策略.md)。
+版本号遵循 [语义化版本 SemVer 2.0.0](https://semver.org/lang/zh-CN/)，详见 `docs/版本管理策略.md`。
 
 ---
 

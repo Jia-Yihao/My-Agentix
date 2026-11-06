@@ -70,14 +70,14 @@ python scripts/demo/local_kb_demo.py eval --golden <kb-query 金标集>.jsonl --
 
 前置只有一句：`lms server start`（或界面里开 HTTP 服务，端口 1234）；三条命令都不需要
 `.env` 里的云端 key。解释器要用**仓库 `.venv`**（Python 3.12），不要用系统 conda——
-理由与完整前置见 [docs/runbooks/性能与成本采数.md](docs/runbooks/性能与成本采数.md)「宿主直跑」。
+理由与完整前置见 docs/runbooks/性能与成本采数.md「宿主直跑」。
 
 > **跑不通怎么办**：
 > ① `ask` 报 `Failed to load model "qwen/qwen3-8b": Engine protocol startup was aborted` ⇒
 > 先 `lms load qwen/qwen3-8b` 再跑（8GB 显存冷加载不稳，实测重试第二次即通）；
 > ② `seed` 慢是正常的（冷缓存约 90s，重跑命中本地嵌入缓存约 4s）；
 > ③ 解释器必须是仓库 `.venv`（3.12）；换栈会换结构化输出形态（能力探测自动选，见脚本顶部）。
-> 完整口径与复现命令见 [docs/runbooks/性能与成本采数.md](docs/runbooks/性能与成本采数.md)。
+> 完整口径与复现命令见 docs/runbooks/性能与成本采数.md。
 
 ②的真实终端输出（`.venv`，2026-10-25，未剪辑，仅省略正文）：
 
@@ -174,7 +174,7 @@ My Agentix 是一套**生产导向的 Agent 平台**——以 Agent 内核为核
 > |---|---|---|
 > | 这个项目**现在是什么样** | **本文档** | 唯一「现行总览」 |
 > | 某处**具体怎么实现** | [`docs/项目实现手册.md`](docs/项目实现手册.md) | 实现细节手册（按符号定位，不写行号） |
-> | 出事/上线**要做什么动作** | [`docs/runbooks/`](docs/runbooks/) | 操作手册 |
+> | 出事/上线**要做什么动作** | `docs/runbooks/` | 操作手册 |
 >
 
 ### 三条端到端数据流
@@ -316,7 +316,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 4. **调用点是否可达**——静态搜引用；未注册、未调用的实现属于「已实现但未接线」；
 5. **守卫与测试**——`tests/test_p41_doc_consistency.py` 防文档漂移，分层守卫防依赖回潮。
 
-完整架构图、设计特色与逐节点流程见 **[架构详解](docs/architecture/架构详解.md)**；分层与依赖规则见 **[分层架构与依赖规则.md](docs/architecture/分层架构与依赖规则.md)**；运行时职责五层见 **[AgentCore五层架构.md](docs/architecture/AgentCore五层架构.md)**；逐环节「为何用自主 Agent 而非 Workflow」的论证见 **[编排方案选型论证.md](docs/design/编排方案选型论证.md)**。
+完整架构图、设计特色与逐节点流程见 **架构详解**；分层与依赖规则见 **[分层架构与依赖规则.md](docs/architecture/分层架构与依赖规则.md)**；运行时职责五层见 **AgentCore五层架构.md**；逐环节「为何用自主 Agent 而非 Workflow」的论证见 **编排方案选型论证.md**。
 
 ---
 
@@ -343,7 +343,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 | **演化回路** | `evolution/` | 在线录制提案轨迹供离线回放与回归；`KNOWLEDGE`/`PROGRAM` 两载体（payload 白名单 fail-closed）+ 提案三状态 append-only 落盘（`EVOLUTION_PROPOSAL_LOG`）+ 睡眠学习（`EVOLUTION_SLEEP_ENABLED`，只产提案不晋升） |
 | **端口契约** | `agentix/domain/agent/ports.py` | Context / Planner / ToolSelector / Verifier / Memory / Event / Rollback Protocol（M0 拆入；graph / repository / retrieval Protocol 留 `domain/ports/`） |
 
-五层职责与依赖硬规则见 **[Agent Core 五层架构](docs/architecture/AgentCore五层架构.md)**；离线走查见 **[Research Agent Demo](docs/guides/研究型Agent演示.md)**；当前目录结构与模块职责见 **[§12 项目结构](#12-项目结构)**。
+五层职责与依赖硬规则见 **Agent Core 五层架构**；离线走查见 **Research Agent Demo**；当前目录结构与模块职责见 **[§12 项目结构](#12-项目结构)**。
 
 **依赖边界（CI 强制）**：`domain/` 零第三方；LangGraph 导入受 p66 白名单棘轮（equality 断言，仅登记在册 11 文件，新增须署名理由）；`capabilities/` 不反向依赖业务循环；Runtime 真源在 `agentix/runtime/`（Strangler shim `application/runtime/` 已随 A4 删除）。
 
@@ -394,7 +394,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 | **运行性能治理** | 延迟与预算观测、运行准入排队、过载时分级降级 | `agentix/performance/`（准入与降级按配置启用） |
 | **MCP 工具扩展** | 挂载任意 MCP 工具进程 | MCP Client（stdio JSON-RPC）+ 统一 ToolExecutor |
 
-知识库填充（条目 / 语料块数量依领域数据而定，见 **[数据准备](docs/guides/数据准备指南.md)**）。
+知识库填充（条目 / 语料块数量依领域数据而定，见 **数据准备**）。
 
 ### 统一 Web 工作台
 
@@ -449,7 +449,7 @@ LangGraph 只是编排实现（状态图 / 条件边 / 并行节点 / 恢复点�
 - **配置漂移告警**（Phase 22）：会话中途检测配置哈希变化 → 结构化 `system_notice`（仅键名不含值），实现见 `application/services/config_watch.py`
 - **流式防挂起**：SSE 逐次取事件包 `STREAM_IDLE_TIMEOUT`（默认 60s）看门狗——上游静默挂起即 error + done 兜底收口并归还并发槽位，连接绝不悬挂
 - **预算意识**（Phase 28）：步数预算观测，轨迹 append `budget_notice`（剩余 ≤2 可见、不动静态前缀）+ 状态栏 `max_iter` 常量键（`BUDGET_NOTICE_ENABLED` 默认关）
-- **执行边界加固**（§24.3 T0）：治理链回答「该不该做」，这一层回答「跑出去之后能不能切断」——非协程工具 handler 下放线程后 `timeout_ms` 才真能截断（`TOOL_SYNC_OFFLOAD_ENABLED`，默认关）、MCP 子进程只拿白名单环境不再继承全部密钥（`MCP_SUBPROCESS_ENV_SCRUB`）、表达式资源护栏（长度/指数/位宽/浮点有限性，语法白名单挡不住 `9**9**9`）、text2sql 两条闸门共用同一份只读词表（先等长抹除字面量再按词边界匹配）、日志凭据脱敏、`engine.echo` 与生产身份从 `DEBUG` 解耦（`DB_ECHO`/`APP_ENV`/`UVICORN_RELOAD`）、compose backend 加 `no-new-privileges` + CPU/内存/pids 配额；后续补上 T1 ⑫ 提前落地的 `kb_ingest` 连接串闸门（`KB_MYSQL_URL_GUARD`，默认关）与 T1 ⑧ 的 handler 类型契约告警（`TOOL_HANDLER_CONTRACT_ENABLED`，默认关：注册期点名非协程 handler，把「这条工具的超时为什么不生效」从排障现场前移到启动日志）、以及 T1 ⑬ 的数据库 engine 惰性化（`agentix/infrastructure/core/database.py` 不再在模块导入期建池，`import agentix.capabilities.mcp` 连带把整个数据面拉起来的副作用已切断；`engine` / `SessionLocal` 旧写法仍可用，只是取用才建）、以及 T0 ⑤ 的容器运行身份旋钮（`AGENTIX_CONTAINER_USER`，默认 `0:0` 仍是 root——降权要先准备宿主目录属主，否则失败形态是 restart 崩溃循环而不是拒绝启动，步骤见 [staging Runbook](docs/runbooks/预发环境与配置矩阵.md)）、以及 T1 ⑪ 的设置接口授权闸门（`SETTINGS_AUTHZ_ENABLED`，默认关：打开后 `GET /settings/{kb_id}` 要求该 kb 属于调用者租户、`PUT` 再要求 admin。**为什么掩码不够**——`llm_base_url` 这类字段本身可写，改指外部端点不需要密钥却足以让该租户的提问整批外送；「掩码」堵的是读、「授权」才堵得住写。开启有两个前置：迁移已回填 `knowledgebase.tenant_id`（NULL 走 fail-closed 一律 403）、且该租户内确有 admin（全仓暂无自助升 admin 的接口））、以及 T1 ⑫ 的第二半——导入过滤参数化（`KB_MYSQL_WHERE_PARAMETRIZED`，默认关：开则原始 `where` 片段一律拒，过滤只能走 `{column, op, value}` 结构化条件，列名过标识符白名单、运算符取封闭枚举、值全部走 bindparams。**为什么不是"再补几个黑名单词"**——黑名单拦得住 `;` 堆叠，拦不住 `1=1 OR 1=1` 这类合法但越界的片段，对拼出来的 SQL 而言调用方给的就是语法；也因此这一位是硬切而不是加字段，调用方要先迁完）、以及 T2 ⑭ 的执行位置端口（`EXECUTION_SANDBOX_ENABLED`，默认关：`ToolSpec.sandbox` 把「这条工具在哪儿跑」从写死在 `_invoke` 里变成声明，能跑的 `in_process` / `thread` 两档中后者让**单条工具**不必为它打开全局 `TOOL_SYNC_OFFLOAD_ENABLED` 就能下放线程；`container` 仍未实现 ⇒ 声明它在执行点被拒而不是静默退回进程内。**注意这两档都不是隔离**：同进程、同 GIL、同环境变量，端口的价值是让 ⑮ 的墙有地方接）、以及 T2 ⑮ 的子进程沙箱档（`TOOL_SANDBOX_SUBPROCESS_ENABLED`，默认关：开了、且某条工具**逐条声明** `sandbox="subprocess"`，才真的走墙。**一次调用一个进程**，子进程侧先落资源闸 `RLIMIT_AS=512MiB` / `RLIMIT_CPU=30s` / `RLIMIT_FSIZE=32MiB`（可选 `TOOL_SANDBOX_SUBPROCESS_UID=-1` 不降权；root 容器实测降到 65534）**再 import 业务代码**，环境变量走与 G2 **同一份**白名单 `agentix/domain/tool/exec_env.py`（实测父进程里的 `DATABASE_URL`/`LLM_API_KEY` 不过界），协议是 stdin 一条 JSON 请求 + stdout 一行带哨兵的 JSON 应答、两侧各有体积闸，**且成功信封必须回显本次调用的 nonce**（墙内代码自己 `print` 一条"成功信封"换不到它——旧口径下那条会被父进程当成成功结果返回，已实测复现；**且 `ok` 必须是严格布尔**，`"ok": 1` 这种伪造件同样会被真值判定当成成功，归属凭证在那条路上压根没执行），取消经 `start_new_session` + `os.killpg` 真杀进程组；⑯ 的能力探测不过（Windows 缺 `resource` 与进程组 kill）⇒ 执行点响亮拒绝，一次 handler 都不调、一个进程都不起。**它是墙，不是笼子**：挡住地址空间 / CPU 秒 / 文件大小 / 环境密钥 / 可杀性，另买到**带前置的**进程数闸（`RLIMIT_NPROC`，上限 32 个**任务**——线程也算：实测 soft=8 时先起 7 个线程、fork 预算就归 0；只在 `TOOL_SANDBOX_SUBPROCESS_UID` 配了**独立且非 0** 的 uid 时落，共用父 uid 会被假拦或形同虚设，uid 0 因持 `CAP_SYS_RESOURCE` 被内核豁免 ⇒ 明确不落并告警一次），**仍没挡住**文件权限与出网（只读根、指定可写目录、出网默认拒绝三件属 ⑰/T3）。代价实测：单次调用 p50 **≈50ms**（容器本机 FS），同一条 handler 走 `in_process` 档 p50 **0.001ms**、`thread` 档 **0.074ms** ⇒ 默认档必须留在进程内。取证步骤与数字表见 [subprocess 沙箱验证 Runbook](docs/runbooks/子进程沙箱取证.md)）。T2 G14 的同名重复注册点名告警也在这层（无开关、默认打印；`TOOL_DUPLICATE_REGISTRATION_STRICT` 可选、默认关）。口径见 [运行时护栏 §15](docs/architecture/运行时护栏.md)、选型与被拒方案见 [项目实现手册 §23.8](docs/项目实现手册.md)、逐项实测见 [项目实现手册 §24](docs/项目实现手册.md)
+- **执行边界加固**（§24.3 T0）：治理链回答「该不该做」，这一层回答「跑出去之后能不能切断」——非协程工具 handler 下放线程后 `timeout_ms` 才真能截断（`TOOL_SYNC_OFFLOAD_ENABLED`，默认关）、MCP 子进程只拿白名单环境不再继承全部密钥（`MCP_SUBPROCESS_ENV_SCRUB`）、表达式资源护栏（长度/指数/位宽/浮点有限性，语法白名单挡不住 `9**9**9`）、text2sql 两条闸门共用同一份只读词表（先等长抹除字面量再按词边界匹配）、日志凭据脱敏、`engine.echo` 与生产身份从 `DEBUG` 解耦（`DB_ECHO`/`APP_ENV`/`UVICORN_RELOAD`）、compose backend 加 `no-new-privileges` + CPU/内存/pids 配额；后续补上 T1 ⑫ 提前落地的 `kb_ingest` 连接串闸门（`KB_MYSQL_URL_GUARD`，默认关）与 T1 ⑧ 的 handler 类型契约告警（`TOOL_HANDLER_CONTRACT_ENABLED`，默认关：注册期点名非协程 handler，把「这条工具的超时为什么不生效」从排障现场前移到启动日志）、以及 T1 ⑬ 的数据库 engine 惰性化（`agentix/infrastructure/core/database.py` 不再在模块导入期建池，`import agentix.capabilities.mcp` 连带把整个数据面拉起来的副作用已切断；`engine` / `SessionLocal` 旧写法仍可用，只是取用才建）、以及 T0 ⑤ 的容器运行身份旋钮（`AGENTIX_CONTAINER_USER`，默认 `0:0` 仍是 root——降权要先准备宿主目录属主，否则失败形态是 restart 崩溃循环而不是拒绝启动，步骤见 staging Runbook）、以及 T1 ⑪ 的设置接口授权闸门（`SETTINGS_AUTHZ_ENABLED`，默认关：打开后 `GET /settings/{kb_id}` 要求该 kb 属于调用者租户、`PUT` 再要求 admin。**为什么掩码不够**——`llm_base_url` 这类字段本身可写，改指外部端点不需要密钥却足以让该租户的提问整批外送；「掩码」堵的是读、「授权」才堵得住写。开启有两个前置：迁移已回填 `knowledgebase.tenant_id`（NULL 走 fail-closed 一律 403）、且该租户内确有 admin（全仓暂无自助升 admin 的接口））、以及 T1 ⑫ 的第二半——导入过滤参数化（`KB_MYSQL_WHERE_PARAMETRIZED`，默认关：开则原始 `where` 片段一律拒，过滤只能走 `{column, op, value}` 结构化条件，列名过标识符白名单、运算符取封闭枚举、值全部走 bindparams。**为什么不是"再补几个黑名单词"**——黑名单拦得住 `;` 堆叠，拦不住 `1=1 OR 1=1` 这类合法但越界的片段，对拼出来的 SQL 而言调用方给的就是语法；也因此这一位是硬切而不是加字段，调用方要先迁完）、以及 T2 ⑭ 的执行位置端口（`EXECUTION_SANDBOX_ENABLED`，默认关：`ToolSpec.sandbox` 把「这条工具在哪儿跑」从写死在 `_invoke` 里变成声明，能跑的 `in_process` / `thread` 两档中后者让**单条工具**不必为它打开全局 `TOOL_SYNC_OFFLOAD_ENABLED` 就能下放线程；`container` 仍未实现 ⇒ 声明它在执行点被拒而不是静默退回进程内。**注意这两档都不是隔离**：同进程、同 GIL、同环境变量，端口的价值是让 ⑮ 的墙有地方接）、以及 T2 ⑮ 的子进程沙箱档（`TOOL_SANDBOX_SUBPROCESS_ENABLED`，默认关：开了、且某条工具**逐条声明** `sandbox="subprocess"`，才真的走墙。**一次调用一个进程**，子进程侧先落资源闸 `RLIMIT_AS=512MiB` / `RLIMIT_CPU=30s` / `RLIMIT_FSIZE=32MiB`（可选 `TOOL_SANDBOX_SUBPROCESS_UID=-1` 不降权；root 容器实测降到 65534）**再 import 业务代码**，环境变量走与 G2 **同一份**白名单 `agentix/domain/tool/exec_env.py`（实测父进程里的 `DATABASE_URL`/`LLM_API_KEY` 不过界），协议是 stdin 一条 JSON 请求 + stdout 一行带哨兵的 JSON 应答、两侧各有体积闸，**且成功信封必须回显本次调用的 nonce**（墙内代码自己 `print` 一条"成功信封"换不到它——旧口径下那条会被父进程当成成功结果返回，已实测复现；**且 `ok` 必须是严格布尔**，`"ok": 1` 这种伪造件同样会被真值判定当成成功，归属凭证在那条路上压根没执行），取消经 `start_new_session` + `os.killpg` 真杀进程组；⑯ 的能力探测不过（Windows 缺 `resource` 与进程组 kill）⇒ 执行点响亮拒绝，一次 handler 都不调、一个进程都不起。**它是墙，不是笼子**：挡住地址空间 / CPU 秒 / 文件大小 / 环境密钥 / 可杀性，另买到**带前置的**进程数闸（`RLIMIT_NPROC`，上限 32 个**任务**——线程也算：实测 soft=8 时先起 7 个线程、fork 预算就归 0；只在 `TOOL_SANDBOX_SUBPROCESS_UID` 配了**独立且非 0** 的 uid 时落，共用父 uid 会被假拦或形同虚设，uid 0 因持 `CAP_SYS_RESOURCE` 被内核豁免 ⇒ 明确不落并告警一次），**仍没挡住**文件权限与出网（只读根、指定可写目录、出网默认拒绝三件属 ⑰/T3）。代价实测：单次调用 p50 **≈50ms**（容器本机 FS），同一条 handler 走 `in_process` 档 p50 **0.001ms**、`thread` 档 **0.074ms** ⇒ 默认档必须留在进程内。取证步骤与数字表见 subprocess 沙箱验证 Runbook）。T2 G14 的同名重复注册点名告警也在这层（无开关、默认打印；`TOOL_DUPLICATE_REGISTRATION_STRICT` 可选、默认关）。口径见 [运行时护栏 §15](docs/architecture/运行时护栏.md)、选型与被拒方案见 [项目实现手册 §23.8](docs/项目实现手册.md)、逐项实测见 [项目实现手册 §24](docs/项目实现手册.md)
 - **运行时写代码执行**（默认关）：模型在运行时**自己写 Python 代码**完成任务，而不是把每一步翻译成既有工具调用（`code-query` 意图 → `code_agent` 节点 → `code_execute` 工具 → `subprocess` 沙箱档）。失败语义分两层：**治理层**失败（沙箱档位不可用 / 风险被拒 / HITL 未批 / 参数非法）**终局**——重试换不来一个实现，不进自愈循环；**运行层**失败（退出码非零 / 超时）才把真实 stdout/stderr 回灌让模型改码，最多 `CODE_EXEC_MAX_ROUNDS` 轮**尝试（含首次执行）**，轮数用尽产出**含最后一次输出**的失败回执、不假装成功。**POSIX 专属**，且**不隔离文件系统与网络**。口径见 `docs/项目实现手册.md` 里 code exec 的配置段
 
 **`kb_ingest` 服务间鉴权**：该服务是**写入语义**（入库直接改 Milvus 集合），且 compose 以 `ports: 8100:8000` 发布、`uvicorn --host 0.0.0.0` 启动。现已于 **router 级**挂载 `X-API-Key` 校验（router 级而非逐端点，避免新端点静默裸奔）：
@@ -541,7 +541,7 @@ npx promptfoo@latest eval --ci --no-cache
 - **SLO 目录**：可用性 / 首 token P95 / 拒答正确率等 5 项 SLI + 错误预算 burn-rate 分级
 - **LangSmith tracing 看板（可选，默认关）**：langchain 1.x 栈下经环境变量零代码接入——`LANGCHAIN_TRACING_V2=true` + `LANGSMITH_API_KEY` + `LANGSMITH_PROJECT`（见 `.env.example`）后，LangGraph 编排与 LangChain runnable 调用链自动上报，先 10 条验证再全量。接入边界：自建 httpx 直调与 OTel/Prometheus 体系**不上报**；自建指标与轨迹落盘全保留（轨迹回归真源在本地），LangSmith 只接管看板与在线实验层。免费档 1 席 / 5000 traces / 月、轨迹保留 14 天，只接开发/评测流量，上报失败 fail-open（丢遥测不丢请求）。注册：[smith.langchain.com](https://smith.langchain.com) 拿 API Key 填入 `.env` 即可。
 
-详见 [SLO 目录](docs/runbooks/SLO目录.md) 与 [发布回滚 Runbook](docs/runbooks/发布与回滚.md)。
+详见 SLO 目录 与 发布回滚 Runbook。
 
 ---
 
@@ -672,7 +672,7 @@ docker compose --profile full up -d       # 基础设施 + backend + web（compo
 # 浏览器访问 http://localhost:8080 —— nginx 同源反代 /api → backend:8000（零跨域，SSE 已配）
 ```
 
-常见问题（端口占用 / 连接超时 / LLM 空返回等）见 [快速启动.md](docs/guides/快速启动.md)，技术细节见 [技术栈详解.md](docs/guides/技术栈详解.md)。
+常见问题（端口占用 / 连接超时 / LLM 空返回等）见 快速启动.md，技术细节见 技术栈详解.md。
 
 ---
 ## 11. 工程实践
@@ -689,9 +689,9 @@ docker compose --profile full up -d       # 基础设施 + backend + web（compo
 
 **前端套件当前验证值**：2026-10-23 运行 `npm run test -- --reporter=dot`，**26 个测试文件、223 个测试全部通过**（5.77s）。
 
-40 条 skip 均为显式声明：22 条 p125 的 POSIX 专属用例（Windows 上按设计跳过，由 Linux 容器真跑取证，见 [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md)）+ 4 条 p131 的 POSIX 专属用例（code exec 在墙内真跑一段代码 / 非零退出如实上报 / 超时被杀且秒级返回 / 墙被杀时孙进程随之被杀（`PR_SET_PDEATHSIG`）——最后那条在 Windows 上是**按设计跳过**：口径 §5 写明这条承诺只在 Linux 成立（macOS 没有 `prctl`），它测的不是"这台机器测不了"，而是"这个平台兑现不了那条承诺"；4 条的跳过理由都取自与执行点同源的能力探测，第 4 条取自 `parent_death_signal_supported()`）+ 4 条集成/端到端用例（2 条需 `LEGELBOT_RUN_INTEGRATION_TESTS=1`，2 条 LightRAG 端到端需 `LEGELBOT_RUN_LIGHTRAG_E2E=1`）+ 10 条 Redis Stream 契约用例（本机无 Redis 服务时按设计诚实跳过，`RedisStreamEventBus` 懒连接、连接错误向上传播不伪造）。真图 HITL 进环 E2E（`test_p81` `TestRealGraphE2E`）在本地 Python 3.12.13 执行；CI Python 3.10 按设计跳过，**不存在无原因静默跳过**。
+40 条 skip 均为显式声明：22 条 p125 的 POSIX 专属用例（Windows 上按设计跳过，由 Linux 容器真跑取证，见 subprocess 沙箱取证）+ 4 条 p131 的 POSIX 专属用例（code exec 在墙内真跑一段代码 / 非零退出如实上报 / 超时被杀且秒级返回 / 墙被杀时孙进程随之被杀（`PR_SET_PDEATHSIG`）——最后那条在 Windows 上是**按设计跳过**：口径 §5 写明这条承诺只在 Linux 成立（macOS 没有 `prctl`），它测的不是"这台机器测不了"，而是"这个平台兑现不了那条承诺"；4 条的跳过理由都取自与执行点同源的能力探测，第 4 条取自 `parent_death_signal_supported()`）+ 4 条集成/端到端用例（2 条需 `LEGELBOT_RUN_INTEGRATION_TESTS=1`，2 条 LightRAG 端到端需 `LEGELBOT_RUN_LIGHTRAG_E2E=1`）+ 10 条 Redis Stream 契约用例（本机无 Redis 服务时按设计诚实跳过，`RedisStreamEventBus` 懒连接、连接错误向上传播不伪造）。真图 HITL 进环 E2E（`test_p81` `TestRealGraphE2E`）在本地 Python 3.12.13 执行；CI Python 3.10 按设计跳过，**不存在无原因静默跳过**。
 
-p131 共 39 条（本次真实采集，不是手抄：这条由 `tests/test_p131_code_exec.py::test_docs_declaring_this_files_case_count_match_the_live_collection` 现算再核，改用例就要同改 README / CHANGELOG / runbook / 项目实现手册 里这句短语，漏一处当场红）。这 4 条 skip 已由 **Linux 容器真跑取证**：root 与非 root 两轮各 **39 passed / 0 skipped**（`-rs` 一条 skip 都没打印 ⇒ 没有出现"墙自己的故障"类 skip），步骤与原始输出见 [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md) 第 3.5 步。
+p131 共 39 条（本次真实采集，不是手抄：这条由 `tests/test_p131_code_exec.py::test_docs_declaring_this_files_case_count_match_the_live_collection` 现算再核，改用例就要同改 README / CHANGELOG / runbook / 项目实现手册 里这句短语，漏一处当场红）。这 4 条 skip 已由 **Linux 容器真跑取证**：root 与非 root 两轮各 **39 passed / 0 skipped**（`-rs` 一条 skip 都没打印 ⇒ 没有出现"墙自己的故障"类 skip），步骤与原始输出见 subprocess 沙箱取证 第 3.5 步。
 
 本地统一使用 **Python 3.12.13 + 标准 venv `.venv`**；CI 仍按工作流配置验证受支持的 Python 版本，不需要本地维护多套环境。
 
@@ -849,38 +849,38 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 |---|---|
 | [实现细节手册](docs/项目实现手册.md) | **实现级细节**：共 25 章（§0–§24），按「一次请求怎么走 → 分层怎么落地 → 各子系统怎么实现」展开；按**符号**定位、不写行号。Word 图文版 `docs/My-Agentix项目说明书.docx`（含整体架构图）为 2026-10-22 快照，**以 md 为准** |
 | [架构总览](docs/architecture/README.md) | 一句话架构、五条设计原则、运行时架构图 |
-| [架构详解](docs/architecture/架构详解.md) | 设计特色、完整架构图、主图逐节点说明 |
+| 架构详解 | 设计特色、完整架构图、主图逐节点说明 |
 | [分层与依赖规则](docs/architecture/分层架构与依赖规则.md) | 各层职责、**4 条强制依赖规则**及其守卫 |
-| [Agent Core 五层架构](docs/architecture/AgentCore五层架构.md) | Harness / Capabilities / Application / Domain / Interfaces 运行时职责与端口映射 |
+| Agent Core 五层架构 | Harness / Capabilities / Application / Domain / Interfaces 运行时职责与端口映射 |
 | [接口契约](docs/architecture/接口与契约.md) | 端口 Protocol、Payload TypedDict、错误码四层分类 |
 | [扩展指南](docs/architecture/扩展机制.md) | 新增工具 / Provider / Agent 子图 / 领域适配 |
 | [运行时护栏](docs/architecture/运行时护栏.md) | 上下文隔离 · 控制平面 · 感知工具限量 · 人工审批 |
-| [请求执行图](docs/architecture/请求执行图与关键路径.md) | 请求链路与节点依赖 |
+| 请求执行图 | 请求链路与节点依赖 |
 | [配置管理](docs/architecture/配置管理.md) | 单一事实来源、特性开关回滚表 |
 | [架构决策记录](docs/architecture/adr/) | 分层与端口 / 注册表可插拔 / 声明式配置 |
-| [技术栈指南](docs/guides/技术栈详解.md) | 全量技术选型、版本与集成细节 |
-| [Quick Start 常见问题](docs/guides/快速启动.md) | 端口占用 / 连接超时 / LLM 空返回排查 |
-| [Agent 路由速查表](docs/guides/路由速查表.md) | 路由意图、出口节点、关键词兜底 |
-| [LightRAG 服务指南](docs/guides/LightRAG服务使用指南.md) | LightRAG 服务部署、检索模式与调试 |
-| [Research Agent Demo](docs/guides/研究型Agent演示.md) | Phase 13 离线主循环走查、组件映射与验收对照 |
-| [测试分层策略](docs/guides/测试分层策略.md) | 五层测试体系、marker 约定、改动→测试对照表（测试总数见 §11） |
-| [数据准备](docs/guides/数据准备指南.md) | 三类数据文件、覆盖范围、真实数据填充指引 |
-| [发布与回滚 Runbook](docs/runbooks/发布与回滚.md) | 部署步骤、五层健康验收链、四级回滚 |
-| [SLO 目录](docs/runbooks/SLO目录.md) | 服务等级目标、错误预算、告警分级 |
-| [失败恢复 Runbook](docs/runbooks/失败恢复演练.md) | 四层失败恢复机制与现场演示命令 |
-| [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md) | ⑮/⑯ 在 Linux 容器里的资源闸、环境白名单、降权与延迟数字怎么复现 |
-| [变更记录](CHANGELOG.md) | 按版本记录功能、修复、迁移与验证口径；历史迁移文档已移除，当前结构以 [§3 架构](#3-架构) 为准 |
+| 技术栈指南 | 全量技术选型、版本与集成细节 |
+| Quick Start 常见问题 | 端口占用 / 连接超时 / LLM 空返回排查 |
+| Agent 路由速查表 | 路由意图、出口节点、关键词兜底 |
+| LightRAG 服务指南 | LightRAG 服务部署、检索模式与调试 |
+| Research Agent Demo | Phase 13 离线主循环走查、组件映射与验收对照 |
+| 测试分层策略 | 五层测试体系、marker 约定、改动→测试对照表（测试总数见 §11） |
+| 数据准备 | 三类数据文件、覆盖范围、真实数据填充指引 |
+| 发布与回滚 Runbook | 部署步骤、五层健康验收链、四级回滚 |
+| SLO 目录 | 服务等级目标、错误预算、告警分级 |
+| 失败恢复 Runbook | 四层失败恢复机制与现场演示命令 |
+| subprocess 沙箱取证 | ⑮/⑯ 在 Linux 容器里的资源闸、环境白名单、降权与延迟数字怎么复现 |
+| 变更记录 | 按版本记录功能、修复、迁移与验证口径；历史迁移文档已移除，当前结构以 [§3 架构](#3-架构) 为准 |
 | [已知限制清单](docs/已知限制.md) | §16 的逐条展开：沙箱 / 门禁 / 覆盖缺口 / 路由兜底 / `kb_ingest` 边界 |
-| [版本管理](docs/版本管理策略.md) | 版本号语义、发布分支与兼容策略 |
+| 版本管理 | 版本号语义、发布分支与兼容策略 |
 | [评测说明](evals/README.md) | 确定性打分、质量门禁、消融实验（评测集换代中；新题集为公开 MCQ，见其 §10） |
-| [OWASP LLM Top 10 自评](docs/security/大模型安全风险自评.md) | LLM01–LLM10 逐条：风险 → 现有缓解（含代码位置）→ 残余风险 |
+| OWASP LLM Top 10 自评 | LLM01–LLM10 逐条：风险 → 现有缓解（含代码位置）→ 残余风险 |
 
 ---
 
 ## 15. 性能与成本
 
 > ⚠️ **全栈服务口径（FastAPI + 基础设施容器 + Prometheus TTFT 直方图）仍为占位（`<待实测>`）**——
-> 采集方法见 [docs/runbooks/性能与成本采数.md](docs/runbooks/性能与成本采数.md)。
+> 采集方法见 docs/runbooks/性能与成本采数.md。
 > **当前检索质量口径是 §15.3**（STARD 公开集，1,543 题、精确 docid 金标）。
 > §15.1 与 §15.2 是 2026-10 的历史小样本留档：题集已停用、命中判定为 silver 文本匹配，
 > 其中的 Recall@5 / MRR 与 §15.3 不是同一个量，不作现状读数，也不参与任何门禁。
@@ -899,7 +899,7 @@ docker/                         观测栈（prometheus / alertmanager / grafana�
 `POST /api/v1/chat/stream` 同一条单轮通用问题（不查知识库）跑 18 次（两个后端进程合并计数：
 修复前的 8010 进程 15 次、修复后的 8011 进程 3 次；其中 1 次走的是下面②那条检索为空兜底路径），
 服务端 `agent_ttft_seconds` 合并 `count=18 / sum=36.84s` ⇒ **均值 2.047s**；直方图桶边界是
-`… 1.0 / 2.0 / 5.0 …`，所以 P50 只能落在 `[1,2)`、P95 只能落在 `[2,5)`（桶内插值得
+`… 1.0 / 2.0 / 5.0 …`，所以 P50 只能落在 `1,2)`、P95 只能落在 `[2,5)`（桶内插值得
 1.57s / 3.8s，精度受桶分辨率限制，n 再大也不会更准）。客户端逐帧观测：首内容帧
 1.78–2.51s，与服务端值互差 <0.3s；每条响应 **54–95 帧**（`metadata` → 52–93 × `message`
 → `done`），内容帧铺开 0.23–0.79s——**流式是真的在流**，不是整段一次性下发。
@@ -1004,7 +1004,7 @@ python evals/hybrid_eval.py --kb-id legal-recall-eval-20261011 --route kb-query 
 langchain-openai 0.2.14 / langchain-core 0.3.86`（**这是 2026-10-25 采数当日的读数**——
 LG-0-2 起 `.venv` 已迁到 `openai 2.54.0 / langchain-openai 1.7.3 / langchain-core 1.7.0`，
 重跑本节要按新指纹重新登记，不许沿用旧数字；另与
-[docs/runbooks/性能与成本采数.md](docs/runbooks/性能与成本采数.md)「宿主直跑」前置 ①
+[docs/runbooks/性能与成本采数.md「宿主直跑」前置 ①
 是同一条纪律）；路由的结构化输出走 `method="json_schema"`——那是脚本按能力探测为这套栈选的
 本地形态（见顶部口径 ②），不改生产默认。其余条件：RTX 5060 Laptop 8GB 上的 LM Studio
 （`qwen/qwen3-8b` + `text-embedding-bge-m3`）、SQLite、FAISS 索引（`doc_count=4,865`，语料
@@ -1321,7 +1321,7 @@ MRR 0.4761 → 0.6014；把 BM25 与 Dense 做 RRF 融合反而稀释语义信�
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发环境、**架构约束**、代码与提交规范、PR 流程 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 社区行为准则 |
 | [SECURITY.md](SECURITY.md) | 漏洞报告流程（请勿公开 Issue） |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
+| CHANGELOG.md | 版本变更记录 |
 
 ---
 

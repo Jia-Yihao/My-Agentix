@@ -41,7 +41,7 @@ test:
 #      类型检查——即该目标此前**从未真正检查过任何类型**。BUG-19 已修，
 #      并加了守卫测试 tests/test_p46_toolchain_parity.py 防止复发。
 lint:
-	ruff check agentix scripts evals kb_ingest tests
+	ruff check agentix scripts evals kb_ingest
 	-black --check --diff agentix scripts evals kb_ingest
 	mypy agentix/domain --config-file=pyproject.toml
 

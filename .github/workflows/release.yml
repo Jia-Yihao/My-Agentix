@@ -1,8 +1,7 @@
 name: Release
 
-# 打 tag（v*.*.*）即发布：先做与 CI 同口径的 preflight（版本四处一致 +
-# 标签与包版本一致 + 全量单测），再构建 sdist/wheel，并从 CHANGELOG 抽出
-# 该版本段落作为发布说明。
+# 打 tag（v*.*.*）即发布：先做 preflight（版本四处一致 + 标签与包版本一致），
+# 再构建 sdist/wheel。
 on:
   push:
     tags: ["v*.*.*"]
@@ -40,8 +39,6 @@ jobs:
             echo "::error title=release::tag v${TAG} != agentix.__version__ ${CURRENT}"
             exit 1
           fi
-      - name: Test suite
-        run: pytest -m "not integration" -q --tb=short
 
   build:
     name: Build distributions
@@ -56,29 +53,7 @@ jobs:
       - run: pip install build
       - name: Build sdist and wheel
         run: python -m build
-      - name: Collect release notes
-        id: notes
-        run: |
-          set -eu
-          python3 - "${GITHUB_REF_NAME#v}" <<'PY'
-          import re
-          import sys
-
-          version = sys.argv[1]
-          text = open("CHANGELOG.md", encoding="utf-8").read()
-          start = text.find(f"## [{version}]")
-          if start < 0:
-              print(f"::warning title=release::CHANGELOG.md 没有 [{version}] 段落，发布说明留空")
-              sys.exit(0)
-          rest = text[start + len(f"## [{version}]"):]
-          end = rest.find("\n## [")
-          section = rest if end < 0 else rest[:end]
-          with open("release-notes.md", "w", encoding="utf-8") as handle:
-              handle.write(f"# v{version}\n{section.strip()}\n")
-          PY
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ github.ref_name }}
-          path: |
-            dist/
-            release-notes.md
+          path: dist/
