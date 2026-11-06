@@ -642,6 +642,52 @@ class StardLab:
             out[qid] = [docs[i] for i in order] + docs[head_n:]
         return out
 
+    def hgbce_all_rank(
+        self,
+        qids_eval: list[int],
+        fit: list[int],
+        p: dict[str, Any],
+        url: str,
+        model_name: str,
+        cache_path: Path | None,
+    ) -> dict[int, list[str]]:
+        """Evaluate train queries out-of-fold and dev queries against all train labels."""
+        from sklearn.model_selection import KFold
+
+        train_qids = sorted(set(qids_eval).intersection(fit))
+        dev_qids = [qid for qid in qids_eval if qid in self.dev]
+        if set(train_qids) != set(fit) or set(qids_eval) != set(train_qids).union(dev_qids):
+            raise ValueError("split=all requires exactly the official train and dev queries")
+
+        fold_ids: dict[int, int] = {}
+        rankings: dict[int, list[str]] = {}
+        splitter = KFold(n_splits=3, shuffle=True, random_state=2026)
+        qid_array = np.asarray(train_qids, dtype=np.int64)
+        for fold, (fit_idx, eval_idx) in enumerate(splitter.split(qid_array), start=1):
+            fold_fit = qid_array[fit_idx].tolist()
+            fold_eval = qid_array[eval_idx].tolist()
+            rankings.update(
+                self.hgbce_rank(
+                    fold_eval, fold_fit, p, url, model_name, cache_path
+                )
+            )
+            fold_ids.update(dict.fromkeys(fold_eval, fold))
+
+        if dev_qids:
+            rankings.update(
+                self.hgbce_rank(dev_qids, train_qids, p, url, model_name, cache_path)
+            )
+        self._hgbce_evaluation_protocol = {
+            "train": "3-fold query-level out-of-fold evaluation",
+            "dev": "single evaluation trained on all official train queries",
+            "fold_seed": 2026,
+            "fold_sizes": {
+                str(fold): sum(value == fold for value in fold_ids.values())
+                for fold in (1, 2, 3)
+            },
+        }
+        return rankings
+
     def _qexp_embeddings(
         self,
         qids_eval: list[int],
@@ -1280,9 +1326,14 @@ def main() -> None:
         elif name == "cez":
             ranked = lab.cez_rank(qids_eval, fit, p, args.ce_url, args.ce_model, args.ce_cache)
         elif name == "hgbce":
-            ranked = lab.hgbce_rank(
-                qids_eval, fit, p, args.ce_url, args.ce_model, args.ce_cache
-            )
+            if args.split == "all":
+                ranked = lab.hgbce_all_rank(
+                    qids_eval, fit, p, args.ce_url, args.ce_model, args.ce_cache
+                )
+            else:
+                ranked = lab.hgbce_rank(
+                    qids_eval, fit, p, args.ce_url, args.ce_model, args.ce_cache
+                )
         else:  # pragma: no cover - parse_methods 已拦截
             raise SystemExit(name)
 
@@ -1302,6 +1353,8 @@ def main() -> None:
             "verify_all": _verify_metrics(pq),
             "seconds": round(time.perf_counter() - t0, 2),
         }
+        if name == "hgbce" and args.split == "all":
+            entry["evaluation_protocol"] = lab._hgbce_evaluation_protocol
         if name in ("ce", "ceblend", "cez", "hgbce") and lab._last_ce_seconds:
             secs = sorted(lab._last_ce_seconds)
             entry["ce_latency"] = {

@@ -180,7 +180,9 @@ make init-data      # 建运行时数据目录
 | 受控子集 8,000 | RRF(BM25+Dense, k=60) | 0.6591 | 0.7565 | 0.8247 | 0.5584 | 0.4994 | 0.6889 | 0.8315 |
 <!-- STARD_TABLE_END -->
 
-结论直接决定默认配置：口语咨询问法下 **Dense 单通道在 R@20 优于 BM25 与 RRF**（具体指标见上表）。默认 `KB_TOP_K=20`，并保持 Dense 单通道；混合检索与在线精排仍关闭，因为融合在 dev/all 的最优超参不一致，精排证据只覆盖小样本且延迟较高。带 query-memory 的离线实验在完整 dev 上表现更高，但依赖本地训练快照，不随仓库分发，暂不作为开箱默认。
+上表是 Dense、BM25 与普通 RRF 的基线对照，不代表当前离线最佳排序方案。在同一受控 8,000 文档子集上，train qrels 驱动的 HGB 候选重排器与 Cross-Encoder 融合目前是最佳离线方案：train 查询 3 折 OOF Recall@20 为 91.50%，官方 dev 盲测为 282/308（91.56%）。完整指标、训练/盲测口径和适用边界见[评测报告](docs/evals/stard-hgbce-summary.json)。
+
+此结果是依赖 STARD 标注数据的离线评测，不是通用生产模型。生产默认仍为 `KB_TOP_K=20`、Dense 召回；`RETRIEVAL_HYBRID_ENABLED=false`、`RETRIEVAL_DENSE_RERANK_ENABLED=false`，不自动加载 STARD qrels 或在线调用 Cross-Encoder。只有在目标知识库具备自己的标注/反馈、完成重训及延迟和分布外验证后，才应考虑启用类似融合方案。
 
 ```bash
 python evals/stard_eval.py --help            # 公开集评测
