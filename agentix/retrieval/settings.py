@@ -132,12 +132,13 @@ class _RetrievalSettingsCompat:
     CONTEXT_AUTHORITY_RANKING_ENABLED = _bool_env("CONTEXT_AUTHORITY_RANKING_ENABLED", "true")
     # 仅主链 RAG（query_knowledge_base）：本批片段确实经过精排时，跳过全局 authority
     # 重排，让 query-specific 的 CE 相关性顺序直接进入预算装配，避免高相关低档位
-    # 片段被预算挤掉。默认关 = 逐位等价。
+    # 片段被预算挤掉。精排没生效（关 / fail-open）时本开关不参与，行为不变。
     CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK = _bool_env(
-        "CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK", "false"
+        "CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK", "true"
     )
-    # Context Budget（token 级）：0 = 不限额（默认，行为不变）
-    CONTEXT_BUDGET_TOKENS = int(os.getenv("CONTEXT_BUDGET_TOKENS", "0"))
+    # Context Budget（token 级）：0 = 不限额。默认 4000 是 STARD 上选出的装配上限
+    # ——再大只是把低相关片段塞进窗口，Recall@20 不受装配影响（排序在装配之前定完）。
+    CONTEXT_BUDGET_TOKENS = int(os.getenv("CONTEXT_BUDGET_TOKENS", "4000"))
     # 放不下整段时按剩余预算的比例截断（留一点余量给分隔符与状态栏）
     CONTEXT_BUDGET_TRUNCATE_RATIO = float(
         os.getenv("CONTEXT_BUDGET_TRUNCATE_RATIO", str(DEFAULT_BUDGET_TRUNCATE_RATIO))
@@ -243,10 +244,9 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_RERANK_MAX_CANDIDATES = int(
         os.getenv("RETRIEVAL_RERANK_MAX_CANDIDATES", "50")
     )
-    # 精排后返回条数；默认回落 RERANK_TOP_N（.env=6）
-    RETRIEVAL_RERANK_TOP_N = int(
-        os.getenv("RETRIEVAL_RERANK_TOP_N", os.getenv("RERANK_TOP_N", "8"))
-    )
+    # 精排后返回条数。刻意不回落 RERANK_TOP_N：那是 kb_ingest 建库侧的值
+    # （.env 里是 6），两条链的 top_n 各自独立，共用会让主链被建库配置悄悄改小。
+    RETRIEVAL_RERANK_TOP_N = int(os.getenv("RETRIEVAL_RERANK_TOP_N", "20"))
     # 主链超时独立于 kb_ingest 的 RERANK_TIMEOUT=30：精排在关键路径上，3s 是上限
     RETRIEVAL_RERANK_TIMEOUT_SECONDS = float(
         os.getenv("RETRIEVAL_RERANK_TIMEOUT_SECONDS", "3")
@@ -276,9 +276,12 @@ class _RetrievalSettingsCompat:
         r"^(?:sk-)?x{3,}$|^your_.*|^changeme.*|^<.*>$",
     )
 
-    RETRIEVAL_FETCH_K_MULTIPLIER = int(os.getenv("RETRIEVAL_FETCH_K_MULTIPLIER", "20"))
+    # 带 filter / 有效性后过滤时的 fetch_k：倍数 8 与硬上限 600 是 STARD 上选的档位
+    # ——倍数 20 在 8,000 文档语料里等于接近全库扫描，延迟与收益不成比例；上限 600
+    # 用来兜住「语料变大后倍数跟着线性放大」这一类隐性成本。
+    RETRIEVAL_FETCH_K_MULTIPLIER = int(os.getenv("RETRIEVAL_FETCH_K_MULTIPLIER", "8"))
     RETRIEVAL_FETCH_K_MIN = int(os.getenv("RETRIEVAL_FETCH_K_MIN", "200"))
-    RETRIEVAL_MAX_FETCH_K = int(os.getenv("RETRIEVAL_MAX_FETCH_K", "0"))
+    RETRIEVAL_MAX_FETCH_K = int(os.getenv("RETRIEVAL_MAX_FETCH_K", "600"))
     RETRIEVAL_FETCH_K_ESCALATE = _bool_env("RETRIEVAL_FETCH_K_ESCALATE", "true")
     RETRIEVAL_FETCH_K_MAX_ESCALATIONS = int(os.getenv("RETRIEVAL_FETCH_K_MAX_ESCALATIONS", "2"))
 

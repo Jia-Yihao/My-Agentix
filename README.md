@@ -175,11 +175,11 @@ make init-data      # 建运行时数据目录
 | STARD 8,000 文档受控子集 | Dense + BM25/z-score (α=0.85) | 80 | 0.3757 | 0.5976 | 0.6899 | 0.7689 | 0.5972 | 0.5443 |
 <!-- STARD_TABLE_END -->
 
-默认检索为 Dense + BM25 原始分数 z-score 融合（Dense 权重 0.85、每通道候选深度 80、输出 Top-20）。融合之后还有两处质量闸与一处装配策略，都默认关闭、关闭时与上表逐位等价：
+默认检索为 Dense + BM25 原始分数 z-score 融合（Dense 权重 0.85、每通道候选深度 80、输出 Top-20），融合之后接三段可选处理。池深、预算、超时这些数值就是下面写的那一套，写在 `agentix/retrieval/settings.py` 里——克隆下来不配 `.env` 也跑调优档位；两个质量闸的总闸默认关，关掉时与上表逐位等价：
 
 - **交叉编码器精排**（`RETRIEVAL_RERANK_ENABLED`）：把融合池前 50 条交给交叉编码器重打分（本地参考实现用 bge-reranker-v2-m3），取前 20 条进回答。端点可以是按量计费的云端 text-rerank，也可以是自建的 `/v1/rerank` 服务——仓库附一个本地 CUDA 实现 `scripts/local_rerank_server.py`，输出 `sigmoid(logit)` 与云端 relevance_score 同量纲，`MIN_SCORE` 两边可直接互换。超时、协议异常、无凭据一律 fail-open 回融合原序：精排是加分项，不许把检索链打挂或打空。
-- **融合后分数闸**（`RETRIEVAL_FUSION_MIN_SCORE`）：仅在双通道真融合时按 z-score 下限裁掉尾部；裁空了回退 Top-1，不制造空答。单通道保留的是距离原分，量纲与方向都不同，这道闸对它一律不生效。
-- **预算对齐装配**（`CONTEXT_BUDGET_TOKENS`）：按 token 预算贪心装配，并把引用列表、命中片段与评测 contexts 一起收窄到真正进了 Prompt 的那几条，避免「引用一段模型没读过的文本」、faithfulness 拿全量片段评估。本批片段确实经过精排时，`CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK` 让查询相关的精排顺序直接进预算，不再被与问题无关的全局档位重排挤出窗口。
+- **融合后分数闸**（`RETRIEVAL_FUSION_MIN_SCORE`）：仅在双通道真融合时按 z-score 下限裁掉尾部；裁空了回退 Top-1，不制造空答。单通道保留的是距离原分，量纲与方向都不同，这道闸对它一律不生效。默认不设：同一套 qrels 上「关闸 + 池 50」与「开闸且池深按 z-score 压到 40 上下」的全量 Recall@20 差异不足千分之一，落在噪声内，出厂档位取更简单的那个。
+- **预算对齐装配**（`CONTEXT_BUDGET_TOKENS`）：按 token 预算贪心装配，并把引用列表、命中片段与评测 contexts 一起收窄到真正进了 Prompt 的那几条，避免「引用一段模型没读过的文本」、faithfulness 拿全量片段评估。本批片段确实经过精排时，`CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK` 让查询相关的精排顺序直接进预算，不再被与问题无关的全局档位重排挤出窗口；默认预算 4,000 token，`0` 表示不限额。
 
 精排的收益全在排序前端：dev 308 题上 Recall@20 抬高 1.7 个百分点、MRR 1.4 个、NDCG@5 1.7 个；全量 1,543 题复跑同向，三项分别 +3.0 / +2.9 / +2.5 个百分点。精排只重排不增召回——候选池里本来没有的文档仍然找不回来，所以收益随首发召回率见顶。验证集参数扫描与锁定后的 dev 结果、指标口径和复现方式见[评测说明](evals/README.md)。
 
