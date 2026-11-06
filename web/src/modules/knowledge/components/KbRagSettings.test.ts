@@ -15,7 +15,7 @@ vi.mock('../api/settings', () => ({
     chunk_strategy: 'auto',
     chunk_size: 500,
     chunk_overlap: 100,
-    search_k: 5,
+    search_k: 20,
     sparse_k: 10,
     dense_k: 10,
     fusion_k: 15,

@@ -1652,7 +1652,7 @@ class Settings(BaseSettings):
     )
 
     # Knowledge base retrieval
-    KB_TOP_K: int = 5
+    KB_TOP_K: int = Field(default=20, ge=1)
     KB_SIMILARITY_THRESHOLD: float = 0.2
     KB_CHUNK_SIZE: int = Field(
         default=512,

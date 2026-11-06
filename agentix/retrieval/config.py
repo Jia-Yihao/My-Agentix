@@ -20,7 +20,7 @@ def get_default_config() -> Dict[str, Any]:
     return {
         "chunk_size": 500,
         "chunk_overlap": 100,
-        "search_k": 5,
+        "search_k": settings.KB_TOP_K,
         "memory_window": 10,
         "temperature": 0.1,
         # LLM

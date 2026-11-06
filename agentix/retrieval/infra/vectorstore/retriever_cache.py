@@ -73,7 +73,7 @@ def _signature(index_path: str) -> Optional[tuple]:
         int(st.st_size),
         str(cfg.get("embedding_model") or ""),
         str(cfg.get("embedding_base_url") or ""),
-        int(cfg.get("search_k", 5) or 5),
+        int(cfg.get("search_k", settings.KB_TOP_K) or settings.KB_TOP_K),
     )
 
 

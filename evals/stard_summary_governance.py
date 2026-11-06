@@ -99,20 +99,19 @@ JUDGEMENT = "精确 docid（qrels），命中定义 = 至少一条相关法条�
 # 保证生成物、README、守卫三者同一措辞，不出现两份转述。
 CALIBER_NOTES: dict[str, str] = {
     "quality_dual_columns": (
-        "served_top5（默认链实际交付 5 条，MRR 受 search_k=5 截断，dev MRR 0.585877）"
-        "与 canonical_pool100（既有发布读数口径，dev MRR 0.601445）是两套不可互读的读数："
-        "R@5 / NDCG@5 两者逐位一致，MRR / R@10 因候选池深度不同而不同。"
+        "served_top_k（默认链实际交付 KB_TOP_K 条，MRR 受 search_k 截断）"
+        "与 canonical_pool100（既有发布读数口径）是两套不可互读的读数："
+        "recall@5 / recall@10 / recall@20 / NDCG@5 两者逐位一致，MRR 因候选池深度不同而可能不同。"
         "「既有数字不退步」的锚点统一用发布口径 dev R@5 0.7110 / MRR 0.6014 / "
-        "NDCG@5 0.5455 / 全量 R@5 0.7207；served_top5 另列，"
-        "禁止拿 0.585877 与 0.6014 比大小判定「退步」。"
+        "NDCG@5 0.5455 / 全量 R@5 0.7207；served_top_k 另列，不可把不同候选池深度下的 MRR 直接比较。"
     ),
     "rerank_noop_vs_online_ce": (
-        "latency.cold.layers.rerank p50 0.0009 ms 是 dense_rerank=false 下的 no-op 占位"
+        "latency.cold.layers.rerank 是 dense_rerank=false 下的 no-op 占位"
         "（rerank 上游调用 0 次），不是精排成本，也不代表开启后的开销。一旦开在线 Cross-Encoder，"
         "dev60 实测（由 CE 缓存离线重算的逐题 seconds，非在线真实调用墙钟、不得当线上 P95 对外报）："
         "cand=20 P50 2.8982 s / P95 3.9657 s，cand=50 P50 7.6754 s / P95 9.8348 s，"
-        "cand=100 P50 14.1469 s / P95 18.0275 s。默认关时的占位开销与开启后的真实量级必须并读，"
-        "不得由 0.0009 ms 推出「精排零成本」；cand=50/100 的 P95 远超任何合理预算，"
+        "cand=100 P50 14.1469 s / P95 18.0275 s。默认关时的 no-op 与开启后的真实量级必须并读，"
+        "不得由 no-op 占位推出「精排零成本」；cand=50/100 的 P95 远超任何合理预算，"
         "因此默认不启用在线 CE，只保留离线/可选形态。"
     ),
     "db_sql_post_batching": (
@@ -122,12 +121,20 @@ CALIBER_NOTES: dict[str, str] = {
         "见 docs/evals/stard-latency-probe-summary.json 的 probes.citation。"
     ),
 }
+RERANK_AB_DUAL_COLUMN_NOTE = (
+    "served_top5（精排 A/B 实际交付 5 条，MRR 受 search_k=5 截断，dev MRR 0.585877）"
+    "与 canonical_pool100（既有发布读数口径，dev MRR 0.601445）是两套不可互读的读数："
+    "R@5 / NDCG@5 两者逐位一致，MRR / R@10 因候选池深度不同而不同。"
+    "「既有数字不退步」的锚点统一用发布口径 dev R@5 0.7110 / MRR 0.6014 / "
+    "NDCG@5 0.5455 / 全量 R@5 0.7207；served_top5 另列，"
+    "禁止拿 0.585877 与 0.6014 比大小判定「退步」。"
+)
 
 # 基线六层里另外两处 no-op / 真实上游的说明，与 CALIBER_NOTES 同源。
 _LAYER_NOTES: dict[str, str] = {
     "rerank": CALIBER_NOTES["rerank_noop_vs_online_ce"],
     "embedding": (
-        "逐题真实 LM Studio /v1/embeddings 调用，cold 路径占六层总耗时约 95%；"
+        "实时 embedding 调用或预计算向量模式以 measurement_scope.real_upstream 为准；"
         "warm 命中缓存后不调用上游。"
     ),
     "fusion": (
@@ -160,7 +167,7 @@ REPRODUCE: dict[str, str] = {
     "stard-semantic-summary.json":
         ".venv/Scripts/python.exe evals/stard_eval.py --mode semantic --subset 8000 --write-summary docs/evals/stard-semantic-summary.json",
     "stard-runtime-default-baseline.json":
-        ".venv/Scripts/python.exe evals/runtime_default_baseline.py --split dev --write-summary docs/evals/stard-runtime-default-baseline.json",
+        ".venv/Scripts/python.exe evals/runtime_default_baseline.py --split dev --no-live-embedding --write-summary docs/evals/stard-runtime-default-baseline.json",
     "stard-ce-fusion-summary.json":
         ".venv/Scripts/python.exe evals/stard_ce_fusion.py --phase ce && .venv/Scripts/python.exe evals/stard_ce_fusion.py --phase report --write-summary docs/evals/stard-ce-fusion-summary.json",
     "stard-zfusion-mu-selection.json":
@@ -247,7 +254,7 @@ def _dual_column_note() -> dict[str, Any]:
     return {
         "canonical_pool100": "evals/stard_eval.py::evaluate 在完整候选池（pool=100）上的读数，既有发布口径",
         "served_top5": "只交付 top-5 的读数；MRR/R@10 受 search_k=5 截断，由 per_query 回算",
-        "not_interchangeable": CALIBER_NOTES["quality_dual_columns"],
+        "not_interchangeable": RERANK_AB_DUAL_COLUMN_NOTE,
         "rerank_forms": {
             "pure_ce_rank_override": "ce: 纯 CE 名次覆盖（已实测在 blend 上有害，不得与 z 融合混算）",
             "same_candidate_z_fusion": "ceblend: 同候选集 z(原分数) + mu*z(CE)，不覆盖名次",
@@ -373,8 +380,8 @@ def generate_table() -> str:
         "每个数字都可由 `docs/evals/stard-lexical-summary.json` 与 "
         "`docs/evals/stard-semantic-summary.json` 回算，手工改动会被守卫拦下。",
         "",
-        "| 语料 | 通道 | dev R@5 | dev R@10 | dev MRR | dev NDCG@5 | 全量 R@5 |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| 语料 | 通道 | dev R@5 | dev R@10 | dev R@20 | dev MRR | dev NDCG@5 | 全量 R@5 | 全量 R@20 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for corpus, channel, dev, all_m in rows:
         bold = channel.startswith("**")
@@ -385,7 +392,8 @@ def generate_table() -> str:
 
         lines.append(
             f"| {corpus} | {channel} | {fmt(dev['recall@5'])} | {fmt(dev['recall@10'])} | "
-            f"{fmt(dev['mrr'])} | {fmt(dev['ndcg@5'])} | {fmt(all_m['recall@5'])} |"
+            f"{fmt(dev['recall@20'])} | {fmt(dev['mrr'])} | {fmt(dev['ndcg@5'])} | "
+            f"{fmt(all_m['recall@5'])} | {fmt(all_m['recall@20'])} |"
         )
     lines.append(TABLE_END)
     return "\n".join(lines) + "\n"

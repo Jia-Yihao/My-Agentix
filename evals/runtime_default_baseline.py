@@ -6,11 +6,11 @@
     cache_read → embedding → vector_retrieval → fusion → rerank →
     citation_hydration → cache_write
 
-默认链路配置画像（从 ``agentix/retrieval/settings.py`` 运行时读值，不手写）：
+默认链路配置画像（从 ``agentix.config.settings`` 经兼容层运行时读值，不手写）：
 
     hybrid=false, sparse=false, dense_rerank=false, query_memory=false,
     semantic_cache=false, singleflight=false, adaptive=false,
-    candidate_pool = search_k = 5, fusion=none,
+    candidate_pool = search_k = KB_TOP_K, fusion=none,
     embedding_model=text-embedding-bge-m3,
     rerank_model=text-embedding-bge-reranker-v2-m3（未调用）
 
@@ -24,8 +24,8 @@
   缓存读写走真实 ``chat_service`` 序列化函数 + 进程内 dict（不含 Redis 网络 RTT）。
 - ``cold`` = 首次全 miss；``warm`` = 同键重放全命中。两趟都报，不合成一个数。
 - 质量指标用 ``evals.stard_eval.evaluate``（同一打分口径，不另写一份），
-  并同时报「served top-5」与「canonical pool=100」两套，避免 MRR 被 search_k=5 截断后
-  与既有发布读数 0.6014 误读。
+  并同时报默认链实际交付的 top-k 与「canonical pool=100」两套，避免不同候选池深度下的
+  MRR 被误读。
 
 用法（Git Bash 绝对路径风格）：
 
@@ -55,7 +55,7 @@ from evals.stard_summary_governance import annotate_runtime_default  # noqa: E40
 
 EMB_CACHE = DATA / "emb_8000_text-embedding-bge-m3.npz"
 EMBEDDING_URL = "http://127.0.0.1:1234/v1/embeddings"
-SEARCH_K = 5
+SEARCH_K = int(settings.KB_TOP_K)
 SEED = 42
 SUBSET = 8000
 
@@ -98,7 +98,7 @@ def _config_fingerprint() -> dict[str, Any]:
         "candidate_pool": SEARCH_K,
         "search_k": SEARCH_K,
         "fusion": "none (hybrid=false)",
-        "settings_source": "agentix/retrieval/settings.py (read at runtime)",
+        "settings_source": "agentix/config/settings.py via retrieval settings compatibility wrapper",
     }
     drift = {k: (fp[k], v) for k, v in EXPECTED_FLAGS.items() if fp[k] != v}
     if drift:
@@ -363,17 +363,17 @@ def _run_pass(
                 qvec = Q[qid].astype(np.float32)
             layers["embedding"].append(time.perf_counter() - t0)
 
-            # 3) 向量检索：8000x1024 点积 + top-k（默认 candidate_pool=search_k=5）
+            # 3) 向量检索：8000x1024 点积 + top-k（默认 candidate_pool=search_k=KB_TOP_K）
             t0 = time.perf_counter()
             sims = D @ qvec
-            top5 = _top_ids(sims, ids, SEARCH_K)
+            top_k_docs = _top_ids(sims, ids, SEARCH_K)
             rank100 = _top_ids(sims, ids, POOL)
             counters["vector_retrieval_calls"] += 1
             layers["vector_retrieval"].append(time.perf_counter() - t0)
 
             # 4) 融合：hybrid=false ⇒ 无融合算子，恒等通过（仍计入阶段耗时）
             t0 = time.perf_counter()
-            fused = list(top5)
+            fused = list(top_k_docs)
             layers["fusion"].append(time.perf_counter() - t0)
 
             # 5) rerank：dense_rerank=false 且 pool==search_k ⇒ 跳过（0 次上游调用）
@@ -429,6 +429,7 @@ def _quality(ranked: dict[int, list[str]], dev: dict, qids: list[int]) -> dict[s
     m = evaluate(ranked, dev, qids, k=5)
     return {
         "recall@5": m["recall@5"],
+        "recall@20": m["recall@20"],
         "mrr": m["mrr"],
         "ndcg@5": m["ndcg@5"],
         "recall@10": m["recall@10"],
@@ -463,7 +464,7 @@ def main() -> None:
         all_qids if args.split == "all" else qids_dev
     )
 
-    # 镜像只需覆盖本次评测 query 的候选文档（引用还原只会命中 served top-5）
+    # 镜像只需覆盖本次评测 query 的候选文档；引用还原只会命中 served top-k。
     mirror_doc_ids = list(
         dict.fromkeys(d for q in qids_eval for d in dense_rank_all[q])
     )
@@ -495,10 +496,10 @@ def main() -> None:
         live_embedding=False,
     )
 
-    # 质量：served top-5（默认链真实交付）与 canonical pool=100（既有发布口径锚点）
+    # 质量：served top-k（默认链真实交付）与 canonical pool=100（既有发布口径锚点）
     dev60_qids = qids_dev[:60]
     quality: dict[str, Any] = {
-        "served_top5": {
+        "served_top_k": {
             "dev": _quality(cold["served"], dev, qids_eval) if args.split != "all" else _quality(cold["served"], gold, qids_eval),
         },
         "canonical_pool100": {
@@ -508,7 +509,7 @@ def main() -> None:
         },
     }
     if args.split != "all":
-        quality["served_top5"]["dev60"] = _quality(
+        quality["served_top_k"]["dev60"] = _quality(
             {q: cold["served"][q] for q in qids_eval[:60]}, dev, qids_eval[:60]
         )
 
@@ -560,8 +561,8 @@ def main() -> None:
             "pool": POOL,
             "pool_note": (
                 "canonical_pool100 是既有发布读数的排序表口径（MRR 用候选池内首个命中位置）；"
-                "served_top5 是默认链实际交付的 5 条，其 MRR 受 search_k=5 截断，"
-                "不可与 0.6014 互读。R@5 / NDCG@5 两者逐位一致。"
+                f"served_top_k 是默认链实际交付的 {SEARCH_K} 条，其 MRR 受 search_k={SEARCH_K} 截断；"
+                "recall@5 / recall@10 / recall@20 / NDCG@5 与 canonical_pool100 一致。"
             ),
         },
         "measurement_scope": {
@@ -571,9 +572,14 @@ def main() -> None:
                 "真实 Redis 网络 RTT（进程内 dict + 真实 chat_service 序列化函数）",
                 "FastAPI 路由、LLM 生成、流式输出",
                 "线上 QPS / 并发（本基线为串行逐题）",
+                *([] if args.live_embedding else ["LM Studio 实时 embedding 上游调用与延迟"]),
             ],
             "real_upstream": [
-                "embedding：逐题真实 LM Studio /v1/embeddings 调用（带重试计数）",
+                (
+                    "embedding：逐题真实 LM Studio /v1/embeddings 调用（带重试计数）"
+                    if args.live_embedding
+                    else "embedding：复用本地预计算向量（--no-live-embedding），未调用 LM Studio"
+                ),
                 "引用还原：真实 document_repo.get_chunks_by_ids / get_document_file_metas + SQLite 真 SQL",
                 "缓存读写：真实 chat_service._serialize_docs_for_cache / _deserialize_docs_from_cache",
                 "向量检索：8000x1024 真实点积 + top-k（线上等价计算形态）",
@@ -618,12 +624,21 @@ def main() -> None:
         },
         "integrity": {
             "live_embedding_vs_cache_cosine": cold["cosine_live_vs_cache"],
-            "note": "实调向量与 .tmp/stard 缓存 query 向量的余弦，验证冷路径与质量口径同模型同文本",
+            "note": (
+                "实调向量与 .tmp/stard 缓存 query 向量的余弦，验证冷路径与质量口径同模型同文本"
+                if args.live_embedding
+                else "--no-live-embedding：未做实时向量余弦检查，评测质量直接使用本地预计算 query 向量"
+            ),
         },
     }
 
     # 三处口径风险说明由治理模块统一注入，harness 不另写一份转述
     annotate_runtime_default(report)
+    report["latency"]["cold"]["layer_notes"]["embedding"] = (
+        "逐题真实 LM Studio /v1/embeddings 调用（带重试计数）"
+        if args.live_embedding
+        else "本次使用本地预计算向量（--no-live-embedding），未测 LM Studio 上游延迟"
+    )
 
     # 与既有发布读数交叉锚定：canonical pool=100 必须逐位复算，防止基线漂移
     got_dev = quality["canonical_pool100"]["dev"]

@@ -48,7 +48,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "chunk_size": int(os.getenv("PDF_CHUNK_SIZE", "500")),
     "chunk_overlap": int(os.getenv("PDF_CHUNK_OVERLAP", "100")),
     # Retrieval
-    "search_k": int(os.getenv("SEARCH_K", "5")),
+    "search_k": int(os.getenv("SEARCH_K", str(app_settings.KB_TOP_K))),
     "sparse_k": int(os.getenv("SPARSE_K", "10")),
     "dense_k": int(os.getenv("DENSE_K", "10")),
     "fusion_k": int(os.getenv("FUSION_K", "15")),

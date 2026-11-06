@@ -172,15 +172,15 @@ make init-data      # 建运行时数据目录
 <!-- STARD_TABLE_START -->
 > 本表由 `evals/stard_summary_governance.py` 从两份进仓 JSON 自动生成；每个数字都可由 `docs/evals/stard-lexical-summary.json` 与 `docs/evals/stard-semantic-summary.json` 回算，手工改动会被守卫拦下。
 
-| 语料 | 通道 | dev R@5 | dev R@10 | dev MRR | dev NDCG@5 | 全量 R@5 |
-|---|---|---:|---:|---:|---:|---:|
-| 全库 55,348 | BM25 | 0.4708 | 0.5422 | 0.3942 | 0.3327 | 0.5217 |
-| 受控子集 8,000 | BM25 | 0.5812 | 0.6494 | 0.4761 | 0.4192 | 0.6060 |
-| 受控子集 8,000 | **Dense** | **0.7110** | **0.7760** | **0.6014** | **0.5455** | **0.7207** |
-| 受控子集 8,000 | RRF(BM25+Dense, k=60) | 0.6591 | 0.7565 | 0.5584 | 0.4994 | 0.6889 |
+| 语料 | 通道 | dev R@5 | dev R@10 | dev R@20 | dev MRR | dev NDCG@5 | 全量 R@5 | 全量 R@20 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 全库 55,348 | BM25 | 0.4708 | 0.5422 | 0.6071 | 0.3942 | 0.3327 | 0.5217 | 0.6436 |
+| 受控子集 8,000 | BM25 | 0.5812 | 0.6494 | 0.7240 | 0.4761 | 0.4192 | 0.6060 | 0.7492 |
+| 受控子集 8,000 | **Dense** | **0.7110** | **0.7760** | **0.8409** | **0.6014** | **0.5455** | **0.7207** | **0.8542** |
+| 受控子集 8,000 | RRF(BM25+Dense, k=60) | 0.6591 | 0.7565 | 0.8247 | 0.5584 | 0.4994 | 0.6889 | 0.8315 |
 <!-- STARD_TABLE_END -->
 
-结论直接决定默认配置：口语咨询问法下 **Dense 单通道召回高于 BM25**；词法查询改写、扩展、多查询融合不提升召回；把 BM25 用 RRF 并入 Dense 反而稀释语义信号。因此出厂默认是 Dense 单通道、混合总闸关闭；`RETRIEVAL_DENSE_RERANK_ENABLED` 可在不打开混合的情况下对放大的候选池做精排，精排服务不可用时按原召回顺序 fail-open。
+结论直接决定默认配置：口语咨询问法下 **Dense 单通道在 R@20 优于 BM25 与 RRF**（具体指标见上表）。默认 `KB_TOP_K=20`，并保持 Dense 单通道；混合检索与在线精排仍关闭，因为融合在 dev/all 的最优超参不一致，精排证据只覆盖小样本且延迟较高。带 query-memory 的离线实验在完整 dev 上表现更高，但依赖本地训练快照，不随仓库分发，暂不作为开箱默认。
 
 ```bash
 python evals/stard_eval.py --help            # 公开集评测
@@ -213,31 +213,40 @@ python evals/trajectory_regression.py --help # 轨迹前缀回归（-b 指向已
 ## 10. 项目结构
 
 ```text
-agentix/                   后端主包
-├── config/                Pydantic Settings（配置唯一真源）
-├── domain/                纯契约层，零第三方依赖
-├── orchestration/         主循环 / 执行器 / LangGraph 主图 / 多智能体策略
-├── policies/              planner · verifier · HITL · guardrails
-├── tools/                 工具唯一执行入口 + 网关三闸
-├── application/           业务规则与子图接线
-├── agent/                 上下文、记忆、事件、技能、钩子
-├── runtime/               运行状态 / 步骤 / 预算 / 生命周期 / 控制平面
-├── capabilities/          MCP 客户端与 stdio 服务端
-├── infrastructure/        DB / 缓存 / LLM / Checkpointer / Text2SQL
-├── interfaces/            HTTP 路由与中间件
-├── retrieval/             检索域（多租户知识库）
-├── observability/         指标 · span · 轨迹
-├── reliability/           限流 · 熔断 · 并发
-└── security/              JWT · 输出过滤 · 注入防护
-
-web/                       Vue 3 + TypeScript 前端
-kb_ingest/                 知识库入库独立服务
-evals/                     评测脚本、门禁与消融
-scripts/                   数据构建、迁移、运维与本地 Demo
-docs/                      架构、ADR、Runbook、实现手册
-data/                      领域数据（图谱种子与语料，由使用者填充）
-docker/                    观测栈与 compose 覆盖文件
-bench/                     检索与性能对比脚本
+My-Agentix/
+├── .github/                CI / 安全扫描 / Issue 与 PR 模板
+├── agentix/                后端平台内核
+│   ├── __init__.py
+│   ├── main.py             FastAPI 装配入口
+│   ├── config/             Pydantic Settings（配置唯一真源）
+│   ├── domain/             纯契约层，零第三方依赖
+│   ├── orchestration/      主循环 / LangGraph 主图 / 多智能体策略
+│   ├── policies/           planner · verifier · HITL · guardrails
+│   ├── tools/              工具唯一执行入口 + 网关三闸
+│   ├── application/        业务规则与子图接线
+│   ├── agent/              上下文、记忆、事件、技能、钩子
+│   ├── runtime/            运行状态 / 步骤 / 预算 / 生命周期 / 控制平面
+│   ├── capabilities/       MCP 客户端与 stdio 服务端
+│   ├── infrastructure/     DB / 缓存 / LLM / Checkpointer / Text2SQL
+│   ├── interfaces/         HTTP 路由与中间件
+│   ├── retrieval/          检索域（多租户知识库）
+│   ├── observability/      指标 · span · 轨迹
+│   ├── reliability/        限流 · 熔断 · 并发
+│   ├── security/           JWT · 输出过滤 · 注入防护
+│   ├── crawler/            语料抓取与导入
+│   └── performance/        性能与基准工具
+├── bench/                  检索与性能对比脚本
+├── data/                   领域数据（图谱种子与语料，由使用者填充）
+├── docs/                   架构、ADR、Runbook、实现手册
+├── docker/                 观测栈与 compose 覆盖文件
+├── evals/                  评测脚本、门禁与消融
+├── kb_ingest/              知识库入库独立服务
+├── scripts/                数据构建、迁移、运维与本地 Demo
+├── skills/                 仓库级 Agent 技能
+├── web/                    Vue 3 + TypeScript 前端
+├── .env.example            可配置环境变量示例
+├── pyproject.toml          Python 项目与工具配置
+└── README.md               项目说明
 ```
 
 ## 11. 技术栈

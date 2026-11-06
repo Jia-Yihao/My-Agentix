@@ -236,7 +236,7 @@ def build_retriever(index_path: str):
             collection_name=settings.QDRANT_COLLECTION,
         )
     vsm = create_vector_store(backend=backend, **options)
-    return vsm.get_retriever(k=cfg.get("search_k", 5)), vsm
+    return vsm.get_retriever(k=cfg.get("search_k", settings.KB_TOP_K)), vsm
 
 
 def retrieval_max_distance() -> float | None:
@@ -1807,7 +1807,7 @@ async def _stream_answer_events_impl(
         _stream_final_answer,
     )
     
-    search_k = int(get_default_config().get("search_k", 5) or 5)
+    search_k = int(get_default_config().get("search_k", settings.KB_TOP_K) or settings.KB_TOP_K)
 
     # --- 1. 准备：归属 / 会话 / scope / 用户消息 ---
     prepared = _prepare_conversation_and_scope(

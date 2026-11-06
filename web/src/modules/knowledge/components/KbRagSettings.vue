@@ -84,7 +84,7 @@ const form = reactive({
   llm_provider: 'openai-compatible', llm_base_url: '', llm_model: '',
   embedding_base_url: '', embedding_model: '', reranker_model: '',
   chunk_strategy: 'auto', chunk_size: 500, chunk_overlap: 100,
-  search_k: 5, sparse_k: 10, dense_k: 10, fusion_k: 15,
+  search_k: 20, sparse_k: 10, dense_k: 10, fusion_k: 15,
   reranker_type: 'embedding',
 })
 

@@ -175,7 +175,7 @@ class FAISSVectorStoreManager:
             raise ValueError("向量数据库未初始化，请先创建或加载")
         return self.vectorstore.as_retriever(
             search_type="similarity",
-            search_kwargs={"k": self.config.get("search_k", 5)},
+            search_kwargs={"k": self.config.get("search_k", settings.KB_TOP_K)},
         )
 
 
