@@ -21,8 +21,8 @@ class ErrorCode(str, Enum):
     # 上下文层
     CONTEXT_OVERFLOW = "context_overflow"
     # DEAD-CODE(P2-5)｜处置=保留·预留语义｜控制流层（2026-09 审计）：**预留**，
-    # 当前无产生点/消费点。与"死代码待删除"不同——本码出现在文档化的对外契约里
-    # （docs/architecture/接口与契约.md 的控制流层 → HTTP 500 映射表），
+    # 当前无产生点/消费点。与"死代码待删除"不同——本码属于文档化的对外契约面
+    # （控制流层 → HTTP 500 映射表），
     # 错误码属 API 面，删除是破坏性接口变更；"预留但暂未产生"本身不是缺陷。
     # 建议接线点：图执行的步数上限检查（尚未实现）。标注保留以备追溯。
     MAX_STEPS_EXCEEDED = "max_steps_exceeded"

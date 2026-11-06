@@ -1,6 +1,6 @@
 name: CI
 
-# 与 docs/项目实现手册.md §21.2 的作业清单对应；本地等价命令见 Makefile。
+# 本地等价命令见 Makefile。
 # 改这里的 lint 范围必须同步改 Makefile，否则两边量的是不同的东西。
 on:
   push:

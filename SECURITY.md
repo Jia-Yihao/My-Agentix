@@ -150,8 +150,8 @@ My Agentix 在架构层面内置了以下安全机制，便于你在部署与二
   `unshare` / namespace / seccomp 一律未接线，容器默认仍以 root 运行（`AGENTIX_CONTAINER_USER=0:0`）。
   所以口径是「**是墙，不是笼子**」：handler 崩了、把内存吃了、把环境密钥读了都出不了进程，但它想
   `open()` 一个 world-readable 的文件、或往外连一个 socket，这一档不管。若计划引入「执行用户提供
-  代码」的工具，⑮ 是**必要条件而非充分条件**，须先补 ⑰（路线见 [docs/项目实现手册.md](docs/项目实现手册.md)
-  §24.3 的 T2/T3 与 [ADR-0007](docs/architecture/adr/0007-执行沙箱端口.md) 的「未收口」清单）；
+  代码」的工具，⑮ 是**必要条件而非充分条件**，须先补 ⑰
+  （路线见 [ADR-0007](docs/architecture/adr/0007-执行沙箱端口.md) 的「未收口」清单）；
   取证步骤见 [subprocess 沙箱验证 Runbook](docs/runbooks/子进程沙箱取证.md)
 - **密钥掩码不等于授权**：设置接口对 `*_api_key` 等字段只写不读，但「谁能读写哪个 kb」
   由 `SETTINGS_AUTHZ_ENABLED` 决定且**默认关**——关着时任一已登录用户仍可读改任意

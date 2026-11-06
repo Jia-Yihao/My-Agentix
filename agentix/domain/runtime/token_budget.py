@@ -1,6 +1,6 @@
 """Token 预算纯数据结构（M2-3 拆 `runtime → application` 边：规范位下沉 domain）。
 
-为什么放在 ``domain/runtime/``（口径：`docs/architecture/分层架构与依赖规则.md` §7.4）：
+为什么放在 ``domain/runtime/``（M2-3 拆边口径）：
 ``TokenBudget`` 是「纯逻辑、零 I/O」的预算值对象；``runtime/control_plane.py``
 的 ``AgentRun.budget`` 注解需要它，此前只能经 ``TYPE_CHECKING`` 引用
 application 模块——拆边后注解边指向 domain，Runtime 簇对 application 连

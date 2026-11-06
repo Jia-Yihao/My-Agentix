@@ -470,7 +470,7 @@ services:
     env_file:
       - .env
     environment:
-      # G12（docs/项目实现手册.md §24.2）：MySQL 连接串闸门。默认关 = 与加固前逐位等价；
+      # G12：MySQL 连接串闸门。默认关 = 与加固前逐位等价；
       # 开启后只接受 mysql[+driver] scheme + 必须有主机名，配置了白名单时再按主机收紧。
       KB_MYSQL_URL_GUARD: ${KB_MYSQL_URL_GUARD:-false}
       KB_MYSQL_ALLOWED_HOSTS: ${KB_MYSQL_ALLOWED_HOSTS:-}

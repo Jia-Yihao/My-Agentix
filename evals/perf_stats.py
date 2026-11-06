@@ -27,13 +27,43 @@ from __future__ import annotations
 
 from typing import Any, Optional, Sequence
 
-__all__ = ["nearest_rank_quantile", "QUANTILE_CONVENTION", "QUANTILE_SWITCH_DATE"]
+__all__ = [
+    "nearest_rank_quantile",
+    "floor_rank_quantile",
+    "QUANTILE_CONVENTION",
+    "QUANTILE_SWITCH_DATE",
+]
 
 #: 口径标识（写进报告/指纹，让读数自带"用哪把尺子量的"）
 QUANTILE_CONVENTION = "nearest-rank sorted[round(q*(n-1))]"
 
 #: 口径切换日期：此前的分位数读数与本函数不同尺，不可直接比较。
 QUANTILE_SWITCH_DATE = "2026-10-27"
+
+
+def floor_rank_quantile(values: Sequence[float], q: float) -> Optional[float]:
+    """下取整秩分位数：``sorted(values)[int(q * (n - 1))]``。
+
+    与 :func:`nearest_rank_quantile` 只差下标取整：本函数 ``int()`` 向下取整，
+    后者 ``round()`` 取最近秩。**新测量一律用 ``nearest_rank_quantile``。**
+
+    保留本函数的原因是可追溯性：``docs/evals/`` 下四份 STARD 生成物
+    （``stard-ce-fusion`` / ``stard-zfusion-mu-selection`` / ``stard-recall-lab`` /
+    ``stard-runtime-default-baseline``）的 P50/P95 是用本式量出来的，原始逐题秒数
+    没有进仓，改口径就等于让脚本与已发布读数对不上。生成物里都标了
+    ``p95_scope``，跨口径不可直接比较。
+
+    :param values: 样本（无序亦可）
+    :param q: 分位点，**0–1 的比例**
+    :return: 分位数；``values`` 为空时返回 ``None``
+    :raises ValueError: ``q`` 落在 0–1 之外
+    """
+    if not 0.0 <= q <= 1.0:
+        raise ValueError(f"q 必须是 0–1 的比例，收到 {q!r}——百分数（如 95）请先除以 100。")
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    return float(ordered[min(len(ordered) - 1, int(q * (len(ordered) - 1)))])
 
 
 def nearest_rank_quantile(

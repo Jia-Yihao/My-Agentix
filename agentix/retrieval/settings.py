@@ -107,8 +107,7 @@ class _RetrievalSettingsCompat:
 
     # M2-1 拆反向边：原先印在上面那两行（`SESSION_HTTPS_ONLY` 之后）的
     # `LOG_JSON_ENABLED` / `LOG_LEVEL` / `TRAJECTORY_DIR` 已删——它们是通用可观测性配置、
-    # 不属检索域，真源上提到 `agentix/config/settings.py`（口径见
-    # docs/architecture/分层架构与依赖规则.md §7.4）。这里刻意**不留第二份定义**：
+    # 不属检索域，真源上提到 `agentix/config/settings.py`。这里刻意**不留第二份定义**：
     # 留着就是同一个判定两个源（工程约定 6 ④，改一处漏一处必然漂移）。
     # 删后这三个键经 `_RetrievalSettingsCompat.__getattr__` 自动委托统一 settings
     # ⇒ 全仓任何 `from agentix.retrieval.settings import settings` 读它们仍然可用。
@@ -233,6 +232,12 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_RRF_K = int(os.getenv("RETRIEVAL_RRF_K", "60"))
     RETRIEVAL_FUSION_ALPHA = float(os.getenv("RETRIEVAL_FUSION_ALPHA", "0.5"))
     RETRIEVAL_FUSION_TOP_N = int(os.getenv("RETRIEVAL_FUSION_TOP_N", "200"))
+    # hybrid 两路 gather 的整体超时（秒）。开 RETRIEVAL_HYBRID_ENABLED 的前置条件：
+    # 一路慢/异常时掐掉可旁路的 sparse、保留 dense 再等一个窗口，绝不让整链挂死。
+    # 默认 5s；<=0 视为 5s（不允许"关掉超时"的表达方式）。
+    RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS = float(
+        os.getenv("RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS", "5")
+    )
     # R-P1-3：hybrid 链默认精排（只在总闸开时生效）；候选上限 → 截断 TopK
     RETRIEVAL_HYBRID_RERANK = _bool_env("RETRIEVAL_HYBRID_RERANK", "true")
     RETRIEVAL_RERANK_CANDIDATES = int(os.getenv("RETRIEVAL_RERANK_CANDIDATES", "20"))
@@ -259,6 +264,49 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_DENSE_RERANK_ENABLED = _bool_env(
         "RETRIEVAL_DENSE_RERANK_ENABLED", "false"
     )
+    # Dense 精排的分批 + 有界并发：候选池 > BATCH_SIZE 时切连续批次并发打上游，
+    # 全局按 relevance_score 降序融合（同分按原始下标升序，与 rerank.py T9 同口径）。
+    # 0 = 退回单次全候选调用（既有行为，逐位等价）；并发上限避免把上游打穿。
+    # 超时统一走既有的 RERANKER_TIMEOUT_SECONDS（下方声明），不另开第二个超时源：
+    # 它既约束单批 HTTP 请求，也约束并发批次的整体墙钟；超时/异常一律 fail-open。
+    RETRIEVAL_DENSE_RERANK_BATCH_SIZE = int(
+        os.getenv("RETRIEVAL_DENSE_RERANK_BATCH_SIZE", "20")
+    )
+    RETRIEVAL_DENSE_RERANK_MAX_CONCURRENCY = int(
+        os.getenv("RETRIEVAL_DENSE_RERANK_MAX_CONCURRENCY", "2")
+    )
+
+    # Query 侧相关性记忆（STARD 实测：受控子集 dev R@5 0.7110 → 0.7760、
+    # MRR 0.6014 → 0.6692）。离线从「历史问法 + qrels + 文档向量快照」构建 npz，
+    # 在线用 q-q 近邻投票 + 向量级 Rocchio 重排放大后的 dense 候选池。
+    # 默认关 ⇒ flag-off 与既有 Dense 单通道逐位等价；开启时缓存池加 |q1 后缀。
+    # 服务/记忆文件缺失或异常一律 fail-open 保留原召回顺序（与 dense_rerank 同口径）。
+    RETRIEVAL_QUERY_MEMORY_ENABLED = _bool_env(
+        "RETRIEVAL_QUERY_MEMORY_ENABLED", "false"
+    )
+    RETRIEVAL_QUERY_MEMORY_PATH = os.getenv("RETRIEVAL_QUERY_MEMORY_PATH", "").strip()
+    RETRIEVAL_QUERY_MEMORY_CANDIDATES = int(
+        os.getenv("RETRIEVAL_QUERY_MEMORY_CANDIDATES", "100")
+    )
+    RETRIEVAL_QUERY_MEMORY_WD = float(os.getenv("RETRIEVAL_QUERY_MEMORY_WD", "0.3"))
+    RETRIEVAL_QUERY_MEMORY_WR = float(os.getenv("RETRIEVAL_QUERY_MEMORY_WR", "1.0"))
+    RETRIEVAL_QUERY_MEMORY_WK = float(os.getenv("RETRIEVAL_QUERY_MEMORY_WK", "0.1"))
+    RETRIEVAL_QUERY_MEMORY_ROC_K = int(os.getenv("RETRIEVAL_QUERY_MEMORY_ROC_K", "10"))
+    RETRIEVAL_QUERY_MEMORY_ROC_BETA = float(
+        os.getenv("RETRIEVAL_QUERY_MEMORY_ROC_BETA", "1.0")
+    )
+    RETRIEVAL_QUERY_MEMORY_ROC_POWER = float(
+        os.getenv("RETRIEVAL_QUERY_MEMORY_ROC_POWER", "2.0")
+    )
+    RETRIEVAL_QUERY_MEMORY_KNN_K = int(os.getenv("RETRIEVAL_QUERY_MEMORY_KNN_K", "20"))
+    RETRIEVAL_QUERY_MEMORY_KNN_POWER = float(
+        os.getenv("RETRIEVAL_QUERY_MEMORY_KNN_POWER", "4.0")
+    )
+
+    # 候选池内 z(记忆融合分) + μ·z(Cross-Encoder) 的二次融合（ceblend）。
+    # 需同时开启 QUERY_MEMORY + DENSE_RERANK；默认关 ⇒ 行为不变。
+    RETRIEVAL_CE_FUSION_ENABLED = _bool_env("RETRIEVAL_CE_FUSION_ENABLED", "false")
+    RETRIEVAL_CE_FUSION_MU = float(os.getenv("RETRIEVAL_CE_FUSION_MU", "0.25"))
 
     # 检索优化三闸 + 精排动态
     # 跳过，全部默认关 ⇒ flag-off 与基线逐位等价（检索域 env 键沿既有惯例
@@ -269,7 +317,7 @@ class _RetrievalSettingsCompat:
     RETRIEVAL_CASCADE_MIN_SCORE = float(os.getenv("RETRIEVAL_CASCADE_MIN_SCORE", "0"))
     RERANK_DYNAMIC_SKIP_ENABLED = _bool_env("RERANK_DYNAMIC_SKIP_ENABLED", "false")
 
-    # R-P3（README §15.2 口径③ 实测）：进程内检索器缓存——消灭「每次检索都
+    # R-P3（docs/已知限制.md 实测口径）：进程内检索器缓存——消灭「每次检索都
     # 重建 embedding 客户端 + 反序列化 FAISS 索引」。默认关 ⇒ 与接线前逐位等价
     # （每次照旧直调 build_retriever）；开启后按
     # backend|index_path|index.faiss(mtime_ns,size)|embedding model+base_url|k 组键，

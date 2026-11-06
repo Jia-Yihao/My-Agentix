@@ -2,7 +2,7 @@
 
 ## 这个文件为什么存在
 
-`docs/architecture/分层架构与依赖规则.md` §7.5 的修法是三步：①`orchestration` 侧定义
+拆边修法分三步：①`orchestration` 侧定义
 节点注册协议（M3-1，`agentix/orchestration/node_registry.py`）②`application` 装配期
 注册全部 handler（**本文件**）③建图/分派文件只接收注册表、不再顶层 import 具体 handler
 （M3-2 起的拆边批次）。第②步的落点必须只有这一个文件：哪些名字、什么形态进入注册表，

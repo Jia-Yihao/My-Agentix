@@ -278,7 +278,7 @@ def test_backend(*, base_url: str, include_destructive: bool) -> List[CheckResul
                     "session_id": sessions_id,
                     "message_type": "user_query",
                     "content": "Probe message",
-                    "message_metadata": {"source": "scripts/test/test_all_endpoints.py"},
+                    "message_metadata": {"source": "scripts/manual/test_all_endpoints.py"},
                     "order_index": 1,
                 },
             )

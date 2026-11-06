@@ -2,7 +2,7 @@
 
 ## 这个文件为什么存在
 
-`docs/architecture/分层架构与依赖规则.md` §7.5 的修法是三步：①在 `orchestration`
+拆边修法分三步：①在 `orchestration`
 侧定义节点注册协议 ②`application` 装配期注册全部 handler ③建图/分派文件只接收注册表、
 不再顶层 import 具体 handler。本文件只做第 ① 步——**协议与判据源**，不拆任何一条
 现存 import（拆边属后续批次 M3-2…），因此本批对生产链路零影响：没有任何调用点读它。

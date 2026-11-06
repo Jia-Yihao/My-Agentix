@@ -393,7 +393,7 @@ def _retrieval_embedding_client_measure(
     同一个生产函数。计时只包这一次调用；分位数由 ``bench.aggregate`` 池化。
 
     caveat（与结果文件 ``notes`` 同文）：构造期开销随 SDK/httpx/证书栈变化大
-    （README §15.2 记过两套栈的构造量级差），读数只对本指纹环境成立；不含任何
+    （docs/已知限制.md 记过两套栈的构造量级差），读数只对本指纹环境成立；不含任何
     嵌入请求；milvus/qdrant 的 ``_get_embeddings`` 调用时机不同（惰性），
     **不得**把本读数直接读成它们的每请求代价。
     """

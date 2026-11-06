@@ -393,3 +393,7 @@ bench/results/
 
 # 测试套件不随仓库发布（仅本地验证用）
 /tests/
+
+# 运行时哨兵与跑批产物不入库
+kb_ingest/data/.*_ingested
+evals/reports/

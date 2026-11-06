@@ -217,7 +217,9 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
         if not docs:
             return INSUFFICIENT_RETRIEVAL_MSG
 
-        ctx.last_citations = get_citations_from_docs(docs, ctx.session)
+        ctx.last_citations = await asyncio.to_thread(
+            get_citations_from_docs, docs, ctx.session
+        )
         ctx.last_hit_chunks = hit_chunks_from_docs(docs)
         ctx.last_contexts = [d.page_content for d in docs]
 
@@ -373,7 +375,9 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
         if not docs:
             return f"未找到与「{kw}」相关的文档片段。"
 
-        ctx.last_citations = get_citations_from_docs(docs, ctx.session)
+        ctx.last_citations = await asyncio.to_thread(
+            get_citations_from_docs, docs, ctx.session
+        )
         ctx.last_hit_chunks = hit_chunks_from_docs(docs)
         ctx.last_contexts = [d.page_content for d in docs]
 

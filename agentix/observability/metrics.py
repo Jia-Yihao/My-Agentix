@@ -389,7 +389,7 @@ try:
 
     # T6（approval-recovery-optimization）：拆开 TTFT 混采——走过 Model Gateway
     # 兜底链的流，其首内容帧样本进本指标，不再混进主口径。选「独立指标」而非
-    # 「加 label」：主直方图定义与记录点逐字不动（README §15 PromQL、p92 断言、
+    # 「加 label」：主直方图定义与记录点逐字不动（README §8 PromQL、p92 断言、
     # 历史桶全保住），且零新增 label（约定 3，p100 白名单无需扩容）。
     # 桶边界**逐字复制**主直方图：Q2 未决不细分，两口径同分辨率才可互比。
     TTFT_LATENCY_FALLBACK = Histogram(

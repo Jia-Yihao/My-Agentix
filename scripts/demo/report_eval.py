@@ -1,4 +1,4 @@
-"""把 README §15.2 的发布数字**生成**出来，而不是手抄（工程约定 7 同一口径）。
+"""把 minimal-slice 的发布数字**生成**进仓汇总（docs/evals/minimal-slice-summary.json），而不是手抄（工程约定 7 同一口径）。
 
 两种用途，两条互不相同的校验边：
 1. 有本地产物时：``--eval <json> --corpus <txt> --write-summary <json>``
@@ -7,7 +7,7 @@
 2. 在 CI / 无产物时：``--summary <json> --check README.md``
    —— 只比对「进仓汇总 JSON ↔ README」，不依赖被 gitignore 的 data/demo/。
 
-口径（与 README §15.2 逐条对应，改这里必须同步改 README 口径段）：
+口径（与进仓汇总逐条对应，改这里必须同步重跑生成器）：
 - 分位数是**最近邻秩** ``sorted[round(q*(n-1))]``（n=23 时 P95 = 第 22 小）；
   实现只有**一个源**：``evals/perf_stats.nearest_rank_quantile``（2026-10-27 口径统一，
   此前与本文件并存的线性插值等其它尺子已废止 ⇒ 跨该日期的分位数读数不可直接比）；
@@ -51,7 +51,7 @@ def _pct(values: Sequence[float], q: float) -> float:
     """最近邻秩分位——**委托**全仓唯一实现 ``evals/perf_stats.py``（T2 口径统一）。
 
     本函数只是转发 + 本脚本自己的空样本立场：这里没有"空样本 = 0.0"那种兜底，
-    因为把"没跑成"报成"很快"正是发布数字最不能犯的错（README §15.2 口径②）。
+    因为把"没跑成"报成"很快"正是发布数字最不能犯的错（本文件口径②）。
     """
     value = nearest_rank_quantile(values, q)
     if value is None:
@@ -234,7 +234,7 @@ def published_strings(metrics: Dict[str, Any], kind: str = "e2e") -> List[Tuple[
 
 
 def render_table(metrics: Dict[str, Any], kind: str = "e2e") -> str:
-    """Markdown 表体（README §15.2 的主表行；口径段仍由人写，不在这里生成）。"""
+    """Markdown 表体（汇总数字的人读呈现；口径段仍由人写，不在这里生成）。"""
     lines = ["| 指标 | 数值 |", "|---|---|"]
     for label, value in published_strings(metrics, kind):
         lines.append(f"| {label} | {value} |")
@@ -304,7 +304,7 @@ def _build_summary(args: argparse.Namespace) -> Dict[str, Any]:
         "generator": "scripts/demo/report_eval.py",
         "kind": kind,
         "generated_for": getattr(args, "generated_for", None)
-        or "README §15.2（最小切片端到端小样本）",
+        or "minimal-slice 端到端小样本（指针：evals/README §11）",
         "source_eval": str(args.eval),
         "source_eval_sha256": _sha256(Path(args.eval)),
         "corpus_sha256": _sha256(Path(args.corpus)) if args.corpus else None,
@@ -343,7 +343,7 @@ def _verify(target: Path, published: Sequence[Tuple[str, str]]) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="生成 / 校验 README §15.2 的发布数字")
+    parser = argparse.ArgumentParser(description="生成 / 校验 minimal-slice 的进仓汇总数字")
     parser.add_argument("--eval", help="逐题明细 JSON（本地产物，data/demo/ 已 gitignore）")
     parser.add_argument("--alt-eval", help="跨栈对照 JSON（可选）")
     parser.add_argument("--corpus", help="语料文件（用于推导覆盖缺口；可选）")
@@ -361,7 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--generated-for",
-        help="汇总 JSON 的用途标注（默认 README §15.2 端到端小样本）",
+        help="汇总 JSON 的用途标注（默认 minimal-slice 端到端小样本）",
     )
     args = parser.parse_args(argv)
 

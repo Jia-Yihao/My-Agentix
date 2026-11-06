@@ -1,6 +1,6 @@
 """进程内检索器缓存——消灭「每次检索都重建客户端 + 反序列化索引」。
 
-背景（README §15.2 口径③，2026-10-25 两套栈实测）：请求路径上的每次检索都会走
+背景（docs/已知限制.md「检索链路每请求重建 embedding 客户端」，两套栈实测）：请求路径上的每次检索都会走
 ``build_retriever → create_vector_store → FAISSVectorStore.load()``，其中
 ``create_embeddings()`` 会新建一个 OpenAI 兼容客户端。实测这段构造在仓库登记的
 ``.venv`` 上是 16–24ms（首次 259ms），而在另一套 SDK 栈上是 2053–4025ms

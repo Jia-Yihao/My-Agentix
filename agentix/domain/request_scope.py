@@ -1,6 +1,6 @@
 """请求作用域纯类型（M2-2 拆 `tools → application` 边：规范位下沉 domain）。
 
-为什么放在 ``domain`` 层（口径：`docs/architecture/分层架构与依赖规则.md` §7.4）：
+为什么放在 ``domain`` 层（M2-2 拆边口径）：
 ``RequestScope`` 是「纯 ContextVar 存一个可变对象」，与 ``domain/tracing.py``
 的 ``trace_id_var`` 同构；能力层（``tools/gateway/executor.py``）与
 ``reliability`` 只**读**它即可拿到 run deadline，不必反向 import application。

@@ -2,7 +2,7 @@
 
 感谢你愿意为 **My Agentix** 做出贡献！本文档说明本项目的开发流程、代码规范与提交约定，帮助你快速融入协作。
 
-> 阅读顺序建议：本文件 → [`docs/architecture/README.md`](docs/architecture/README.md)（架构总览）→ [`docs/architecture/扩展机制.md`](docs/architecture/扩展机制.md)（扩展机制）。
+> 阅读顺序建议：本文件 → [README](README.md)（项目总览与快速开始）→ [`docs/architecture/README.md`](docs/architecture/README.md)（架构总览）。
 
 ---
 
@@ -35,7 +35,7 @@
 |------|------|------|
 | 🐛 Bug 修复 | 修复缺陷，需附复现步骤与回归测试 | [Bug 报告模板](.github/ISSUE_TEMPLATE/bug_report.yml) |
 | ✨ 新功能 | 新增工具 / Agent / Provider / 领域适配 | [功能请求模板](.github/ISSUE_TEMPLATE/feature_request.yml) |
-| 🧩 新领域适配 | 把系统迁移到新垂直领域（中医药典、政务服务等） | [`docs/architecture/扩展机制.md`](docs/architecture/扩展机制.md) |
+| 🧩 新领域适配 | 把系统迁移到新垂直领域（中医药典、政务服务等） | 先开 Issue 讨论领域适配方案 |
 | 📖 文档 | 修正、补充、翻译文档 | 直接提 PR |
 | ⚡ 性能 | 延迟、吞吐、成本优化 | 需附前后对比数据 |
 | 🔒 安全 | 漏洞报告请走 [SECURITY.md](SECURITY.md)，**不要**开公开 Issue |
@@ -67,7 +67,7 @@ pre-commit run --all-files   # 首次全量检查
 
 完整目录树见 [README 的「项目结构」](README.md#10-项目结构)。改动前先确认要落的位置：`domain/` 只放纯契约（零第三方依赖），业务规则进 `application/`，实现 Domain 端口才进 `infrastructure/`。
 
-各层职责与四条强制依赖规则见 [`docs/architecture/分层架构与依赖规则.md`](docs/architecture/分层架构与依赖规则.md)，由 AST 守卫在 CI 中强制。
+各层职责与四条强制依赖规则由 AST 守卫在 CI 中强制（`import-integrity` 作业），跨层引用会被直接拦下。
 
 ---
 
@@ -121,10 +121,9 @@ pytest tests/test_p17_domain_layer.py tests/test_p22_obs_scope.py -q
    都必须 `python scripts/gen_staging_matrix.py --check` 退出 0。不要用
    `docker compose config` 的渲染结果当基准——它会展开宿主机 `.env`（密钥进日志），
    而渲染值本身已被 `.env` 污染。
-8. **文档分层**：`README.md` 是唯一的现行总览，`docs/项目实现手册.md` 是实现细节手册，
-   `docs/runbooks/` 是操作动作。新增文档不复述 README 已声明的事实（架构分层、默认开关、
-   目录地图、测试基线、已知限制），只写指针；要补结构信息就改 README，要补实现细节就改
-   实现手册，要补操作就写 runbook。
+8. **文档分层**：`README.md` 是唯一的现行总览，`docs/runbooks/` 是操作动作。
+   新增文档不复述 README 已声明的事实（架构分层、默认开关、目录地图、测试基线、
+   已知限制），只写指针；要补结构信息就改 README，要补操作就写 runbook。
 
 ---
 
@@ -236,10 +235,10 @@ python -m pytest --cov=agentix --cov-report=term-missing
 
 | 我想… | 参考 |
 |-------|------|
-| 新增一个工具（Tool） | [`docs/architecture/扩展机制.md#新增工具`](docs/architecture/扩展机制.md) |
-| 新增一个 LLM / Embedding / Reranker Provider | [`docs/architecture/扩展机制.md#新增-provider`](docs/architecture/扩展机制.md) |
-| 新增一个 Agent 子图 / 节点 | [`docs/architecture/扩展机制.md#新增-agent-子图`](docs/architecture/扩展机制.md) |
-| 迁移到新垂直领域 | [`docs/architecture/扩展机制.md#新领域适配`](docs/architecture/扩展机制.md) |
+| 新增一个工具（Tool） | 参照 `agentix/domain/tool/spec.py` 与 `agentix/tools/` 现有工具实现 |
+| 新增一个 LLM / Embedding / Reranker Provider | 参照 `agentix/infrastructure/registry.py` 的注册表模式 |
+| 新增一个 Agent 子图 / 节点 | 参照 `agentix/orchestration/` 的单层主图与节点注册 |
+| 迁移到新垂直领域 | 先开 Issue 讨论领域适配方案 |
 | 新增配置项 | [`docs/architecture/配置管理.md`](docs/architecture/配置管理.md) |
 
 ---

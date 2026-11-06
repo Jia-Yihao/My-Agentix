@@ -53,6 +53,7 @@ My Agentix 是一套**领域无关的 Agent 平台内核**。它不是某个垂�
 - **统一的工具面**：所有工具经 Tool Gateway（权限 → 风险 → 超时 → 重试 → 轨迹），支持 MCP 远端工具与本机 stdio Server。
 - **真隔离的执行位置**：`ToolSpec.sandbox` 声明执行位置，`subprocess` 档一次调用一个进程 + 子进程侧 `RLIMIT_AS/CPU/FSIZE` + 环境白名单 + 可杀进程组；拿不到的档位**拒绝执行**，不静默退回进程内。
 - **多路检索**：BM25 / Dense / RRF 融合 / Cross-Encoder 精排 / 图谱 Cypher / Text2SQL / 社区摘要，缺一路有兜底，来源回填成引用。
+- **分层记忆**：user / knowledge / task 3 scope 的记忆写入与召回，写路径零 PII 留存，召回按 scope 过滤并按置信度排序。
 - **可评估的质量**：确定性打分（路由 / 引用 / 拒答 / 引用正确性 / must_contain / pass^k）、轨迹前缀回归、延迟基准与每日性能巡检。
 - **可观测的轨迹**：trace_id 全链路、步骤级轨迹落盘可回放、Prometheus 指标、OTel GenAI 语义 span。
 - **可扩展的边界**：AST 分层依赖守卫 + 架构守卫测试，跨层引用即失败；注册表可插拔，新增工具 / Provider / 子图不改调用链。
@@ -87,7 +88,7 @@ API / SSE / Run API（只做协议转换）
 | 基础设施 | 实现 Domain 端口：DB / 缓存 / LLM / Checkpointer | `agentix/infrastructure/` |
 | 接口 | HTTP 路由、请求响应模型、中间件 | `agentix/interfaces/` |
 
-依赖方向由 AST 守卫强制（`infrastructure` 不得 import `interfaces`，`domain` 零第三方依赖），规则见 [分层架构与依赖规则](docs/architecture/分层架构与依赖规则.md)。
+依赖方向由 AST 守卫强制：`infrastructure` 不得 import `interfaces`，`domain` 零第三方依赖，守卫在 CI 中阻断违规。
 
 ## 4. 快速开始
 
@@ -196,8 +197,6 @@ python evals/trajectory_regression.py --help # 轨迹前缀回归（-b 指向已
 - **追踪**：`trace_id` 中间件贯穿全链路，OTel GenAI 语义 span 记录 token 用量并按模型归属。
 - **健康**：`/health`、`/liveness`、`/readiness` 分工明确，readiness 覆盖依赖可用性。
 
-采集方法与成本口径见 [性能与成本采数](docs/runbooks/性能与成本采数.md)。
-
 ## 9. 安全
 
 | 面 | 措施 |
@@ -259,17 +258,12 @@ bench/                     检索与性能对比脚本
 
 | 文档 | 内容 |
 |---|---|
-| [实现细节手册](docs/项目实现手册.md) | 共 25 章（§0–§24），按「一次请求怎么走 → 分层怎么落地 → 各子系统怎么实现」展开，按符号定位 |
 | [架构总览](docs/architecture/README.md) | 设计原则与运行时架构图 |
-| [分层与依赖规则](docs/architecture/分层架构与依赖规则.md) | 各层职责、四条强制依赖规则及其实守卫 |
-| [接口与契约](docs/architecture/接口与契约.md) | 端口 Protocol、Payload TypedDict、错误码分类 |
-| [扩展指南](docs/architecture/扩展机制.md) | 新增工具 / Provider / Agent 子图 / 领域适配 |
 | [运行时护栏](docs/architecture/运行时护栏.md) | 上下文隔离、控制平面、工具限量、人工审批 |
 | [配置管理](docs/architecture/配置管理.md) | 配置真源与开关回滚表 |
 | [ADR-0007 执行沙箱端口](docs/architecture/adr/0007-执行沙箱端口.md) | 执行位置做成可声明端口的决策与残留 |
 | [预发环境与配置矩阵](docs/runbooks/预发环境与配置矩阵.md) | 环境差异清单、降权与授权收紧的切换步骤、发布前验收 |
 | [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md) | 资源闸、环境白名单、降权与延迟数字的复现方式 |
-| [性能与成本采数](docs/runbooks/性能与成本采数.md) | TTFT 直方图、token 计数器与成本的采集口径 |
 | [本体 Schema](docs/design/测试数据域-本体Schema.md) | Neo4j 节点 Label、关系类型与属性契约 |
 | [已知限制](docs/已知限制.md) | 沙箱、门禁、覆盖缺口、路由兜底与边界 |
 | [评测说明](evals/README.md) | 打分口径、质量门禁、消融实验 |

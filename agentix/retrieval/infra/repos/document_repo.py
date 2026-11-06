@@ -279,10 +279,6 @@ def has_any_chunk(session: Session, kb_id: str) -> bool:
 # -- M2.1: 等价数据访问方法（供 usecases 层替代 inline ORM） ------------------
 
 
-def get_chunk_by_id(session: Session, chunk_id: str) -> Chunk | None:
-    return session.get(Chunk, chunk_id)
-
-
 def get_kb_file_by_id(session: Session, kb_file_id: str) -> KbFile | None:
     return session.get(KbFile, kb_file_id)
 
@@ -332,49 +328,77 @@ def list_documents_by_kb_with_folder(session: Session, kb_id: str) -> list[Docum
     )
 
 
-def get_document_file_meta(session: Session, document_id: str | None) -> dict:
-    """
-    文档的文件级元信息（引用展示用）。
-
-    关联链路：Document.kb_file_id → KbFile.file_object_id → FileObject.size_bytes。
-    文档不存在、或任一级关联缺失时对应字段为 None（不抛异常，兼容历史数据）。
-
-    Returns:
-        {"document_title", "folder_path", "file_name", "file_size", "file_ext"}
-    """
-    meta = {
-        "document_title": None,
-        "folder_path": None,
-        "file_name": None,
-        "file_size": None,
-        "file_ext": None,
-    }
-    document = session.get(Document, document_id) if document_id else None
-    if not document:
-        return meta
-
-    meta["document_title"] = document.title
-    meta["folder_path"] = (document.folder_path or "").strip() or None
-
-    kb_file = session.get(KbFile, document.kb_file_id) if document.kb_file_id else None
-    file_name = ((kb_file.original_filename if kb_file else "") or "").strip()
-    if not file_name:
-        # 手动创建的文档没有 KbFile → 回退文档标题
-        file_name = (document.title or "").strip()
-    meta["file_name"] = file_name or None
-    meta["file_ext"] = _extract_file_ext(file_name)
-
-    if kb_file and kb_file.file_object_id:
-        file_object = session.get(FileObject, kb_file.file_object_id)
-        if file_object:
-            meta["file_size"] = file_object.size_bytes
-
-    return meta
-
-
 def _extract_file_ext(file_name: str) -> str | None:
     """取小写扩展名（不含点）；无扩展名返回 None。"""
     if not file_name or "." not in file_name:
         return None
     ext = file_name.rpartition(".")[2].strip().lower()
     return ext or None
+
+
+def _empty_file_meta() -> dict:
+    return {
+        "document_title": None,
+        "folder_path": None,
+        "file_name": None,
+        "file_size": None,
+        "file_ext": None,
+    }
+
+
+def get_chunks_by_ids(session: Session, chunk_ids: list[str]) -> dict[str, Chunk]:
+    """一次 IN 查询取回全部引用切片；空列表直接返回空字典。"""
+    unique = [str(x) for x in dict.fromkeys(chunk_ids) if x]
+    if not unique:
+        return {}
+    rows = list(session.exec(select(Chunk).where(Chunk.id.in_(unique))).all())
+    return {str(row.id): row for row in rows}
+
+
+def get_document_file_metas(session: Session, document_ids: list[str]) -> dict[str, dict]:
+    """按 document 聚合：3 次 IN 查询（Document / KbFile / FileObject）取回全部文件级元信息。
+
+    逐条口径与批量前一致，差别只在批量；未命中的 document_id
+    仍映射到全 None 的骨架，调用方无需二次判空。
+    """
+    unique = [str(x) for x in dict.fromkeys(document_ids) if x]
+    result = {doc_id: _empty_file_meta() for doc_id in unique}
+    if not unique:
+        return result
+
+    documents = {
+        str(d.id): d
+        for d in session.exec(select(Document).where(Document.id.in_(unique))).all()
+    }
+    kb_file_ids = [d.kb_file_id for d in documents.values() if d.kb_file_id]
+    kb_files: dict[str, KbFile] = {}
+    if kb_file_ids:
+        kb_files = {
+            str(f.id): f
+            for f in session.exec(select(KbFile).where(KbFile.id.in_(kb_file_ids))).all()
+        }
+    file_object_ids = [f.file_object_id for f in kb_files.values() if f.file_object_id]
+    file_objects: dict[str, FileObject] = {}
+    if file_object_ids:
+        file_objects = {
+            str(o.id): o
+            for o in session.exec(
+                select(FileObject).where(FileObject.id.in_(file_object_ids))
+            ).all()
+        }
+
+    for doc_id, document in documents.items():
+        meta = result[doc_id]
+        meta["document_title"] = document.title
+        meta["folder_path"] = (document.folder_path or "").strip() or None
+        kb_file = kb_files.get(str(document.kb_file_id)) if document.kb_file_id else None
+        file_name = ((kb_file.original_filename if kb_file else "") or "").strip()
+        if not file_name:
+            file_name = (document.title or "").strip()
+        meta["file_name"] = file_name or None
+        meta["file_ext"] = _extract_file_ext(file_name)
+        if kb_file and kb_file.file_object_id:
+            file_object = file_objects.get(str(kb_file.file_object_id))
+            if file_object:
+                meta["file_size"] = file_object.size_bytes
+    return result

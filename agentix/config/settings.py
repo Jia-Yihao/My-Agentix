@@ -237,8 +237,8 @@ class Settings(BaseSettings):
     )
 
     # 可观测性输出与落盘（M2-1 拆边：真源从 `agentix/retrieval/settings.py` 上提到此）。
-    # 这三个键是**通用配置**，不属于检索域；此前 observability 直读检索域 = 分层架构里的
-    # 反向边（口径与修法见 docs/architecture/分层架构与依赖规则.md §7.4）。
+    # 这三个键是**通用配置**，不属于检索域；此前 observability 直读检索域 = 分层里的
+    # 反向边（已由 M2-1 拆边修正）。
     # **取值语义逐位复刻旧实现**（纯结构重构，行为零变化）：
     # - `LOG_JSON_ENABLED` 旧实现是 retrieval 侧的 `_bool_env`，字符串只认 `1/true/yes`
     #   （先 `.lower()`），`on`/`y`/`t` 判 **False**；pydantic 原生 bool 解析认这三者为真

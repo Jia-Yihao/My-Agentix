@@ -180,9 +180,44 @@ async def retrieve_hybrid_docs(
             skipped=sparse_skipped or "disabled",
         )
     else:
-        (dense_docs, dense_stage), (sparse_pairs, sparse_stage) = await asyncio.gather(
-            dense_task, sparse_task
-        )
+        # 整体 timeout + return_exceptions=True：任一路慢/异常都不许把整链挂死。
+        # sparse 是可旁路通道，超时先掐它；dense 是主通道，再等一个同长窗口，
+        # 仍不返回才按空结果降级（下游 RRF 拿 dense 单路继续走）。
+        timeout = float(settings.RETRIEVAL_HYBRID_GATHER_TIMEOUT_SECONDS)
+        if timeout <= 0:
+            timeout = 5.0
+        gathered = asyncio.gather(dense_task, sparse_task, return_exceptions=True)
+        try:
+            dense_result, sparse_result = await asyncio.wait_for(
+                asyncio.shield(gathered), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            logger.warning("hybrid gather timed out after {:.1f}s; dropping sparse", timeout)
+            if not sparse_task.done():
+                sparse_task.cancel()
+            sparse_result = asyncio.TimeoutError("hybrid gather timeout")
+            try:
+                dense_result = await asyncio.wait_for(
+                    asyncio.shield(dense_task), timeout=timeout
+                )
+            except Exception as exc:  # noqa: BLE001 - dense 也挂了：按空结果降级
+                if not dense_task.done():
+                    dense_task.cancel()
+                dense_result = exc
+
+        if isinstance(dense_result, BaseException):
+            dense_docs, dense_stage = [], _stage(
+                "dense", 0.0, hits=0, skipped=f"error:{type(dense_result).__name__}"
+            )
+        else:
+            dense_docs, dense_stage = dense_result
+        if isinstance(sparse_result, BaseException):
+            sparse_pairs = []
+            sparse_stage = _stage(
+                "sparse", 0.0, hits=0, skipped=f"error:{type(sparse_result).__name__}"
+            )
+        else:
+            sparse_pairs, sparse_stage = sparse_result
     stages.extend((dense_stage, sparse_stage))
 
     # --- rrf / zscore 融合（R-P1-2） ---

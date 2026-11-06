@@ -27,7 +27,6 @@ from agentix.retrieval.usecases.chat_llm import ChatMode, create_chat_llm, resol
 from agentix.retrieval.usecases.chat_scope import count_documents_in_scope
 from agentix.retrieval.domain.models.chat import Conversation, Message
 from agentix.retrieval.domain.models.index import Answer, RetrievalRun
-from agentix.retrieval.infra.repos.document_repo import get_chunk_by_id, get_document_file_meta
 from agentix.retrieval.infra.repos.index_repo import get_active_index_artifact
 from agentix.retrieval.settings import settings
 from agentix.observability.spans import span
@@ -579,6 +578,9 @@ async def retrieve_scoped_docs_cached(
         # Dense 候选池精排改变了检索集合与顺序，独立分池
         if settings.RETRIEVAL_DENSE_RERANK_ENABLED:
             key += "|d1"
+        # Query 相关性记忆重排改变了检索集合与顺序，独立分池（与 |d1 不共池）
+        if settings.RETRIEVAL_QUERY_MEMORY_ENABLED:
+            key += "|q1"
         return key
 
     cache_key = ""
@@ -643,8 +645,14 @@ async def retrieve_scoped_docs_cached(
 
         async def _dense_miss() -> list:
             async with span("rag.retrieve", kb_id=kb_id) as _step:
+                memory_on = bool(settings.RETRIEVAL_QUERY_MEMORY_ENABLED)
+                dense_rerank_on = bool(settings.RETRIEVAL_DENSE_RERANK_ENABLED)
                 effective_k = search_k
-                if settings.RETRIEVAL_DENSE_RERANK_ENABLED:
+                if memory_on:
+                    effective_k = max(
+                        int(search_k), int(settings.RETRIEVAL_QUERY_MEMORY_CANDIDATES)
+                    )
+                if dense_rerank_on and not memory_on:
                     effective_k = max(
                         int(search_k), int(settings.RETRIEVAL_RERANK_CANDIDATES)
                     )
@@ -655,7 +663,17 @@ async def retrieve_scoped_docs_cached(
                     search_k=effective_k,
                     metadata_filter=metadata_filter,
                 )
-                if effective_k > search_k:
+                if effective_k > search_k and memory_on:
+                    # Query 记忆重排自带可选 CE 二次融合；两条重排链互斥，
+                    # 避免同一候选池被两次 Cross-Encoder 调用。
+                    from agentix.retrieval.usecases.query_memory_rerank import (
+                        rerank_docs_with_query_memory,
+                    )
+
+                    miss_docs = await rerank_docs_with_query_memory(
+                        question, miss_docs, search_k, vectorstore
+                    )
+                elif effective_k > search_k and dense_rerank_on:
                     from agentix.retrieval.usecases.dense_rerank import (
                         rerank_dense_candidates,
                     )
@@ -791,32 +809,48 @@ async def retrieve_scoped_docs_cached(
 
 
 def get_citations_from_docs(docs, session: Session) -> list[dict]:
-    """从检索结果构建引用信息（含文件级元信息，供前端悬浮卡片展示）"""
-    citations = []
-    for doc in docs:
-        chunk_id = doc.metadata.get("chunk_id")
-        document_id = doc.metadata.get("document_id")
-        chunk = get_chunk_by_id(session, chunk_id) if chunk_id else None
-        file_meta = get_document_file_meta(session, document_id)
+    """从检索结果构建引用信息（含文件级元信息，供前端悬浮卡片展示）。
 
-        source_name = doc.metadata.get("source", "")
+    按 document 聚合：一次 IN 查全部 chunk、三次 IN 查全部文件级元信息，
+    不再逐条 ``get_chunk_by_id`` + ``get_document_file_meta``（原本 2N 次查询）。
+    """
+    from agentix.retrieval.infra.repos.document_repo import (
+        _empty_file_meta,
+        get_chunks_by_ids,
+        get_document_file_metas,
+    )
+
+    metas = [dict(d.metadata or {}) for d in docs]
+    chunk_ids = [m.get("chunk_id") for m in metas if m.get("chunk_id")]
+    doc_ids = [m.get("document_id") for m in metas if m.get("document_id")]
+    chunks = get_chunks_by_ids(session, chunk_ids)
+    file_metas = get_document_file_metas(session, doc_ids)
+
+    from agentix.domain.policies.legal_effectiveness import effective_status_of
+
+    citations: list[dict] = []
+    for doc, meta in zip(docs, metas):
+        chunk_id = meta.get("chunk_id")
+        document_id = meta.get("document_id")
+        chunk = chunks.get(str(chunk_id)) if chunk_id else None
+        file_meta = file_metas.get(str(document_id), _empty_file_meta())
+
+        source_name = meta.get("source", "")
         if document_id and not source_name:
             source_name = file_meta["document_title"] or source_name
 
         snippet = doc.page_content[:200] + ("..." if len(doc.page_content) > 200 else "")
 
         # R2-2（指南 §2.2.7①）：sources 带 status（缺失 → in_force，供引用卡展示有效性状态）
-        from agentix.domain.policies.legal_effectiveness import effective_status_of
-
-        replaced = (doc.metadata or {}).get("replaced_by")
+        replaced = meta.get("replaced_by")
         citations.append(
             {
                 "chunk_id": chunk_id,
                 "document_id": document_id,
                 "source": source_name,
-                "page_no": chunk.page_no if chunk else doc.metadata.get("page"),
+                "page_no": chunk.page_no if chunk else meta.get("page"),
                 "snippet": snippet,
-                "effective_status": effective_status_of(doc.metadata or {}),
+                "effective_status": effective_status_of(meta or {}),
                 # 失效替代提示（前端 CitationPreviewCard 消费；无则 None）
                 "replaced_by": str(replaced) if replaced else None,
                 **file_meta,
@@ -1290,7 +1324,7 @@ def _ensure_kb_ready_or_reject(
 
     try:
         # R-P3：默认关 ⇒ 等价于 build_retriever；开启则复用进程内已构造实例
-        # （省掉每次预检检索的客户端重建 + FAISS 反序列化，README §15.2 口径③）。
+        # （省掉每次预检检索的客户端重建 + FAISS 反序列化，docs/已知限制.md 登记口径）。
         from agentix.retrieval.infra.vectorstore.retriever_cache import (
             get_or_build_retriever,
         )

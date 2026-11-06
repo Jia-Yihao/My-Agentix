@@ -9,7 +9,7 @@ A1c（统一执行链）：本模块自检索域的 ``agent_runs`` 路由模块
 **上移**至接口层——Run API 是协议转换（HTTP ↔ ControlPlane），按分层
 归属 ``interfaces``；路径从 ``/api/v1/retrieval/agents/runs`` 迁为
 ``/api/v1/agents/runs``（路由路径 ``/agents/runs`` 不变，仅去掉 retrieval
-挂载前缀），文档（README / 项目实现手册 / failure-recovery runbook）同步。
+挂载前缀），文档（README / failure-recovery runbook）同步。
 
 设计约束（遵守既有纪律）：
 - **运行态默认只在内存**（``ControlPlane`` 有界 FIFO）。T21 起可选落库
@@ -31,7 +31,7 @@ retrieval 域 ``get_current_user`` 的 User 行校验；Run API 不消费用户�
 ``AUTH_COOKIE_SESSION_FALLBACK`` 的会话 Cookie 回退**不适用**于本路由
 （接口层不依赖 persistence；需要 Cookie 的调用方改带 Bearer 头）。
 
-T20 客户端重试幂等（契约真源 ``docs/architecture/接口幂等契约.md``）：
+T20 客户端重试幂等（契约真源 ``tests/test_p143_run_idempotency.py``）：
 ``POST /agents/runs`` 支持 ``Idempotency-Key`` header，同键重放返 200 复用原
 run。**保证边界 = 进程存活期**（键存储只在内存，跨重启不保证——持久层属
 T21，不得超卖）。与审批侧「一次批准一次执行」（``agentix/tools/gateway/
@@ -76,7 +76,7 @@ MAX_TIMEOUT_S = 3600.0
 PERSIST_LIST_LIMIT = 200
 
 # ---------------------------------------------------------------------------
-# T20：Idempotency-Key 进程内键存储（契约：docs/architecture/接口幂等契约.md）
+# T20：Idempotency-Key 进程内键存储（契约：tests/test_p143_run_idempotency.py）
 # ---------------------------------------------------------------------------
 
 #: 幂等 header 名（对外契约字面量，不得改名）
@@ -342,7 +342,7 @@ async def api_create_agent_run(request: Request, body: AgentRunCreate):
     """派生一次 Agent 运行（任务级入口，Chatbot 会话语义之外）。
 
     可选 ``Idempotency-Key`` header（T20，契约见
-    ``docs/architecture/接口幂等契约.md``）：**无 header 时行为与现状
+    ``tests/test_p143_run_idempotency.py``）：**无 header 时行为与现状
     逐位等价**——不带键的执行序列与本改动之前逐语句一致，不加隐式键、
     不改响应体形状。同键重放（先后或并发）返 200 复用原 run_id，
     不二次执行副作用；键只在运行真正登记成功后占用（登记前失败不毒化键）。
@@ -391,8 +391,7 @@ async def api_create_agent_run(request: Request, body: AgentRunCreate):
             "task_preview": body.task[:200],
             "timeout_s": timeout_s,
         }
-        # T21：``meta.thread_id`` 是对外**响应体变更**（契约登记见
-        # docs/项目实现手册.md 的 Run API 段），只在落库面装配时出现——flag-off 的
+        # T21：``meta.thread_id`` 是对外**响应体变更**，只在落库面装配时出现——flag-off 的
         # 响应体与基线逐字节相同（约定 1）。取值 = ``options.session_id``（``chat``
         # 执行器的会话语义，也是图形的 checkpoint thread）；没有就**不写该键**，
         # 不拿空串占位（历史 run 回落时「没有线程」与「线程是空串」不该混为一谈）。

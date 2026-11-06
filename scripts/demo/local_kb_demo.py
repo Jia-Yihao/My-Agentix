@@ -24,7 +24,7 @@ README §10 的全栈路径要 8 个容器 + 远程 LLM，演示成本压不住�
 3. **开关保持出厂语义**：混合检索/精排的代码默认值是关，本脚本默认也跑
    dense 单通道；要看 BM25+RRF 得显式 ``--hybrid``（不静默改行为）。
 4. **口径不新造**：Recall@5/MRR 的匹配器直接复用
-   ``evals/hybrid_eval.doc_matches_gold`` 与 ``first_rank``——与 README §15.1
+   ``evals/hybrid_eval.doc_matches_gold`` 与 ``first_rank``——与 README §7
    那张表同一套解析器，避免第二套口径互相打架。
 
 用法
@@ -73,7 +73,7 @@ DEFAULT_TENANT = "demo-tenant"
 DEFAULT_EMBED_MODEL = "text-embedding-bge-m3"
 DEFAULT_CHAT_MODEL = "qwen/qwen3-8b"
 LMSTUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
-# README §15.1 记录的同源口径：该语料按「# 《X》第N条」切出 4,865 条数据条目。
+# 与 evals/README 登记的同源口径：该语料按「# 《X》第N条」切出 4,865 条数据条目。
 # 解析结果不等于它，就说明语料或解析任一侧漂了，指标不能与 §15.1 并排读。
 EXPECTED_CORPUS_ENTRIES = 4865
 
@@ -118,7 +118,7 @@ def parse_corpus(path: Path, limit: Optional[int] = None) -> List[Tuple[str, str
     语料里混着 3 行光秃秃的 ``#`` 分隔符，早期用 ``^#\\s*(.+)$`` 一类宽正则会把
     它们当成条目，于是条目数从 4,865 变成 4,868——多出的 3 条"文档"没有标题，
     内容还和邻条粘连，检索指标会跟着一起失真。逐行状态机 + 严格前缀，才能
-    复现 README §15.1 记录的 4,865 条口径。
+    复现 evals/README 登记的 4,865 条语料口径。
     """
     entries: List[Tuple[str, str]] = []
     title: Optional[str] = None
@@ -445,7 +445,7 @@ def _pick_local_structured_output() -> Tuple[str, Dict[str, Any]]:
 
 
 def _package_versions() -> str:
-    """本地环境指纹（打印给读者，也是 README §15.2 口径行的来源）。"""
+    """本地环境指纹（打印给读者，也是 docs/已知限制.md 登记读数的来源）。"""
     from importlib.metadata import PackageNotFoundError, version
 
     parts = [f"python {sys.version.split()[0]}"]
@@ -479,7 +479,7 @@ def _enable_local_llm_compatibility() -> List[str]:
        OpenAI 兼容 tool-calling，出厂形态本就通）。选中的组合与环境指纹一并打印。
     ② **路由超时余量**：router profile 出厂 ``timeout=10s``，本地 8B 单条分类实测
        Anaconda 栈 3.4–6.8s、``.venv`` + ``json_schema`` 10.6–19.2s（端到端减检索减生成的
-       残差口径，见 README §15.2），余量太薄会随机退化成兜底路由。演示进程抬到 60s。
+       残差口径，本机实测），余量太薄会随机退化成兜底路由。演示进程抬到 60s。
     """
     from dataclasses import replace
 

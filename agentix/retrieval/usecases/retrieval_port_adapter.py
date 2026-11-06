@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import contextmanager
 from typing import Any, Optional
@@ -110,7 +111,7 @@ class RetrievalPortAdapter:
                 try:
                     # R-P3：默认关 ⇒ 等价于 build_retriever；开启则复用进程内
                     # 已构造的 (retriever, vectorstore)，省掉每次检索的客户端
-                    # 重建 + FAISS 反序列化（README §15.2 口径③）。
+                    # 重建 + FAISS 反序列化（docs/已知限制.md 登记口径）。
                     _, vectorstore = get_or_build_retriever(artifact.index_path)
                 except FileNotFoundError:
                     return RetrievalResult(
@@ -147,7 +148,7 @@ class RetrievalPortAdapter:
                         status="empty", chunks=[], error=None
                     )
 
-                citations = get_citations_from_docs(docs, session)
+                citations = await asyncio.to_thread(get_citations_from_docs, docs, session)
                 chunks = self._build_chunks(docs, citations, kb_id, tenant_id)
                 return RetrievalResult(status="ok", chunks=chunks, error=None)
 

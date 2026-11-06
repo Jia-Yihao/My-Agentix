@@ -1832,8 +1832,8 @@ def _apply_local_llm_compatibility() -> List[str]:
 
     复用而不是另写一套：适配本体在 ``scripts/demo/local_kb_demo.py``
     （``_enable_local_llm_compatibility``）——结构化输出方式按能力探测选择、
-    router 角色超时抬到 60s，都是**本机实测**出来的形态差异（README §15.2 的
-    10.6–19.2s 路由残差就是那台机器的数字）。再抄一份就是第二套口径，
+    router 角色超时抬到 60s，都是**本机实测**出来的形态差异（10.6–19.2s
+    路由残差就是那台机器的实测数字）。再抄一份就是第二套口径，
     两边会各自漂移。
 
     按文件路径加载（``scripts`` 不是包，也不该进 ``sys.path``）。

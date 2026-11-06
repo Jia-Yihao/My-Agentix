@@ -91,7 +91,7 @@ def _percentile(samples: Sequence[float], p: float) -> float:
 
     本函数保留自己的两点局部立场：入参是 0–100 的百分数（对外报表口径），
     空样本返回 0.0（沿用本 runner 既有读数形态）。真正的定标算式不再自己写一份：
-    2026-10-27 之前本文件用的是 ``sorted[round(p/100*n)-1]``，与 README §15.2 的
+    2026-10-27 之前本文件用的是 ``sorted[round(p/100*n)-1]``，与 ``evals/perf_stats.py`` 的
     ``sorted[round(q*(n-1))]`` 是**两种秩**，小样本下 p50 会差一个位次 ⇒ 历史读数
     与新读数不可直接比，需要重录基线（``perf_gate.py --record``）。
     """

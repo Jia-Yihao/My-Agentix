@@ -44,8 +44,7 @@ def diff_spec_fields(kept: "ToolSpec", incoming: "ToolSpec") -> Tuple[str, ...]:
     **只报字段名，不返回值**：``description`` 可能是远端 MCP 塞进来的长文本
     （甚至含凭据形态的串），把内容搬进启动日志是另一类事故。这条判据放在
     domain 层，是为了让 executor 与 registry 两个注册入口读**同一份**「什么算
-    不同」——两份实现就是下一次「声明了什么 / 执行读到什么」各说一套的起点
-    （项目实现手册 §24.2 G14）。
+    不同」——两份实现就是下一次「声明了什么 / 执行读到什么」各说一套的起点（G14 判据）。
     """
     return tuple(
         item.name
