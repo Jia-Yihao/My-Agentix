@@ -726,8 +726,8 @@ def _load_golden(
 ) -> Tuple[List[Dict[str, Any]], int]:
     """按顺序拼接一个或多个 golden 文件（默认仍是唯一的 23 题基线）。
 
-    多文件是「只增不改」：基线 ``evals/legal_golden.jsonl`` 一个字节都不动，
-    扩样集另立 ``evals/legal_golden_ext.jsonl``，由 ``--golden`` 显式拼起来跑。
+    多文件是「只增不改」：基线题集一个字节都不动，
+    扩样集另立，由 ``--golden`` 显式拼起来跑。
     返回 ``(截断后的题, 截断前的合格题数)``——第二个值只用来提示 ``--limit`` 是否生效，
     避免"刚好等于 limit"时误报截断。
     """
@@ -1062,7 +1062,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help=(
-            "golden 文件（可多个，按序拼接）；不给则用 evals/legal_golden.jsonl——"
+            "golden 文件（可多个，按序拼接）；不给则用默认题集路径——"
             "该集已于 2026-10-26 随评测集下线删除，缺省文件不存在时本命令直接非零退出"
             "并列出当前可用题集（不新建题集、不改指默认）。"
             "多集拼接示例：--golden <基线集> <扩样集> --limit 50"

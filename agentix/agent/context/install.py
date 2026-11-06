@@ -1,6 +1,6 @@
 """组合根装配：把 ``read_agents_file`` 处理器装进全局 ToolExecutor（F1b2·M-P1-4）。
 
-职责切分（与 ``skills/install.py`` 同款）：
+职责切分（声明 / 实现 / 接线三段）：
 
 - **声明**（spec + LLM schema）在 ``agentix/tools/adapters/agents_file_read.py``，
   由 ``settings.AGENTS_CASCADE_ENABLED`` gate（flag-off 不进声明清单）；

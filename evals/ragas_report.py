@@ -2,7 +2,7 @@
 r"""Ragas 忠实度/相关性独立报告（P2-2，observe-only）。
 
 完全沿 `evals/hybrid_eval.py` 先例：独立脚本、报告键固定、**只增不进门禁**
-（绝不进 ci.yml 的 ``METRICS`` 五键元组与 ``evals/baselines/quality.json`` 门键），
+（绝不进 ci.yml 的 ``METRICS`` 五键元组与质量门基线的门键），
 缺环境 exit 2 诚实降级——不出假分数。
 
 为什么放 P2 且不进门禁：faithfulness 是**生成质量维度**（答案是否被证据
@@ -10,7 +10,7 @@ r"""Ragas 忠实度/相关性独立报告（P2-2，observe-only）。
 本报告只作为独立观察面，与自建确定性指标（路由/引用/拒答）正交。
 
 输入：
-- ``--golden``：评估集（默认 ``evals/legal_golden.jsonl``，取 question；该集已于
+- ``--golden``：评估集（默认旧题集文件，取 question；该集已于
   2026-10-26 下线删除 ⇒ 不给 ``--golden`` 且默认文件不存在时 exit 2 并列出可用题集，
   不静默跑空，也不新建题集）；
 - ``--predictions``：``run_eval.py --record/--offline`` 的预测 JSONL
@@ -23,7 +23,7 @@ r"""Ragas 忠实度/相关性独立报告（P2-2，observe-only）。
 
 用法（PowerShell）::
 
-    .\.venv\Scripts\python.exe evals/ragas_report.py --json-out evals/results/ragas_report.json
+    .\.venv\Scripts\python.exe evals/ragas_report.py --json-out out/ragas_report.json
 """
 
 from __future__ import annotations

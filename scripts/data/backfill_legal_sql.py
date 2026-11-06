@@ -6,7 +6,7 @@ compose 给 MySQL 挂的初始化脚本只有 `data/init_mysql.sql`（建表）+
 `data/insert_sample_data.sql`（**4 部法律 / 10 个条目**的抽样）。而同一份
 `legal_seed.json` 既是图谱（Neo4j，1953 条）又是向量库（Milvus，4865 块）的真源，
 唯独 SQL 这条路只有 10 行样本。后果直接体现在金标上：
-`evals/legal_golden.jsonl` 里 L075「《民法典》一共多少条」的 `must_contain` 是
+旧题集里 L075「《民法典》一共多少条」的 `must_contain` 是
 `1260` —— 那是完整种子的条数，抽样库里**物理上不可能答对**。于是 text2sql 的
 `must_contain_applicable` 被环境（不是被模型）判负。
 

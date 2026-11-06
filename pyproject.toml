@@ -44,7 +44,7 @@ classifiers = [
 ]
 
 # 依赖声明为单一事实来源（requirements.txt 与其保持同步）。
-# 版本约束策略见 docs/版本管理策略.md：核心框架钉小版本，工具库给上下界。
+# 版本约束策略：核心框架钉小版本，工具库给上下界。
 #
 # ⚠️ 修正记录：此前本列表与 requirements.txt **实际已漂移**（下面注释声称同步，
 # 但 4 个包的 spec 相冲突，其中 2 个是互斥区间/功能不兼容）。CI 与 Docker 都
@@ -188,7 +188,6 @@ viz = [
 # Homepage = "https://github.com/<owner>/<repo>"
 # Repository = "https://github.com/<owner>/<repo>"
 # Documentation = "https://github.com/<owner>/<repo>/blob/main/docs/architecture/README.md"
-# Changelog = "https://github.com/<owner>/<repo>/blob/main/CHANGELOG.md"
 # "Issue Tracker" = "https://github.com/<owner>/<repo>/issues"
 # Discussions = "https://github.com/<owner>/<repo>/discussions"
 
@@ -245,7 +244,7 @@ select = [
 # 忽略清单（棘轮冻结：既有债不新增，逐批清偿）
 #
 # 分三类，每类都写明「为什么不修」。**新增代码不应引入下列任何一条**；
-# 清偿进度记录在 CHANGELOG 的 [Unreleased] 段。
+# 清偿按批进行，只减不增。
 # ---------------------------------------------------------------------------
 ignore = [
     # --- ① 交给格式化工具 -----------------------------------------------

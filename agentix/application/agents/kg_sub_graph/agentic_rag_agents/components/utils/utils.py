@@ -232,7 +232,7 @@ def _format_legal_schema_from_docs() -> str:
 def retrieve_and_parse_schema_from_graph_for_prompts(graph: Neo4jGraph) -> str:
     """
     Retrieve the runtime schema, clean it for prompt usage, and enrich
-    it with curated information from docs/legal_domain_schema.md.
+    it with curated information from the test-dataset domain facts.
     """
     schema: str = graph.get_schema
 

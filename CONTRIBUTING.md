@@ -2,7 +2,7 @@
 
 感谢你愿意为 **My Agentix** 做出贡献！本文档说明本项目的开发流程、代码规范与提交约定，帮助你快速融入协作。
 
-> 阅读顺序建议：本文件 → [`docs/architecture/README.md`](docs/architecture/README.md)（架构总览）→ [`docs/architecture/扩展机制.md`](docs/architecture/扩展机制.md)（扩展机制）→ `docs/版本管理策略.md`（版本策略）。
+> 阅读顺序建议：本文件 → [`docs/architecture/README.md`](docs/architecture/README.md)（架构总览）→ [`docs/architecture/扩展机制.md`](docs/architecture/扩展机制.md)（扩展机制）。
 
 ---
 
@@ -52,35 +52,7 @@
 
 ### 快速开始
 
-```bash
-# 1. 克隆仓库（当前未发布到公共远端，发布后替换 URL；目录名与下方 cd 保持一致）
-git clone <远端仓库 URL> My-Agentix
-cd My-Agentix
-
-# 2. 创建虚拟环境（Python 3.12）
-py -3.12 -m venv .venv
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-# macOS / Linux
-source .venv/bin/activate
-
-# 3. 安装依赖（运行时 + 测试/工具链）
-pip install -r requirements-dev.txt
-pip install -e ".[dev,test]"
-
-# 4. 配置环境变量
-cp .env.example .env
-# 编辑 .env，至少配置：OPENAI_API_KEY / SECRET_KEY / API_KEY
-
-# 5. 启动基础设施
-docker compose up -d
-
-# 6. 启动后端
-python -m uvicorn agentix.main:application --reload --port 8000
-
-# 7. 启动前端（另开终端）
-cd web && npm install && npm run dev
-```
+环境搭建、依赖安装与启动步骤统一见 [README 的「快速开始」](README.md#4-快速开始)，此处不重复。密钥类配置项以 `.env.example` 为准（`API_KEY` / `SECRET_KEY` / `LLM_API_KEY` / `EMBEDDING_API_KEY`）。
 
 ### 安装 Git Hook（推荐）
 
@@ -93,18 +65,9 @@ pre-commit run --all-files   # 首次全量检查
 
 ## 项目结构速览
 
-```
-agentix/
-├── config/          # 集中配置（Pydantic Settings，唯一事实来源）
-├── domain/          # 领域层：错误词汇表、策略、端口抽象（不依赖任何上层）
-├── application/     # 应用层：Agent 编排、业务服务
-│   ├── agents/      #   LangGraph 图与节点
-│   └── services/    #   会话/记忆/观测/任务队列
-├── infrastructure/  # 基础设施：LLM、向量库、图库、持久化、工具注册表
-└── interfaces/      # 接口层：HTTP 路由、请求/响应模型
-```
+完整目录树见 [README 的「项目结构」](README.md#10-项目结构)。改动前先确认要落的位置：`domain/` 只放纯契约（零第三方依赖），业务规则进 `application/`，实现 Domain 端口才进 `infrastructure/`。
 
-完整的目录职责与依赖规则见 [`docs/architecture/分层架构与依赖规则.md`](docs/architecture/分层架构与依赖规则.md)。
+各层职责与四条强制依赖规则见 [`docs/architecture/分层架构与依赖规则.md`](docs/architecture/分层架构与依赖规则.md)，由 AST 守卫在 CI 中强制。
 
 ---
 
@@ -190,7 +153,7 @@ mypy agentix
 ### 命名与文档
 
 - 模块/函数级 docstring 使用中文，说明**为什么**（设计依据）而非仅描述做什么
-- 公共 API 变更必须同步更新 `docs/` 与 `CHANGELOG.md`
+- 公共 API 变更必须同步更新 `docs/`
 - 涉及架构决策的改动，请补充 `docs/architecture/` 下的说明或 ADR
 
 ---
@@ -217,7 +180,7 @@ mypy agentix
 feat(tools): 新增 web_search 工具并注册到 ToolRegistry
 
 - 在 registry_init 声明式清单中登记 spec（含"何时不该用"反例）
-- 补充 tests/test_tool_registry_web_search.py
+- 补充 tests/test_p109_tool_handler_contract.py
 
 Closes #42
 ```
@@ -233,17 +196,17 @@ Closes #42
 - Bug 修复必须包含一个能复现原缺陷的回归测试
 
 ```bash
-# 全量（离线）
-pytest -q
+# 全量（离线，先清空 PYTHONPATH，否则沙箱相关用例假失败）
+env -u PYTHONPATH python -m pytest -m "not integration" -q
 
-# 仅单元测试（CI 口径）
-pytest -m "not integration" -q
+# 单文件 / 单用例
+python -m pytest tests/test_p41_doc_consistency.py -q
 
-# 覆盖率
-pytest --cov=agentix --cov-report=term-missing
+# 覆盖率（本地自查用）
+python -m pytest --cov=agentix --cov-report=term-missing
 ```
 
-**合并门槛**：CI 全绿 + 覆盖率不低于基线 + 核心链路（`application/`）新增代码有测试覆盖。
+**合并门槛**：CI 的四个 job 全绿 + 至少 1 位维护者 Review；核心链路（`application/`）的新增代码要有测试覆盖。CI 不跑 pytest，测试由提交者在本地跑通后再提交。
 
 ---
 
@@ -251,10 +214,9 @@ pytest --cov=agentix --cov-report=term-missing
 
 1. Fork 仓库并从 `main` 创建分支：`git checkout -b feat/my-feature`
 2. 完成开发，确保 `ruff` / `black` / `mypy` / `pytest` 全部通过
-3. 更新 `CHANGELOG.md` 的 `[Unreleased]` 段
-4. 提交 PR，按 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md) 填写描述
-5. 等待 CI 通过并至少 1 位维护者 Review
-6. Review 通过后由维护者 squash-merge 到 `main`
+3. 提交 PR，按 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md) 填写描述
+4. 等待 CI 通过并至少 1 位维护者 Review
+5. Review 通过后由维护者 squash-merge 到 `main`
 
 > 首次贡献者请在 PR 中说明你已阅读并同意 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
@@ -266,7 +228,7 @@ pytest --cov=agentix --cov-report=term-missing
 - `feat/*` / `fix/*` / `docs/*`：功能分支，生命周期短
 - `release/x.y`：发布维护分支（仅在需要 backport 时创建）
 
-版本号遵循 [语义化版本 SemVer 2.0.0](https://semver.org/lang/zh-CN/)，详见 `docs/版本管理策略.md`。
+版本号遵循 [语义化版本 SemVer 2.0.0](https://semver.org/lang/zh-CN/)。
 
 ---
 

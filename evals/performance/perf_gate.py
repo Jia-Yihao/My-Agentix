@@ -6,7 +6,7 @@ CI 抖动与跨机差异）判回归；overall p50 同规则。新类（基线�
 
 用法::
 
-    python evals/performance/perf_gate.py --results evals/performance/results/last_run.json
+    python evals/performance/perf_gate.py --results out/last_run.json
     python evals/performance/perf_gate.py --record --results <file>   # 用结果录制/更新基线
 
 退出码：0 = 通过或跳过；1 = 回归；2 = 用法/文件错误。

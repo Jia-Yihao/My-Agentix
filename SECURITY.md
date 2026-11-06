@@ -35,7 +35,7 @@
 | 修复或缓解方案 | 视严重性，30 天内 |
 | 公开披露 | 修复发布后协调进行 |
 
-我们会在 `CHANGELOG.md` 与 Release Notes 中致谢报告者（除非你要求匿名）。
+我们会在 Release Notes 中致谢报告者（除非你要求匿名）。
 
 ## 安全设计概览
 
@@ -128,7 +128,7 @@ My Agentix 在架构层面内置了以下安全机制，便于你在部署与二
   - **LG-0-2（2026-10-27）已把 langchain 家族迁到 1.x**（`langgraph 1.2.18` / `langchain-core 1.7.0` / `langsmith 0.14.13` 等，见 `requirements.txt`），上面那 8 包**全部换了版本线** ⇒ 21 项既不能当作已清零，也不能沿用为现状：**必须在 1.x 栈上重跑 `pip-audit -r requirements.txt` 才能出结论**（本次环境未装 `pip-audit`，未复测，故不写新数字）。
   - 核心 Web 栈（`fastapi==0.142.2` / `starlette==1.7.0` 等）漏洞在 2026-10-04 那一轮已清零，本次未动这两个 pin。
 - `bandit`（medium+ 级别）当前 **0 findings**；LOW 级信息性项（try/except pass 等）保留并逐项复核。
-- 升级`requirements.txt` 与 `pyproject.toml` 双声明必须同步（`tests/test_dependency_consistency.py` 守卫），升级后以全量测试套件验证（README §11 唯一真源）。
+- 升级`requirements.txt` 与 `pyproject.toml` 双声明必须同步（`tests/test_dependency_consistency.py` 守卫），升级后以全量测试套件验证（README §6 唯一真源）。
 
 ## 已知边界（非缺陷）
 

@@ -93,7 +93,7 @@ def schema_cache_size() -> int:
 
 
 def invalidate_schema_cache(database_url: Optional[str] = None) -> int:
-    """主动清 schema 缓存，返回**真清掉的条数**（`docs/design/性能与优化路线图.md` E2）。
+    """主动清 schema 缓存，返回**真清掉的条数**（E2）。
 
     为什么需要它：TTL 只保证"最多旧 N 秒"。DDL 之后运维要立刻看见新表结构，
     今天只有两条路——等 TTL，或重启进程（而重启会把别的缓存一并清掉）。

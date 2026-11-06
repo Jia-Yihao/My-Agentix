@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 r"""golden → promptfoo tests 转换脚本（P1-1.5/P1-5）。
 
-把 ``evals/legal_golden.jsonl`` 机械转换成 promptfoo 用例 JSONL（经
+把题集 JSONL 机械转换成 promptfoo 用例 JSONL（经
 ``promptfooconfig.yaml`` 的 ``tests: file://…`` 引用）：question → vars，
 route_type / expect_reject / expected_sources / must_contain → 断言参数。
 **转换是纯机械映射，不产生任何新的期望值**（期望只能来自 golden 单源）。
@@ -18,7 +18,7 @@ route_type / expect_reject / expected_sources / must_contain → 断言参数。
 
 用法（PowerShell）::
 
-    .\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --golden <题集> --out evals/promptfoo_tests.jsonl --limit 25
+    .\.venv\Scripts\python.exe evals/golden_to_promptfoo.py --golden <题集> --out out/promptfoo_tests.jsonl --limit 25
 
 ``legal_golden.jsonl`` 已于 2026-10-26 随评测集下线删除：不给 ``--golden`` 且默认
 文件不存在时，本脚本 exit 2 并列出当前可用题集与改道示例（不静默转出空用例表）。
@@ -130,7 +130,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         args.golden,
         entry="evals/golden_to_promptfoo.py",
         default=DEFAULT_GOLDEN,
-        example_flags="--out evals/promptfoo_tests.jsonl",
+        example_flags="--out out/promptfoo_tests.jsonl",
     )
     if rc:
         return rc

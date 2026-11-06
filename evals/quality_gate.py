@@ -15,7 +15,7 @@
 * ``PASS`` / ``FAIL`` —— 真比对过，结论可信。
 * ``NOT-ARMED`` —— 基线文件不存在，或基线里没有该指标键，**且没有显式要求建档**。
   2026-10-26 起这是默认行为并以非零退出：门禁的输入是 committed 生成物
-  （``evals/baselines/quality.json`` 由 ``evals/write_quality_baseline.py`` 产出），
+  （基线生成物由 ``evals/write_quality_baseline.py`` 产出），
   输入缺失或被删键的意思是"这个指标现在没人把关"，而不是"这个指标通过了"。
   旧口径（缺输入 ⇒ 静默建档 + 退出 0）会让"删掉基线里的一个键"成为最省事的放宽方式。
 * ``NOT-ENFORCED`` —— 同上两种缺失，但调用方**显式**声明了 ``--allow-bootstrap``
@@ -31,9 +31,9 @@ CI 悄悄改动一个 committed 文件，比它不把关更难被发现。
 历史口径纠正
 ------------
 本文档此前写着「当前 golden 集仅 22 条……先扩充到 100+ 再把本检查挂进 CI 阻断」。
-该结论在 **102 条时代**成立（更早那句「仅 22 条」说的是另一个时代）：当时 golden 是 ``evals/legal_golden.jsonl``，本检查也确实挂在
+该结论在 **102 条时代**成立（更早那句「仅 22 条」说的是另一个时代）：当时 golden 是旧题集，本检查也确实挂在
 ``.github/workflows/ci.yml`` 的 ``eval-offline`` job；真正卡住门禁的不是条数，而是当时
-``evals/baseline_predictions.jsonl`` 未入库 ⇒ 上游 ``run_eval --offline`` 跳过、门禁步骤连带不执行。
+录制预测档未入库 ⇒ 上游 ``run_eval --offline`` 跳过、门禁步骤连带不执行。
 **2026-10-26 再更新（2026-10-27 实测）**：该集与 ``eval-offline`` job 已同步下线（``grep -nE "quality_gate|eval-offline" .github/workflows/ci.yml`` → 0 命中），**CI 侧**现役挂载只剩 ``.github/workflows/perf-baseline.yml:99``（nightly、p95 单指标）；仓内另一消费者 ``evals/evolution_run.py:52`` 复用纯函数 ``evaluate_metric``，不属 CI 挂载。
 
 用法：

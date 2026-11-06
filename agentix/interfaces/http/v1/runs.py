@@ -5,7 +5,7 @@
 ``POST /agents/runs/{run_id}/cancel`` 取消。Chatbot API 之外，
 这是 Agent Runtime API 的入口。
 
-A1c（统一执行链）：本模块自 ``agentix/retrieval/api/routers/agent_runs.py``
+A1c（统一执行链）：本模块自检索域的 ``agent_runs`` 路由模块
 **上移**至接口层——Run API 是协议转换（HTTP ↔ ControlPlane），按分层
 归属 ``interfaces``；路径从 ``/api/v1/retrieval/agents/runs`` 迁为
 ``/api/v1/agents/runs``（路由路径 ``/agents/runs`` 不变，仅去掉 retrieval

@@ -481,7 +481,7 @@ def _instructions_fingerprint(message: str) -> str:
     """指令块缓存键：相关 flag + 约定文件 stat + 触达目录 + skills 清单指纹。
 
     任一变化 ⇒ 键变 ⇒ 重读盘；全部不变 ⇒ 直接复用缓存文本（B2 指纹缓存，
-    照抄 ``skills/registry.py`` 的 stat-热重载范式）。**任何异常都回退成
+    照抄 skills 注册表的 stat-热重载范式）。**任何异常都回退成
     「不可复用」的随机键**（fail-open：宁可多读一次盘，不可复用陈旧指令）。
     """
     from pathlib import Path

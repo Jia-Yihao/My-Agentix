@@ -77,7 +77,7 @@ case $choice in
         pip install -r requirements-dev.txt
 
         # 后台启动后端
-        python run.py start &
+        python scripts/run.py start &
         BACKEND_PID=$!
 
         # 启动前端
@@ -118,7 +118,7 @@ case $choice in
 
         source venv/bin/activate
         pip install -r requirements-dev.txt
-        python run.py start
+        python scripts/run.py start
         ;;
 
     4)

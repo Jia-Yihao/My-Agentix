@@ -30,7 +30,7 @@
    结果」（`is_awaitable_result`）——按 `iscoroutinefunction` 字面判会把类形式的
    `async __call__` 误判成同步。注意：本 helper 与 `agentix/orchestration/executor.py:68`
    的内联判据目前是**同式两源**（两份字面实现、零相互引用），不是同源；executor 侧改指
-   本 helper 属后续批次，该二源债已登记入台账（`docs/design/审批与中断恢复优化规划.md` §8 的
+   本 helper 属后续批次，该二源债已登记入台账（§8 的
    M3-1 行待追认列与 §8.2 表 R 的 R1 行）；闭合前 `CONTRIBUTING.md` 的工程约定 6 ④ 仍未闭合。
 
 ## 命名与形态的先例
@@ -236,8 +236,7 @@ class NodeRegistry:
         禁止用它做「未注册即跳过」的分支条件：那等于在本文件里给 fail-closed 开了一条
         合法绕行口（见模块 docstring 第 1 条），装配缺失会被伪装成「这条支路不该走」。
         需要「该不该走这条支路」的判定请由调用方的显式配置/意图决定，节点解析本身
-        一律 `resolve`/`require`，缺失即抛。现况留痕（`docs/design/审批与中断恢复优化规划.md`
-        M3-6 行⑭，裁「留并加留痕」）：HEAD 实测零生产消费者，仅 `tests/test_p178_node_registry.py` 两条用例测局部实例。
+        一律 `resolve`/`require`，缺失即抛。现况留痕（M3-6 行⑭，裁「留并加留痕」）：HEAD 实测零生产消费者，仅 `tests/test_p178_node_registry.py` 两条用例测局部实例。
         """
         return name in self._entries
 

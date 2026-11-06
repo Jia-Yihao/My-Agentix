@@ -1,7 +1,6 @@
 """T30-3：单层路由（``ROUTING_SINGLE_LAYER_ENABLED``）**跳数差值**取证（独立入口）。
 
-规划出处：``docs/design/审批与中断恢复优化规划.md`` T30 卡验收②（``:1032``）与
-新登记的 T30-3 台账行（``:1163``）。主口径按台账行定死的说法执行：
+规划出处：T30 卡验收②与新登记的 T30-3 台账行。主口径按台账行定死的说法执行：
 
     同一 KB 检索意图（固定输入 + 判定源取 T29 卡 ④.1）在 flag-off / flag-on 下的
     **LLM 调用次数差值**，计数源为假 LLM 计数，刻意不依赖 ``evals/perf_stats.py``。
@@ -55,7 +54,7 @@ LangGraph 的 reducer，本文件不起主图（主图会拉进 checkpointer / N
 
 **不承诺**：本文件不下质量结论、不改任何默认值、不落盘产物、不是 T30 卡的「复验命令」
 里那套 bench 参照口径（时延/分位数/指纹）——参照口径的前置 ``evals/perf_stats.py``
-未跟踪，见 ``docs/design/审批与中断恢复优化规划.md`` T30 行待追认②。
+未跟踪，见 T30 行待追认②。
 """
 
 from __future__ import annotations
@@ -95,8 +94,8 @@ from agentix.orchestration.langgraph.lg_states import (  # noqa: E402
 TARGET_NAME = "single_layer_jump_count"
 
 # ---------------------------------------------------------------------------
-# T29 卡 ④.1 的固定输入（逐字抄自 docs/design/审批与中断恢复优化规划.md:829-831，
-# general-query 行实测在 :829、kb-query 行实测在 :831）
+# T29 卡 ④.1 的固定输入（逐字抄自 T29 卡 ④.1 台账，
+# general-query 行与 kb-query 行分别取表内两行）
 # ---------------------------------------------------------------------------
 
 #: kb-query 固定输入 + 预期意图（T29 ④.1 表第 3 行）

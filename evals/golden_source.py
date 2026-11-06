@@ -1,6 +1,6 @@
 """评测入口的 ``--golden`` 缺省解析：默认题集不存在时**响亮退出**（T3）。
 
-**为什么存在**：``evals/legal_golden.jsonl`` / ``evals/legal_golden_ext.jsonl`` 已于
+**为什么存在**：两支旧题集文件已于
 2026-10-26 随评测集下线删除，但 6 个评测入口的 ``--golden`` 缺省串还指向它们
 （``run_eval.py`` / ``hybrid_eval.py`` / ``ragas_report.py`` / ``golden_to_promptfoo.py``
 / ``feedback_ingest.py`` / ``scripts/demo/local_kb_demo.py``）。缺省指向一个不存在的

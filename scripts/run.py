@@ -170,7 +170,7 @@ def test_api():
 
             except httpx.HTTPError as e:
                 print(f"❌ 连接失败: {e}")
-                print("   请确保服务正在运行 (python run.py start)")
+                print("   请确保服务正在运行 (python scripts/run.py start)")
 
     asyncio.run(test())
 
@@ -180,10 +180,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python run.py start       # 开发模式启动
-  python run.py start prod  # 生产模式启动
-  python run.py docker      # Docker 启动
-  python run.py test        # 测试 API
+  python scripts/run.py start       # 开发模式启动
+  python scripts/run.py start prod  # 生产模式启动
+  python scripts/run.py docker      # Docker 启动
+  python scripts/run.py test        # 测试 API
         """
     )
 

@@ -3,7 +3,7 @@
 简易路由冒烟测试（**手动脚本**，需要真实运行的服务）
 
 运行方式:
-    python scripts/router_smoke.py
+    python scripts/test/router_smoke.py
 
 依赖:
     - 后端服务已在本地或容器内运行，默认地址 http://localhost:8000

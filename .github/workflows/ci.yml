@@ -97,8 +97,6 @@ jobs:
       - version-consistency
       - lint
       - import-integrity
-      - import-integrity
-      - import-integrity
       - frontend
     if: always()
     runs-on: ubuntu-latest

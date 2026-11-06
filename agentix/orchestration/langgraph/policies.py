@@ -31,7 +31,7 @@ LG-3-5 的 ``node_error_handler`` 只给**有副作用**的节点（``execute_ta
 
 LG-3-6 的 ``DrainCoordinator`` 也放在这里，因为它构造的是同一类**框架原生
 对象**（``RunControl``）——只是作用域从「节点」变成「一次运行」。放置动机是
-守卫而不是偏好：``tests/test_p66_import_guards.py`` 的 #11 棘轮把"哪些文件
+守卫而不是偏好：``tests/test_p66_arch_guards.py`` 的 #11 棘轮把"哪些文件
 可以 import langgraph"冻结成等式集合（只减不增），而 ``chat_service`` 必须能
 新建/捕获 drain 控制面与 ``GraphDrained``。让它们从本模块（白名单内的适配层
 汇聚点）转出，比给棘轮新增一行更符合「不弱化既有守卫」。

@@ -151,8 +151,8 @@ async def create_research_plan(state: AgentState, *, config: RunnableConfig):
 # build_graph 的 add_node 块只注册 10 个节点，不含它；全仓除本定义与顶部模块
 # 说明外 0 处引用，连带函数体内 get_llm_client(..., role="hallucination")
 # 亦落在不可达代码中。
-# **为什么不删**：这是**文档化的未接线能力**——`docs/design/编排方案选型论证.md`
-# 的节点清点表把「A6 幻觉校验」列为"现有但未接入任何图"并附了 grep 证据；
+# **为什么不删**：这是**文档化的未接线能力**——节点清点表把「A6 幻觉校验」
+# 列为"现有但未接入任何图"并附了 grep 证据；
 # 它是被刻意保留的后续接线点，不是无人认领的残骸。删掉等于抹掉一处已登记的设计意图。
 # **为什么不接线**：接线会给每次图执行新增一次 hallucination 校验 LLM 调用，
 # 属运行期行为变更 + 成本变更，需独立评估（当前环境无 LLM 服务，无法评估）。

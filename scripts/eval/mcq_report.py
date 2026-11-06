@@ -21,7 +21,7 @@
     .\\.venv\\Scripts\\python.exe scripts/eval/mcq_report.py \\
         --golden evals/ceval_golden.jsonl \\
         --predictions out/preds_multi_agent.jsonl \\
-        --out docs/evals/multi-agent-perf.md
+        --out out/multi-agent-perf.md
 """
 
 from __future__ import annotations

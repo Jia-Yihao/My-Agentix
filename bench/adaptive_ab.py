@@ -1,6 +1,6 @@
 """T17：Adaptive 七项 + token 窗口的 A/B 取证（独立入口）。
 
-规划出处：``docs/design/审批与中断恢复优化规划.md`` T17 卡（§4）。
+规划出处：T17 卡（§4）。
 「七项」的唯一真源是 ``README.md`` 的 Adaptive Execution 一行（恰好 7 条）：
 档位路由 / fast-path / 准入排队 / 重试预算 / 负载甩载 / 隔离舱 / 单飞合流；
 本文件另加**一条非 Adaptive 键**的 A/B：token 级历史窗口

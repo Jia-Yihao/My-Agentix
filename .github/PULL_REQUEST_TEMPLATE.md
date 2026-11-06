@@ -14,7 +14,6 @@
 - [ ] `pytest -m "not integration" -q` 通过
 - [ ] 分层约束未被破坏（`domain` 不 import `infrastructure`；见 `tests/test_p17_domain_layer.py`）
 - [ ] 新增/修改的核心链路（`application/`）有对应测试
-- [ ] `CHANGELOG.md` 的 `[Unreleased]` 段已更新
 - [ ] 受影响的文档已同步（README / `docs/项目实现手册.md` / 相关 runbook）
 - [ ] 未提交任何密钥、`.env`、真实用户数据或截图
 

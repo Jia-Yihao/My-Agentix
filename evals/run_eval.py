@@ -17,7 +17,7 @@
 
 两种后端：
 
-* ``--offline``（**默认**）：不连接任何服务，读取 ``evals/baseline_predictions.jsonl``
+* ``--offline``（**默认**）：不连接任何服务，读取**录制好的预测档**
   中已录制的系统实际输出，与 golden 对齐打分。
 * ``--live`` / ``--record``：调用真实
   ``agentix.application.services.chat_service.ChatService.ask`` 逐条提问，
@@ -31,7 +31,7 @@
     python evals/run_eval.py --golden <题集> --record   # 在具备完整服务的机器上录制基线
     python evals/run_eval.py --golden <题集> --compare a.jsonl b.jsonl   # 配对显著性
 
-缺省题集 ``evals/legal_golden.jsonl`` 已于 2026-10-26 随评测集下线删除：不给
+缺省题集已于 2026-10-26 随评测集下线删除：不给
 ``--golden`` 且默认文件不存在时，本脚本非零退出并在 stderr 列出当前可用题集与改道
 示例（T3——不静默把"题集不存在"跑成"0 条样本 0 分"，也不新建/改指题集）。
 """
@@ -2054,7 +2054,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="run_eval.py",
         description=(
             "P2-1 法律领域评估集批量跑分与回归。\n"
-            "默认离线（--offline）：读取 evals/baseline_predictions.jsonl 打分，"
+            "默认离线（--offline）：读取录制好的预测档打分，"
             "不连接任何外部服务。\n"
             "确定性指标：路由准确率 / 引用命中率 / 拒答正确率；"
             "LLM-as-a-Judge 语义相似度默认关闭且需人工校准。"

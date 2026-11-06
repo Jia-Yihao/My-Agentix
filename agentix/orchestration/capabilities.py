@@ -49,8 +49,7 @@
 哪些名字进这把键集，由 `agentix/application/wiring.py` 一处说了算；编排层不得 import
 装配文件（那等于把反向边换个名字绕回来，由 `tests/test_p179_supervisor_wiring.py` 的
 静态守卫钉住）。本批登记的键：`offload_content`、`get_artifact_store`（2026-10-30 现值三键：再加 `get_llm_client`；`:52-54` 那句「后续批 M3-4b 会把…」已兑现）。
-后续批 M3-4b 会把 `llm_factory` 的三条边也接到本注入位（指针：
-`docs/design/审批与中断恢复优化规划.md` §8 台账的 M3-4b 行），届时键数变三，
+后续批 M3-4b 会把 `llm_factory` 的三条边也接到本注入位（§8 台账的 M3-4b 行），届时键数变三，
 `tests/test_p181_capability_seam.py` 的全集相等清单同批改。
 """
 
@@ -188,7 +187,7 @@ class CapabilityRegistry:
     def registered(self, name: str) -> bool:
         """存在性查询（不抛）。**仅供诊断/日志与守卫断言使用**；禁止用它做「未注册即跳过」的
         分支条件：那等于在本文件里给 fail-closed 开了一条合法绕行口，装配缺失会被伪装成
-        「这条支路不该走」。现况留痕（`docs/design/审批与中断恢复优化规划.md` M3-6 行⑭，裁「留并
+        「这条支路不该走」。现况留痕（M3-6 行⑭，裁「留并
         加留痕」）：HEAD 实测零生产消费者，仅 `tests/test_p178_node_registry.py` 两条用例测局部实例。
         """
         return name in self._providers

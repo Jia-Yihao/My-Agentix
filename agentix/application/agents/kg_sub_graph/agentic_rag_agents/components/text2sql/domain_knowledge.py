@@ -1,9 +1,8 @@
 """
 Domain knowledge for the test-dataset SQL schema.
 
-These descriptions are derived from the factual documentation under:
-- docs/legal_domain_schema.md
-- docs/prd-legal-domain.md
+These descriptions are derived from the factual domain documentation for the
+test dataset (Neo4j entity/relation contract and its SQL counterpart).
 
 We surface them to the LLM prompts so that the model has grounded context
 about the actual tables, columns, and relationships available in the

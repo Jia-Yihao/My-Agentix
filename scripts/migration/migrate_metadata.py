@@ -15,7 +15,7 @@
     # 正式迁移（目标默认取 DATABASE_URL，即统一 PG retrieval schema）
     ./.venv/Scripts/python.exe scripts/migration/migrate_metadata.py \
         --source-url sqlite:///backend/data/retrieval.db \
-        --report scripts/migration/migrate_report.json
+        --report out/migrate_report.json
 
     # 只迁指定表（调试用）
     ./.venv/Scripts/python.exe scripts/migration/migrate_metadata.py --tables tenant,user

@@ -1,6 +1,6 @@
 """M-P1-1 记忆向量×关键词双路召回融合（纯策略，无 IO）。
 
-设计出处：``docs/design/记忆域深度优化.md`` §5 M-P1-1——``recall`` 改为
+设计出处：§5 M-P1-1——``recall`` 改为
 "关键词 × 向量" 双路 + recency 衰减（沿用 ``MEMORY_RECENCY_HALF_LIFE_DAYS``）。
 本模块只做确定性打分/融合（stdlib only），embedding 与向量比对由
 ``agentix/agent/memory/service.py``（进程内 provider）在 flag 门控下接入，

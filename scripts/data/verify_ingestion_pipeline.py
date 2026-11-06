@@ -21,8 +21,8 @@ My Agentix 法律法规领域 —— 灌库链路就绪探测器 (Ingestion Pipe
 退出码：始终 0（即便所有阶段均为 ⛔，也正常退出）。
 
 运行：
-    python scripts/verify_ingestion_pipeline.py
-    python scripts/verify_ingestion_pipeline.py --csv-dir data/legal/csv
+    python scripts/data/verify_ingestion_pipeline.py
+    python scripts/data/verify_ingestion_pipeline.py --csv-dir data/legal/csv
 """
 
 from __future__ import annotations

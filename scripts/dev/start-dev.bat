@@ -81,7 +81,7 @@ call venv\Scripts\activate
 pip install -r requirements-dev.txt
 
 REM 后台启动后端
-start /B python run.py start
+start /B python scripts/run.py start
 
 REM 启动前端
 echo 启动前端...
@@ -106,7 +106,7 @@ if not exist venv (
 
 call venv\Scripts\activate
 pip install -r requirements-dev.txt
-python run.py start
+python scripts/run.py start
 pause
 exit /b 0
 

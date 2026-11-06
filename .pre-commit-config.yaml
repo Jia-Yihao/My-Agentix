@@ -14,7 +14,7 @@ repos:
       - id: trailing-whitespace
         # ⚠️ 排除清单：这些文件的多行字符串（prompt 模板）里，尾随/空行空白是
         # **有意的字节内容**——删除会改变送给模型的 prompt，并击穿
-        # `tests/test_p23_prompt_prefix.py` 的逐字节相等断言。
+        # `tests/test_p23_prompt_externalization.py` 的逐字节相等断言。
         # 对应 ruff 的 W291/W293 忽略（见 pyproject.toml [tool.ruff.lint].ignore）。
         exclude: |
           (?x)^(

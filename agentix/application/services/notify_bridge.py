@@ -1,6 +1,6 @@
 """``notify_user`` 组合根装配（Phase 23）。
 
-职责切分（与 Phase 21 ``agent/skills/install.py`` 同款）：
+职责切分（声明 / 校验 / 接线三段）：
 
 - **声明**（spec + LLM schema）在 ``capabilities/tools/registry_init.py``，
   由 ``settings.NOTIFY_USER_ENABLED`` gate（flag-off 不进声明清单）；
