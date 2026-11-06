@@ -10,7 +10,7 @@ FastAPI · LangGraph · Vue 3 · PostgreSQL · Redis · Neo4j · Milvus
 
 </div>
 
-> 本仓库尚未发布到公共远端，不提供公开 clone 地址；下方命令按本地目录执行。
+> 本仓库尚未发布到公共远端（GitHub 仓库目前为私有）；下方命令按本地目录执行，不提供公开 clone 地址。
 
 ## 目录
 

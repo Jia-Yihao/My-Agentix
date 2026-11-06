@@ -138,7 +138,11 @@ def create_multi_tool_workflow(
     final_answer = create_final_answer_node()
 
     # 创建状态图运行时会维护一个“全局状态”（OverallState），入口状态类型是 InputState，最终产出是 OutputState。节点函数读写的就是这个状态。
-    main_graph_builder = StateGraph(OverallState, input=InputState, output=OutputState)
+    main_graph_builder = StateGraph(
+        OverallState,
+        input_schema=InputState,
+        output_schema=OutputState,
+    )
 
     main_graph_builder.add_node(guardrails)# 安全护栏敏感内容过滤、权限/配额校验
     main_graph_builder.add_node(planner) #决定下一步要用的工具/路径。

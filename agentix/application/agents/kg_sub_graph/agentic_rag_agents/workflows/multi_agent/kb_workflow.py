@@ -133,8 +133,8 @@ def create_kb_multi_tool_workflow(
 
     graph_builder = StateGraph(
         KBWorkflowState,
-        input=KBInputState,
-        output=KBOutputState,
+        input_schema=KBInputState,
+        output_schema=KBOutputState,
     )
 
     graph_builder.add_node("guardrails", guardrails)

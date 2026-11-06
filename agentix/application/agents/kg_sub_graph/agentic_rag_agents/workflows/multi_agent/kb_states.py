@@ -31,7 +31,7 @@ class KBRouteDecision(BaseModel):
 
 
 class KBInputState(TypedDict):
-    """KB 子图的**输入面**（``StateGraph(..., input=KBInputState)`` 按它过滤入参）。
+    """KB 子图的**输入面**（``StateGraph(..., input_schema=KBInputState)`` 按它过滤入参）。
 
     T30-2（单层路由）多出的两个键是 **``NotRequired``**：L1 给出了检索通道时，
     ``create_kb_query`` 才把它们一并传进来（A3 据此跳过模型调用）；不传时它们

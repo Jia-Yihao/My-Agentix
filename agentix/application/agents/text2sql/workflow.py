@@ -56,8 +56,8 @@ def create_text2sql_workflow(
 
     builder = StateGraph(
         Text2SQLState,
-        input=Text2SQLInputState,
-        output=Text2SQLOutputState,
+        input_schema=Text2SQLInputState,
+        output_schema=Text2SQLOutputState,
     )
 
     builder.add_node("retrieve_schema", retrieve_schema)

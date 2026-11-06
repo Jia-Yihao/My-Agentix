@@ -388,7 +388,7 @@ def build_graph(checkpointer=None):
     P0-1：原模块级编译改为工厂函数，FastAPI 启动期会用 Redis checkpointer
     重编译并覆盖下方模块级 `graph`；checkpointer 为 None 时图不持久化。
     """
-    builder = StateGraph(AgentState, input=InputState)
+    builder = StateGraph(AgentState, input_schema=InputState)
     # LG-1-1：只读节点的原生重试。flag-off ⇒ 下面是**空 dict**，add_node 完全不传
     # `retry_policy` ⇒ 与基线逐位等价（约定 1）；策略实参来自 policies.py（LG-0-3 集中点），
     # 不在本文件内联构造。覆盖面只有 6 个只读节点，`execute_task` / `code_agent` 永不挂

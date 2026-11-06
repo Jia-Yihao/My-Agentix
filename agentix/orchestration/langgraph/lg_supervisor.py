@@ -565,7 +565,7 @@ def build_supervisor_graph(checkpointer=None):
     # `lg_builder` 自己抛 `NodeNotRegistered`（fail-closed，不在本模块兜底）。
     from agentix.orchestration.langgraph import lg_builder
 
-    builder = StateGraph(AgentState, input=InputState)
+    builder = StateGraph(AgentState, input_schema=InputState)
     builder.add_node(
         "message_window",
         lg_builder.create_message_window_node(

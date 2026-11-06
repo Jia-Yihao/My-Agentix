@@ -245,7 +245,7 @@ python -m pytest --cov=agentix --cov-report=term-missing
 
 ## 获取帮助
 
-- 💬 提问与缺陷：本仓库当前未发布到公共远端，暂无 Discussions / Issue 入口；发布后在此回填，日常沟通请先联系维护者
+- 💬 提问与缺陷：仓库目前为私有仓库；有访问权限的协作者可使用 GitHub Issues。公开开放贡献前，请先联系维护者获取仓库访问权限
 - 🔒 安全：见 [SECURITY.md](SECURITY.md)
 
 再次感谢你的贡献！🎉

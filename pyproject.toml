@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentix"
 version = "0.2.0"
-description = "My Agentix — 生产导向的 Agent 平台：基于 LangGraph 三层 Multi-Agent + Agent Core 2.0 + 多路知识检索的可扩展智能体构建与运行平台，领域知识经适配层接入、平台与业务域解耦"
+description = "My Agentix — a modular agent platform with LangGraph orchestration, guarded tools, runtime controls, and hybrid retrieval."
 readme = "README.md"
 # 支持 Python 3.10–3.13；CI 验证 3.10 下界，本地开发环境统一使用 Python 3.12.13。
 requires-python = ">=3.10,<3.14"
@@ -181,15 +181,11 @@ viz = [
     "seaborn",
 ]
 
-# [project.urls] 已摘除：原先六条全部指向未发布的远端（实测 404），会随 wheel 元数据
-# 分发出去——读不到源码比读到一个假链接更糟。发布到公共远端后按原名回填。
-#
-# [project.urls]
-# Homepage = "https://github.com/<owner>/<repo>"
-# Repository = "https://github.com/<owner>/<repo>"
-# Documentation = "https://github.com/<owner>/<repo>/blob/main/docs/architecture/README.md"
-# "Issue Tracker" = "https://github.com/<owner>/<repo>/issues"
-# Discussions = "https://github.com/<owner>/<repo>/discussions"
+[project.urls]
+Homepage = "https://github.com/Jia-Yihao/My-Agentix"
+Repository = "https://github.com/Jia-Yihao/My-Agentix"
+Documentation = "https://github.com/Jia-Yihao/My-Agentix/blob/main/docs/architecture/README.md"
+"Issue Tracker" = "https://github.com/Jia-Yihao/My-Agentix/issues"
 
 [project.scripts]
 # MCP server 可执行入口：pip install -e . 后任意 MCP 宿主可直接挂载
