@@ -1209,13 +1209,18 @@ PYTHONPATH=. DATABASE_URL="sqlite:///D:/Code/My-Agentix/data/demo/agentix_demo.d
 **精确 docid**，定义为「至少一条相关法条进入 top-k」，不使用 silver 文本匹配。
 `dev` 是盲测集（权重与参数在 `train` 上定），下表 dev 列是唯一对外读数。
 
+<!-- STARD_TABLE_START -->
+> 本表由 `evals/stard_summary_governance.py` 从两份进仓 JSON 自动生成；每个数字都可由 `docs/evals/stard-lexical-summary.json` 与 `docs/evals/stard-semantic-summary.json` 回算，手工改动会被守卫拦下。
+
 | 语料 | 通道 | dev R@5 | dev R@10 | dev MRR | dev NDCG@5 | 全量 R@5 |
 |---|---|---:|---:|---:|---:|---:|
 | 全库 55,348 | BM25 | 0.4708 | 0.5422 | 0.3942 | 0.3327 | 0.5217 |
 | 受控子集 8,000 | BM25 | 0.5812 | 0.6494 | 0.4761 | 0.4192 | 0.6060 |
 | 受控子集 8,000 | **Dense** | **0.7110** | **0.7760** | **0.6014** | **0.5455** | **0.7207** |
 | 受控子集 8,000 | RRF(BM25+Dense, k=60) | 0.6591 | 0.7565 | 0.5584 | 0.4994 | 0.6889 |
-| 受控子集 8,000 | RRF(BM25+Dense, k=10) | 0.6916 | 0.7792 | 0.5698 | — | 0.7084 |
+<!-- STARD_TABLE_END -->
+
+以下手写转述为 **历史 / 方向性** 读数，各有自己的样本口径、不与上表混算，也不作门禁数字：RRF(k=10) 在受控子集 dev 上 R@5 0.6916 / R@10 0.7792 / MRR 0.5698、全量 R@5 0.7084，来自早期调参记录，无进仓生成物。
 
 **受控子集**＝全部 1,445 个金标法条 + `seed=42` 抽样的 6,555 条干扰文档，共 8,000 条。
 本机 embedding 吞吐约 33 ms/条，55,348 条全库向量约需 30 分钟，故语义通道在子集上测；
@@ -1234,7 +1239,7 @@ PYTHONPATH=. DATABASE_URL="sqlite:///D:/Code/My-Agentix/data/demo/agentix_demo.d
   --write-summary docs/evals/stard-semantic-summary.json
 ```
 
-**查询侧方法的消融**（每项都在真实口语 query 上跑过，数字各按自己的样本口径，不与上表混算）：
+**查询侧方法的消融**（**历史 / 方向性** 读数：每项都在真实口语 query 上跑过，数字各按自己的样本口径，不与上表混算，也不作门禁；其中 CE 单行是名次覆盖形态，方向性小样本）：
 
 | 方法 | 样本口径 | R@5 变化 | 判定 |
 |---|---|---|---|
@@ -1261,6 +1266,34 @@ MRR 0.4761 → 0.6014；把 BM25 与 Dense 做 RRF 融合反而稀释语义信�
 `RETRIEVAL_RERANK_CANDIDATES` 后走 Cross-Encoder 精排，再截回 `search_k`，
 服务不可用或熔断时按原召回顺序 fail-open；生效时缓存池加 `|d1` 后缀隔离。
 精排每次检索增加一次上游调用，开启前按实际 QPS 与预算评估。
+
+### 15.4 运行时基线与联合实验生成物
+
+以下每个结论都有进仓 JSON + 复现命令 + 守卫（`tests/test_stard_governance_guard.py`）。
+本节不复述读数，只给生成物与口径边界；读数一律以 JSON 为准，避免再产生「只有 README 文字」的数字。
+
+| 生成物 | 内容 | 复现命令 |
+|---|---|---|
+| `docs/evals/stard-runtime-default-baseline.json` | 默认链路端到端基线：质量双口径、六层延迟、调用面、配置指纹 | `.venv/Scripts/python.exe evals/runtime_default_baseline.py --split dev --write-summary docs/evals/stard-runtime-default-baseline.json` |
+| `docs/evals/stard-ce-fusion-summary.json` | blend + 同候选集 z(CE)：val 定参、dev 单次盲测、硬上限归因、CE 分数缓存 | `.venv/Scripts/python.exe evals/stard_ce_fusion.py --phase ce` 与 `--phase report --write-summary ...` |
+| `docs/evals/stard-zfusion-mu-selection.json` | 第 1 件 A/B 的 z 融合 μ 在 val 300 上的定参网格 | `.venv/Scripts/python.exe evals/stard_zfusion_val_select.py --write-summary ...` |
+| `docs/evals/stard-rerank-ab-summary.json` | 候选池 20/50/100 × 精排 off / 名次覆盖 / z 融合分列 | `.venv/Scripts/python.exe evals/stard_recall_lab.py --split dev60 --ce-cache .tmp/stard/ce_ab_dev60.json ...` |
+| `docs/evals/stard-fusion-sweep-summary.json` | 34 组融合在 dev 308 与全量 1,543 并列验证 | `.venv/Scripts/python.exe evals/stard_fusion_sweep.py --split both --write-summary ...` |
+| `docs/evals/stard-latency-probe-summary.json` | SingleFlight / 引用还原批量化 / Redis 连接池真实读取点 | `.venv/Scripts/python.exe evals/latency_probe.py --probe all --write-summary ...` |
+| `docs/evals/stard-recall-lab-summary.json` | query memory 各方法小批次 / val / 全量读数 | `.venv/Scripts/python.exe evals/stard_recall_lab.py --split dev --write-summary ... --append` |
+
+口径边界（写进生成物，不在正文另作转述）：
+
+- 运行时基线是**默认链路的离线等价复刻**，不是线上真实读数或 SLO；`served_top5` 与
+  `canonical_pool100` 两套读数不可互读，「既有数字不退步」只锚定发布口径。
+- 六层延迟里的 `rerank` 是 `dense_rerank=false` 下的 no-op 占位，不是精排成本；
+  开启在线 Cross-Encoder 的真实量级另见 A/B 生成物里的 `ce_latency`，
+  且该 P95 是**离线 CE 缓存逐题 seconds，不是在线真实调用墙钟**。
+- `call_surface.cold.db_sql_statements` 是引用还原**按 document 聚合批量化之后**的 SQL 计数。
+- 离线实验形态（query memory、CE z 融合）不进生产默认；默认值一律未改，
+  `RETRIEVAL_HYBRID_ENABLED=false` / `RETRIEVAL_DENSE_RERANK_ENABLED=false` 保持。
+- 每份生成物含 `generated_at` / `config_fingerprint` / `corpus` / `split` /
+  `metric_definition` / `reproduce`；`evals/stard_summary_governance.py --check` 反向校验全表与键一致性。
 
 ## 16. 已知限制
 
