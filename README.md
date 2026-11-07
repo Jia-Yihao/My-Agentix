@@ -118,6 +118,8 @@ cp .env.example .env
 
 # 3. 基础设施：compose 共 14 个 service，web 是第 14 个
 docker compose up -d postgres redis neo4j mysql milvus kb_ingest prometheus alertmanager grafana
+# 可选：AMQP broker（死信 / ack 语义），只在 --profile mq 下启动
+# docker compose --profile mq up -d rabbitmq
 
 # 4. 后端（本机进程，故意不放进 compose，避免先占住 8000）
 export DATABASE_URL="postgresql+psycopg://postgres:postgrespass@localhost:15432/agentix"
@@ -257,7 +259,8 @@ My-Agentix/
 | 后端 | Python 3.12 · FastAPI · Uvicorn（SSE 流式） |
 | 编排 | LangGraph · Agent Core 2.0（Harness + Capabilities） |
 | 前端 | Vue 3 · TypeScript · Vite · Vitest |
-| 存储 | PostgreSQL（结构化）· Redis（缓存 / Checkpointer）· Neo4j（图谱）· Milvus（向量）· MySQL（统计） |
+| 存储 | PostgreSQL（结构化）· Redis Stack（缓存 / 任务队列 / 事件流 / Checkpointer / 限流，db0+db1 分片）· Neo4j（图谱）· Milvus（向量）· MySQL（统计） |
+| 消息 | Celery（Redis broker 为默认；RabbitMQ 为 `mq` profile 下的可选 broker，切 URL 即换，DLX 死信拓扑按 scheme 自动声明） |
 | 检索 | FAISS / Milvus 向量 · BM25 · Dense + BM25/z-score 混合召回 · 交叉编码器精排（可选）· token 预算装配 |
 | 扩展 | MCP（stdio JSON-RPC）· 声明式 ToolRegistry |
 | 可观测 | Prometheus · Grafana · Alertmanager · OTel |
@@ -271,6 +274,7 @@ My-Agentix/
 | [架构总览](docs/architecture/README.md) | 设计原则与运行时架构图 |
 | [运行时护栏](docs/architecture/运行时护栏.md) | 上下文隔离、控制平面、工具限量、人工审批 |
 | [配置管理](docs/architecture/配置管理.md) | 配置真源与开关回滚表 |
+| [中间件选型](docs/architecture/中间件选型.md) | Redis 六类用途与分片、Celery broker 的两种失败语义、RabbitMQ 切换与死信验证 |
 | [ADR-0007 执行沙箱端口](docs/architecture/adr/0007-执行沙箱端口.md) | 执行位置做成可声明端口的决策与残留 |
 | [预发环境与配置矩阵](docs/runbooks/预发环境与配置矩阵.md) | 环境差异清单、降权与授权收紧的切换步骤、发布前验收 |
 | [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md) | 资源闸、环境白名单、降权与延迟数字的复现方式 |
@@ -285,6 +289,7 @@ My-Agentix/
 - **执行沙箱不隔离文件系统与网络**：`subprocess` 档挡住资源与环境污染，但进程仍可读宿主可读的文件、仍可出网。
 - **`in_process` / `thread` 两档不是隔离边界**：同进程、同 GIL、同环境变量。
 - **评测门禁未武装**：仓库内的题集是公开 MCQ 集，旧的人工金标已下线，门禁代码保留但不阻塞合入。
+- **消息链路有两条语义，切换时不互通**：默认 Redis broker 靠 `visibility_timeout` 重投，RabbitMQ 靠 ack/nack 与 DLX；两个 broker 里在飞的消息不会互相迁移，切换前须先跑完。死信链路需要真实 RabbitMQ，CI 不覆盖，验证方式见中间件选型文档 §5。
 - **前端测试不进 CI**：CI 只做 lint 与构建。
 - 逐条展开见 [已知限制](docs/已知限制.md)。
 

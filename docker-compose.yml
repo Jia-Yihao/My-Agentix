@@ -342,6 +342,31 @@ services:
       timeout: 5s
       retries: 3
 
+  # 可选 broker：只在 `--profile mq` 时启动。默认链路走 Redis（db1 分片），
+  # 切过来只需把 CELERY_BROKER_URL / CELERY_RESULT_BACKEND 指到 amqp://…，
+  # 代码侧零改动（celery_app 按 URL scheme 决定是否声明 DLX 拓扑）。
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    profiles: ["mq"]
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # management 控制台
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-agentix}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-agentix}
+      - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_VHOST:-agentix}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - agentix-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
   # Milvus向量数据库
   etcd:
     image: quay.io/coreos/etcd:v3.5.5
@@ -569,6 +594,7 @@ networks:
 volumes:
   pgdata:
   redis_data:
+  rabbitmq_data:
   etcd_data:
   minio_data:
   milvus_data:
