@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "generator": "scripts/demo/report_eval.py",
+  "kind": "e2e",
+  "generated_for": "minimal-slice 端到端小样本（指针：evals/README §11）",
+  "source_eval": "data/demo/eval_e2e_venv_py312_openai1109.json",
+  "source_eval_sha256": "1e7443e65ebe754ceed74e8669553e315cf2e76ddbb8356cd1912cbfe6f96888",
+  "corpus_sha256": "1ca58564b1f3a58c212c0fc23e9e5da317576ce524fc58cd4f6d0ec6f3aea2e5",
+  "golden": null,
+  "ext_golden": null,
+  "env": {
+    "chat_model": "qwen/qwen3-8b",
+    "embedding_model": "text-embedding-bge-m3",
+    "vector_backend": "faiss",
+    "database": "sqlite:///D:/Code/My-Agentix/data/demo/agentix_demo.db",
+    "hybrid": false,
+    "thinking_disabled": true,
+    "kb_id": "legal-demo"
+  },
+  "metrics": {
+    "n": 23,
+    "silver_hits": 20,
+    "strict_hits": 16,
+    "citation_only_hits": 4,
+    "top1": 14,
+    "mid_2_5": 6,
+    "recall_at_5_silver": 0.8695652173913043,
+    "recall_at_5_strict": 0.6956521739130435,
+    "mrr": 0.7028985507246377,
+    "retrieval_p50": 100.3,
+    "retrieval_p95": 284.5,
+    "generation_p50": 7108.2,
+    "generation_p95": 13739.9,
+    "router_residual_p50": 13462.300000000001,
+    "router_residual_p95": 17682.1,
+    "e2e_p50": 20546.8,
+    "e2e_p95": 31543.1,
+    "prompt_mean": 718.695652173913,
+    "completion_mean": 283.3478260869565,
+    "total_tokens_mean": 1002.0434782608696,
+    "answer_chars_mean": 465.4782608695652,
+    "route_agree": 23,
+    "router_residual_share": 0.6417980041581887,
+    "covered_rows": 18,
+    "strict_ceiling_hits": 18,
+    "coverage_gap_golds": [
+      "《劳动法》第44条",
+      "《食品安全法》第148条",
+      "《消费者权益保护法》第55条",
+      "《工伤保险条例》第14条",
+      "《刑法》第253条之一"
+    ],
+    "coverage_gap_rows": [
+      "L049",
+      "L053",
+      "L054",
+      "L055",
+      "L056"
+    ],
+    "miss_ids": [
+      "L049",
+      "L055",
+      "L056"
+    ]
+  },
+  "published": [
+    {
+      "label": "Recall@5（silver）",
+      "string": "0.8696"
+    },
+    {
+      "label": "MRR",
+      "string": "0.7029"
+    },
+    {
+      "label": "检索 P50 / P95",
+      "string": "100.3 / 284.5"
+    },
+    {
+      "label": "生成 P50 / P95",
+      "string": "7108.2 / 13739.9"
+    },
+    {
+      "label": "路由残差 P50 / P95",
+      "string": "13462.3 / 17682.1"
+    },
+    {
+      "label": "端到端 P50 / P95",
+      "string": "20546.8 / 31543.1"
+    },
+    {
+      "label": "token 均值",
+      "string": "prompt 718.7 / completion 283.3 / 合计 1002.0"
+    },
+    {
+      "label": "严格 Recall@5",
+      "string": "**16/23 = 0.6957**"
+    },
+    {
+      "label": "路由一致率",
+      "string": "23/23"
+    },
+    {
+      "label": "答案字数均值",
+      "string": "465.5"
+    },
+    {
+      "label": "路由残差占比",
+      "string": "64%"
+    },
+    {
+      "label": "覆盖缺口天花板",
+      "string": "**18/23 = 0.7826**"
+    }
+  ],
+  "cross_stack": {
+    "source_eval": "data/demo/eval_e2e_anaconda_py313_openai147.json",
+    "source_eval_sha256": "640465fc86020512ce0baaae7cd8369eb0db13ab87a0c8a329272095531f7e12",
+    "shared_rows": 23,
+    "rank_diffs": 0,
+    "rank_diff_ids": [],
+    "set_diffs": 0,
+    "set_diff_ids": [],
+    "retrieval_p50_ratio": 23.0,
+    "retrieval_p50_ratio_text": "23 倍"
+  }
+}

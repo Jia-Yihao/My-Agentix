@@ -1,0 +1,1046 @@
+{
+  "schema": 1,
+  "generated_at": "2026-11-06T13:37:19Z",
+  "dataset": "STARD, single canonical corpus: 8,000-document controlled subset",
+  "corpus": {
+    "documents": 8000,
+    "construction": "all judged relevant documents plus seed=42 sampled distractors",
+    "embedding_model": "text-embedding-bge-m3"
+  },
+  "metric_definition": {
+    "judgement": "Exact qrels docid",
+    "recall": "Macro-average fraction of all relevant qrels docids retrieved in top K per query; exact docid matching.",
+    "not_accuracy": "Not classification accuracy or query hit rate; each query contributes its fraction of all relevant documents retrieved.",
+    "implementation": "evals/stard_eval.py::evaluate"
+  },
+  "protocol": {
+    "selection": "300-query train-only validation split (seed=42); remaining 935 train queries are excluded from selection",
+    "final_holdout": "official dev split; evaluated only after selection is fixed",
+    "output_k": 20,
+    "candidate_depth_grid": [
+      40,
+      60,
+      80,
+      100,
+      150,
+      200
+    ],
+    "alpha_grid": [
+      0.65,
+      0.7,
+      0.75,
+      0.8,
+      0.825,
+      0.85,
+      0.875,
+      0.9,
+      0.925,
+      0.95,
+      1.0
+    ],
+    "fusion": "z-score normalized raw Dense cosine similarity + raw BM25 score",
+    "bm25_index_build_seconds_local": 1.0601
+  },
+  "split": {
+    "train": 1235,
+    "validation": 300,
+    "dev": 308
+  },
+  "config_fingerprint": {
+    "fusion": "zscore",
+    "alpha": 0.85,
+    "candidate_depth": 80,
+    "search_k": 20
+  },
+  "reproduce": "fusion, validation grid and dev check: .venv/Scripts/python.exe evals/stard_default_retrieval.py --write-summary docs/evals/stard-default-retrieval.json",
+  "current_project_baseline": {
+    "alpha": 0.85,
+    "channel_depth": 80,
+    "validation": {
+      "queries": 300,
+      "alpha": 0.85,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.335254,
+        "recall@5": 0.55927,
+        "recall@10": 0.644579,
+        "recall@20": 0.723929,
+        "mrr": 0.554294,
+        "ndcg@5": 0.502933
+      }
+    },
+    "dev": {
+      "queries": 308,
+      "alpha": 0.85,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.37568,
+        "recall@5": 0.597573,
+        "recall@10": 0.689943,
+        "recall@20": 0.768893,
+        "mrr": 0.597156,
+        "ndcg@5": 0.544253
+      }
+    }
+  },
+  "selected_on_validation": {
+    "alpha": 1.0,
+    "channel_depth": 40,
+    "validation": {
+      "queries": 300,
+      "alpha": 1.0,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.550937,
+        "recall@10": 0.630968,
+        "recall@20": 0.726429,
+        "mrr": 0.536363,
+        "ndcg@5": 0.488292
+      }
+    }
+  },
+  "locked_dev_comparison": {
+    "baseline": {
+      "queries": 308,
+      "alpha": 0.85,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.37568,
+        "recall@5": 0.597573,
+        "recall@10": 0.689943,
+        "recall@20": 0.768893,
+        "mrr": 0.597156,
+        "ndcg@5": 0.544253
+      }
+    },
+    "selected": {
+      "queries": 308,
+      "alpha": 1.0,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.381903,
+        "recall@5": 0.597573,
+        "recall@10": 0.685073,
+        "recall@20": 0.757962,
+        "mrr": 0.598948,
+        "ndcg@5": 0.545482
+      }
+    },
+    "delta": {
+      "recall@1": 0.006223,
+      "recall@5": 0.0,
+      "recall@10": -0.00487,
+      "recall@20": -0.010931,
+      "mrr": 0.001792,
+      "ndcg@5": 0.001229
+    }
+  },
+  "final_full_split": {
+    "n": 1543,
+    "split": {
+      "train": 1235,
+      "dev": 308
+    },
+    "profile": {
+      "fusion": "zscore",
+      "alpha": 0.85,
+      "channel_depth": 80,
+      "search_k": 20,
+      "fusion_top_n": 200,
+      "fusion_min_score": 0.0,
+      "rerank": {
+        "model": "bge-reranker-v2-m3",
+        "max_candidates": 50,
+        "top_n": 20,
+        "min_score": 0.0
+      },
+      "context_budget_tokens": 4000
+    },
+    "metrics": {
+      "recall@20": 0.800483,
+      "mrr": 0.635511,
+      "ndcg@5": 0.577033
+    },
+    "delta_vs_fusion_baseline": {
+      "recall@20": 0.030222,
+      "mrr": 0.029218,
+      "ndcg@5": 0.024902
+    },
+    "provenance": {
+      "measured_at": "2026-11-06",
+      "method": "25-point cross-encoder grid on the validation split, then one full-split rerun of the selected point",
+      "artifacts": "per-query candidate pools and rerank score caches were removed during the 2026-11-07 repository cleanup; the scoring harness is not in the tree",
+      "recompute": "export the fused pool (alpha=0.85, channel depth=80, fusion top 200), POST it to a /v1/rerank endpoint, then evaluate with evals/stard_eval.py::evaluate",
+      "split_note": "train+dev combined; the 308-query dev split is used to check the validation selection, not as the published figure"
+    }
+  },
+  "production_decision": "Keep Dense + BM25/z-score as the only retrieval strategy. The alpha and candidate depth selected on train-only validation are reported separately from the fixed alpha=0.85, depth=80 project baseline.",
+  "validation_grid_ranked": [
+    {
+      "queries": 300,
+      "alpha": 1.0,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.550937,
+        "recall@10": 0.630968,
+        "recall@20": 0.726429,
+        "mrr": 0.536363,
+        "ndcg@5": 0.488292
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 1.0,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.550937,
+        "recall@10": 0.630968,
+        "recall@20": 0.726429,
+        "mrr": 0.536363,
+        "ndcg@5": 0.488292
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 1.0,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.550937,
+        "recall@10": 0.630968,
+        "recall@20": 0.726429,
+        "mrr": 0.536363,
+        "ndcg@5": 0.488292
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 1.0,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.550937,
+        "recall@10": 0.630968,
+        "recall@20": 0.726429,
+        "mrr": 0.536363,
+        "ndcg@5": 0.488292
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 1.0,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.550937,
+        "recall@10": 0.630968,
+        "recall@20": 0.726429,
+        "mrr": 0.536363,
+        "ndcg@5": 0.488292
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 1.0,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.550937,
+        "recall@10": 0.630968,
+        "recall@20": 0.726429,
+        "mrr": 0.536363,
+        "ndcg@5": 0.488292
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.875,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.336087,
+        "recall@5": 0.56177,
+        "recall@10": 0.649579,
+        "recall@20": 0.72604,
+        "mrr": 0.55515,
+        "ndcg@5": 0.50341
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.8,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.334421,
+        "recall@5": 0.561294,
+        "recall@10": 0.645413,
+        "recall@20": 0.725984,
+        "mrr": 0.553128,
+        "ndcg@5": 0.50273
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.95,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.317754,
+        "recall@5": 0.556492,
+        "recall@10": 0.637913,
+        "recall@20": 0.725595,
+        "mrr": 0.537129,
+        "ndcg@5": 0.491007
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.95,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.317754,
+        "recall@5": 0.554548,
+        "recall@10": 0.636246,
+        "recall@20": 0.725595,
+        "mrr": 0.537102,
+        "ndcg@5": 0.490045
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.95,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.314421,
+        "recall@5": 0.554548,
+        "recall@10": 0.637913,
+        "recall@20": 0.725595,
+        "mrr": 0.536182,
+        "ndcg@5": 0.489456
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.9,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.326643,
+        "recall@5": 0.562603,
+        "recall@10": 0.64569,
+        "recall@20": 0.724373,
+        "mrr": 0.547814,
+        "ndcg@5": 0.499125
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.85,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.335254,
+        "recall@5": 0.55927,
+        "recall@10": 0.644579,
+        "recall@20": 0.723929,
+        "mrr": 0.554294,
+        "ndcg@5": 0.502933
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.85,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.341921,
+        "recall@5": 0.56177,
+        "recall@10": 0.650135,
+        "recall@20": 0.723373,
+        "mrr": 0.559334,
+        "ndcg@5": 0.506846
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.875,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.33081,
+        "recall@5": 0.56427,
+        "recall@10": 0.647357,
+        "recall@20": 0.723262,
+        "mrr": 0.550659,
+        "ndcg@5": 0.501199
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.825,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.558437,
+        "recall@10": 0.645413,
+        "recall@20": 0.723206,
+        "mrr": 0.555871,
+        "ndcg@5": 0.503567
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.65,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.550071,
+        "recall@10": 0.647548,
+        "recall@20": 0.723206,
+        "mrr": 0.551544,
+        "ndcg@5": 0.495512
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.95,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.317754,
+        "recall@5": 0.558159,
+        "recall@10": 0.636802,
+        "recall@20": 0.722929,
+        "mrr": 0.536929,
+        "ndcg@5": 0.491738
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.7,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.55046,
+        "recall@10": 0.657159,
+        "recall@20": 0.72254,
+        "mrr": 0.548919,
+        "ndcg@5": 0.494932
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.95,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.314421,
+        "recall@5": 0.554548,
+        "recall@10": 0.637913,
+        "recall@20": 0.722262,
+        "mrr": 0.535722,
+        "ndcg@5": 0.489224
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.85,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.565103,
+        "recall@10": 0.648468,
+        "recall@20": 0.721706,
+        "mrr": 0.558078,
+        "ndcg@5": 0.507106
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.925,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.555937,
+        "recall@10": 0.636246,
+        "recall@20": 0.721595,
+        "mrr": 0.539334,
+        "ndcg@5": 0.492177
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.925,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.319421,
+        "recall@5": 0.555937,
+        "recall@10": 0.642357,
+        "recall@20": 0.721595,
+        "mrr": 0.539189,
+        "ndcg@5": 0.492031
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.85,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.334143,
+        "recall@5": 0.559825,
+        "recall@10": 0.647079,
+        "recall@20": 0.72154,
+        "mrr": 0.552253,
+        "ndcg@5": 0.501693
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.8,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.337754,
+        "recall@5": 0.563714,
+        "recall@10": 0.654857,
+        "recall@20": 0.721429,
+        "mrr": 0.554379,
+        "ndcg@5": 0.505002
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.825,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.563437,
+        "recall@10": 0.651802,
+        "recall@20": 0.721429,
+        "mrr": 0.55674,
+        "ndcg@5": 0.505283
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.875,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.336087,
+        "recall@5": 0.562603,
+        "recall@10": 0.65069,
+        "recall@20": 0.72104,
+        "mrr": 0.554036,
+        "ndcg@5": 0.503498
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.9,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.33331,
+        "recall@5": 0.562603,
+        "recall@10": 0.647357,
+        "recall@20": 0.72104,
+        "mrr": 0.550913,
+        "ndcg@5": 0.501536
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.75,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.337754,
+        "recall@5": 0.556571,
+        "recall@10": 0.657159,
+        "recall@20": 0.720873,
+        "mrr": 0.552737,
+        "ndcg@5": 0.50036
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.85,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.56177,
+        "recall@10": 0.647913,
+        "recall@20": 0.720595,
+        "mrr": 0.556242,
+        "ndcg@5": 0.505095
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.7,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.553794,
+        "recall@10": 0.645492,
+        "recall@20": 0.720595,
+        "mrr": 0.548788,
+        "ndcg@5": 0.496946
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.8,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.337754,
+        "recall@5": 0.568714,
+        "recall@10": 0.657714,
+        "recall@20": 0.720317,
+        "mrr": 0.554016,
+        "ndcg@5": 0.506006
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.75,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.337754,
+        "recall@5": 0.553238,
+        "recall@10": 0.654937,
+        "recall@20": 0.720317,
+        "mrr": 0.551602,
+        "ndcg@5": 0.497495
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.925,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.320532,
+        "recall@5": 0.556492,
+        "recall@10": 0.637913,
+        "recall@20": 0.72004,
+        "mrr": 0.541162,
+        "ndcg@5": 0.492966
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.875,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.334143,
+        "recall@5": 0.56427,
+        "recall@10": 0.644024,
+        "recall@20": 0.719929,
+        "mrr": 0.552795,
+        "ndcg@5": 0.502813
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.9,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.326643,
+        "recall@5": 0.555937,
+        "recall@10": 0.64569,
+        "recall@20": 0.719929,
+        "mrr": 0.546866,
+        "ndcg@5": 0.496119
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.925,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.321087,
+        "recall@5": 0.555937,
+        "recall@10": 0.637913,
+        "recall@20": 0.719929,
+        "mrr": 0.541336,
+        "ndcg@5": 0.493162
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.75,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.337754,
+        "recall@5": 0.554794,
+        "recall@10": 0.646603,
+        "recall@20": 0.719873,
+        "mrr": 0.551127,
+        "ndcg@5": 0.498144
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.8,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.337754,
+        "recall@5": 0.565381,
+        "recall@10": 0.651325,
+        "recall@20": 0.719762,
+        "mrr": 0.553958,
+        "ndcg@5": 0.505149
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.825,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.335254,
+        "recall@5": 0.563437,
+        "recall@10": 0.648468,
+        "recall@20": 0.719762,
+        "mrr": 0.555732,
+        "ndcg@5": 0.505024
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.825,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.55927,
+        "recall@10": 0.651802,
+        "recall@20": 0.719762,
+        "mrr": 0.556463,
+        "ndcg@5": 0.504053
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.825,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.557048,
+        "recall@10": 0.648468,
+        "recall@20": 0.719762,
+        "mrr": 0.556559,
+        "ndcg@5": 0.503369
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.75,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.336087,
+        "recall@5": 0.553238,
+        "recall@10": 0.650492,
+        "recall@20": 0.719762,
+        "mrr": 0.550168,
+        "ndcg@5": 0.497892
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.7,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.341087,
+        "recall@5": 0.549794,
+        "recall@10": 0.652714,
+        "recall@20": 0.719762,
+        "mrr": 0.553645,
+        "ndcg@5": 0.496726
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.7,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.340254,
+        "recall@5": 0.560627,
+        "recall@10": 0.655048,
+        "recall@20": 0.719317,
+        "mrr": 0.55322,
+        "ndcg@5": 0.502026
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.8,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.334421,
+        "recall@5": 0.558238,
+        "recall@10": 0.649857,
+        "recall@20": 0.718651,
+        "mrr": 0.55272,
+        "ndcg@5": 0.501453
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.7,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.337754,
+        "recall@5": 0.553683,
+        "recall@10": 0.659214,
+        "recall@20": 0.718571,
+        "mrr": 0.552552,
+        "ndcg@5": 0.497419
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.85,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.328032,
+        "recall@5": 0.565659,
+        "recall@10": 0.642913,
+        "recall@20": 0.71773,
+        "mrr": 0.546854,
+        "ndcg@5": 0.500202
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.825,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.338032,
+        "recall@5": 0.561659,
+        "recall@10": 0.646437,
+        "recall@20": 0.71773,
+        "mrr": 0.55246,
+        "ndcg@5": 0.502775
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.875,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.327476,
+        "recall@5": 0.563159,
+        "recall@10": 0.645413,
+        "recall@20": 0.71754,
+        "mrr": 0.549171,
+        "ndcg@5": 0.499741
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.9,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.324976,
+        "recall@5": 0.556492,
+        "recall@10": 0.643746,
+        "recall@20": 0.71754,
+        "mrr": 0.545875,
+        "ndcg@5": 0.495906
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.75,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.333587,
+        "recall@5": 0.563405,
+        "recall@10": 0.643103,
+        "recall@20": 0.717063,
+        "mrr": 0.547721,
+        "ndcg@5": 0.499764
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.8,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.339143,
+        "recall@5": 0.562294,
+        "recall@10": 0.64477,
+        "recall@20": 0.717063,
+        "mrr": 0.55547,
+        "ndcg@5": 0.504086
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.9,
+      "channel_depth": 100,
+      "metrics": {
+        "recall@1": 0.326643,
+        "recall@5": 0.555937,
+        "recall@10": 0.644024,
+        "recall@20": 0.716595,
+        "mrr": 0.546883,
+        "ndcg@5": 0.496315
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.65,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.350254,
+        "recall@5": 0.554595,
+        "recall@10": 0.661437,
+        "recall@20": 0.715905,
+        "mrr": 0.558302,
+        "ndcg@5": 0.501481
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.65,
+      "channel_depth": 80,
+      "metrics": {
+        "recall@1": 0.340254,
+        "recall@5": 0.550071,
+        "recall@10": 0.644214,
+        "recall@20": 0.715595,
+        "mrr": 0.550238,
+        "ndcg@5": 0.49558
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.75,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.337754,
+        "recall@5": 0.552405,
+        "recall@10": 0.654103,
+        "recall@20": 0.715317,
+        "mrr": 0.551469,
+        "ndcg@5": 0.497264
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.7,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.338587,
+        "recall@5": 0.563405,
+        "recall@10": 0.639492,
+        "recall@20": 0.71473,
+        "mrr": 0.553515,
+        "ndcg@5": 0.503287
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.875,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.326365,
+        "recall@5": 0.563159,
+        "recall@10": 0.646246,
+        "recall@20": 0.714397,
+        "mrr": 0.547258,
+        "ndcg@5": 0.498951
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.65,
+      "channel_depth": 60,
+      "metrics": {
+        "recall@1": 0.340254,
+        "recall@5": 0.554794,
+        "recall@10": 0.651714,
+        "recall@20": 0.714317,
+        "mrr": 0.551261,
+        "ndcg@5": 0.497696
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.65,
+      "channel_depth": 150,
+      "metrics": {
+        "recall@1": 0.346921,
+        "recall@5": 0.552929,
+        "recall@10": 0.652548,
+        "recall@20": 0.714238,
+        "mrr": 0.556949,
+        "ndcg@5": 0.500159
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.925,
+      "channel_depth": 200,
+      "metrics": {
+        "recall@1": 0.321087,
+        "recall@5": 0.555937,
+        "recall@10": 0.641246,
+        "recall@20": 0.713262,
+        "mrr": 0.541105,
+        "ndcg@5": 0.493231
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.9,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.320254,
+        "recall@5": 0.558159,
+        "recall@10": 0.644579,
+        "recall@20": 0.712175,
+        "mrr": 0.541984,
+        "ndcg@5": 0.493941
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.65,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.341921,
+        "recall@5": 0.562484,
+        "recall@10": 0.641048,
+        "recall@20": 0.711587,
+        "mrr": 0.552076,
+        "ndcg@5": 0.501711
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.95,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.317754,
+        "recall@5": 0.558159,
+        "recall@10": 0.636802,
+        "recall@20": 0.710508,
+        "mrr": 0.536699,
+        "ndcg@5": 0.49167
+      }
+    },
+    {
+      "queries": 300,
+      "alpha": 0.925,
+      "channel_depth": 40,
+      "metrics": {
+        "recall@1": 0.316087,
+        "recall@5": 0.556492,
+        "recall@10": 0.640135,
+        "recall@20": 0.710508,
+        "mrr": 0.537722,
+        "ndcg@5": 0.491114
+      }
+    }
+  ],
+  "caveats": [
+    "All quality comparisons use this one controlled 8,000-document corpus.",
+    "The controlled subset contains all judged relevant documents; absolute scores do not estimate full-corpus performance.",
+    "The dev comparison is a final holdout comparison and must not be used to retune the selected parameters.",
+    "BM25 queries are capped at 400 characters to match the runtime retrieval path.",
+    "Local in-process BM25 index timing excludes database loading and production network overhead."
+  ]
+}
