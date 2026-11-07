@@ -52,7 +52,6 @@ classifiers = [
 # 那个 `--no-deps` 恰好把冲突藏住了 —— 所以漂移不会让 CI 红，只会让
 # 「按 pyproject 安装」的下游用户拿到错的版本。现已全部对齐到
 # requirements.txt（并以本仓库 .venv 实测版本为最终证据）。
-# 守卫：tests/test_dependency_consistency.py
 dependencies = [
     # ---- Web 框架 ----
     "fastapi==0.142.2",

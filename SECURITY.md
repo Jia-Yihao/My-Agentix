@@ -92,7 +92,7 @@
 - LG-0-2（2026-10-27）已把 langchain 家族迁到 1.x（`langgraph 1.2.18` / `langchain-core 1.7.0` / `langsmith 0.14.13` 等，见 `requirements.txt`），上面 8 包全部换了版本线。因此那 21 项既不能算已清零，也不能当现状，必须在 1.x 栈上重跑 `pip-audit` 才能出结论。当时环境未装 `pip-audit`，未复测，所以不写新数字。
 - 核心 Web 栈（`fastapi==0.142.2` / `starlette==1.7.0` 等）的漏洞在 2026-10-04 那轮已清零，本次未动这两个 pin。
 - `bandit`（medium 及以上）当前 0 findings。LOW 级信息性项（try/except pass 等）保留并逐项复核。
-- 升级依赖时 `requirements.txt` 与 `pyproject.toml` 的双声明必须同步（`tests/test_dependency_consistency.py` 守卫），升级后以全量测试验证，基线见 README §6。
+- 升级依赖时 `requirements.txt` 与 `pyproject.toml` 的双声明必须同步，升级后以全量测试验证，基线见 README §6。
 
 ## 已知边界（非缺陷）
 

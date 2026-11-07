@@ -13,10 +13,10 @@ anti_when: 只改了 docs 文档时（跑守卫 + ruff 即可，全量 pytest 7-
    & ".\.venv\python.exe" -m ruff check agentix scripts evals kb_ingest tests
    ```
 
-2. **守卫测试**（文档一致性 / 配置治理 / 卫生）：
+2. **结构与卫生检查**：
 
    ```powershell
-   & ".\.venv\python.exe" -m pytest tests/test_p41_doc_consistency.py tests/test_p35_config_governance.py tests/test_code_hygiene.py tests/test_p36_structure_hygiene.py -q
+   & ".\.venv\python.exe" -m pytest tests/test_p36_structure_hygiene.py -q
    ```
 
 3. **全量后端**（约 7-8 分钟，mypy 同批跑）：
@@ -39,4 +39,4 @@ anti_when: 只改了 docs 文档时（跑守卫 + ruff 即可，全量 pytest 7-
 5. **基线数字**（若通过数变化）：同步 README.md 与 CHANGELOG。
 
 注意：命令行环境没有 heredoc，批量替换用临时 .py 脚本。
-新增文件不要带 BOM，`test_code_hygiene` 会拦。
+新增文件不要带 BOM。

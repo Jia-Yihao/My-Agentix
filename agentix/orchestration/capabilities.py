@@ -35,9 +35,8 @@
 ## 形态约束（由既有守卫反推）
 
 - 本文件 **不 import `agentix.application`**：它就是为拆掉这条反向边而存在的。
-- 本文件 **不 import `langgraph`**：`tests/test_p66_arch_guards.py:122-136` 对
-  「导入 langgraph 的文件」做 equality 棘轮，新增文件 import 它就得往白名单加一行，
-  等于扩大未经评审的例外面。
+- 本文件 **不 import `langgraph`**：导入它的文件属于一份冻结的等式集合，新增文件
+  import 它就得往白名单加一行，等于扩大未经评审的例外面。
   两条均由 `tests/test_p181_capability_seam.py` 的 AST 守卫钉住（`ast.walk` 全树，
   函数体内的延迟 import 同样计入）。
 - **不经包门面导出**：`tests/test_p71_m2_orchestration_migration.py:115-125` 要求

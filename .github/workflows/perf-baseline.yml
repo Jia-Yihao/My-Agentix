@@ -62,8 +62,8 @@ jobs:
           echo "::error title=perf-baseline::backend never became live within 60s（见 uvicorn.log）"
           tail -n 50 uvicorn.log || true
           exit 1
-      # pipefail 是被 tests/test_ci_gate_contract.py 钉死的：没有它，tee 会把
-      # load_test 的退出码换成自己的 0，压测全失败照样放行。
+      # 必须 pipefail：没有它，tee 会把 load_test 的退出码换成自己的 0，
+      # 压测全失败照样放行。
       - name: Run load test
         run: |
           set -eu

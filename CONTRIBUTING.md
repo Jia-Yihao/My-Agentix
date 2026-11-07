@@ -180,7 +180,7 @@ Closes #42
 env -u PYTHONPATH python -m pytest -m "not integration" -q
 
 # 单文件 / 单用例
-python -m pytest tests/test_p101_integrity_guards.py -q
+python -m pytest tests/test_retrieval_matching.py -q
 
 # 覆盖率（本地自查用）
 python -m pytest --cov=agentix --cov-report=term-missing

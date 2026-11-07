@@ -17,9 +17,8 @@ PDF 解析测试）。
 
 1. **代码侧**（本文件）：按 ``pymupdf`` → ``fitz`` 顺序尝试，两个名字都能跑，
    不再把整个 PDF 链路绑死在某个版本的别名上；
-2. **环境侧**：``requirements.txt`` 的 pin 与实装版本必须一致
-   （见 ``tests/test_dependency_consistency.py``）——版本漂移本身就是本次
-   故障的成因。
+2. **环境侧**：``requirements.txt`` 的 pin 与实装版本必须一致——版本漂移本身
+   就是本次故障的成因。
 
 调用方式::
 

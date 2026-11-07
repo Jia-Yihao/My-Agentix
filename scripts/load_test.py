@@ -11,7 +11,7 @@
 
 - **只用标准库**：CI 里本脚本在 ``pip install -r requirements.txt`` 之后运行，
   但把压测器绑死在第三方 HTTP 客户端上会平添一个"未声明依赖"的隐患面
-  （见 ``tests/test_dependency_consistency.py`` 的教训）。此处用
+  （requirements.txt 与 pyproject.toml 的双声明漂移就是这么发生的）。此处用
   ``http.client`` 的**线程内复用连接**（keep-alive），既贴近真实压测语义
   （不把 TCP 握手成本算进单请求延迟），又零依赖。
 - **stdout 只输出 JSON**：workflow 把 stdout ``tee`` 进 ``baseline.json``

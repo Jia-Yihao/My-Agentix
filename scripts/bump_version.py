@@ -34,8 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Windows 默认 GBK 控制台打不出 ✅/❌ 等字符，会 UnicodeEncodeError 非零退出
-# （tests/test_p35_config_governance.py 的 --check 回归因此在 zh-CN Windows 上必红）。
+# Windows 默认 GBK 控制台打不出 ✅/❌ 等字符，会 UnicodeEncodeError 非零退出。
 # 强制 stdout/stderr 走 UTF-8，失败则降级为 replace，绝不因打印崩溃。
 for _stream in (sys.stdout, sys.stderr):
     try:

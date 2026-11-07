@@ -6,8 +6,8 @@
 的同族形态），所以白名单住在这里，两个调用方都从这里取。
 
 分层：本模块**只依赖标准库**，不 import ``agentix`` 的任何其它层，也不读 ``settings``
-（extra_keys 由调用方传进来）。``tests/test_p66_arch_guards.py`` 允许
-``tools/**`` 与 ``capabilities/**`` 依赖域层，反过来不行。
+（extra_keys 由调用方传进来）。分层口径允许 ``tools/**`` 与 ``capabilities/**``
+依赖域层，反过来不行。
 """
 
 from __future__ import annotations

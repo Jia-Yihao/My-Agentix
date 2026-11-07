@@ -41,9 +41,8 @@
 
 ## 两条硬约束（由既有守卫反推，别在后续批次里破）
 
-- 本文件 **不 import `langgraph`**：`tests/test_p66_arch_guards.py:122-136` 对
-  「导入 langgraph 的文件」做 equality 棘轮，新增文件导入它就得往白名单加一行，等于
-  扩大未经评审的例外面。
+- 本文件 **不 import `langgraph`**：导入它的文件属于一份冻结的等式集合，新增文件
+  导入它就得往白名单加一行，等于扩大未经评审的例外面。
 - 本文件 **不 import `agentix.application`**：它就是为拆掉这条反向边而存在的。
   两条约束由 `tests/test_p178_node_registry.py` 的 AST 守卫钉住（含函数体内的延迟 import）。
 - 包门面保持零 import：`tests/test_p71_m2_orchestration_migration.py:115-125` 要求

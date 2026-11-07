@@ -62,7 +62,7 @@ def _repo_relative(value: object) -> str:
     return text
 
 #: CI ``eval-offline`` 门禁比对的五个键（真源：``.github/workflows/ci.yml`` 的
-#: METRICS 元组；``tests/test_ci_gate_contract.py`` 守住两边不脱钩）。
+#: METRICS 元组，两边必须一致）。
 CI_GATE_METRICS: Tuple[str, ...] = (
     "route_accuracy",
     "citation_hit_rate_applicable",
