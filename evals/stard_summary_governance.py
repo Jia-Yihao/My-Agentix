@@ -29,23 +29,32 @@ def _load_report() -> dict:
 
 
 def generate_table() -> str:
-    """Render the only public retrieval quality row from the locked dev report."""
+    """Render the published retrieval quality row: the full train+dev split.
+
+    The 308-query dev split only verifies that the validation selection did not
+    overfit; it is not the figure the project publishes. The published row is the
+    final profile measured on all 1,543 judged queries.
+    """
     report = _load_report()
-    baseline = report["current_project_baseline"]
-    metrics = report["locked_dev_comparison"]["baseline"]["metrics"]
+    final = report["final_full_split"]
+    profile = final["profile"]
+    metrics = final["metrics"]
+    rerank = profile["rerank"]
+    scheme = (
+        f"Dense + BM25/z-score (α={profile['alpha']}) + 交叉编码器精排"
+        f"（{rerank['model']}，池 {rerank['max_candidates']} → {rerank['top_n']}）"
+    )
     return "\n".join(
         (
             TABLE_START,
             "> 本表由 `evals/stard_summary_governance.py` 从唯一基准报告自动生成；手工改动会被守卫拦下。",
             "",
-            "| 数据集 | 默认方案 | 通道候选深度 | dev Recall@1 | dev Recall@5 | dev Recall@10 | dev Recall@20 | dev MRR | dev NDCG@5 |",
-            "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+            "| 数据集 | 题数 | 方案 | Recall@20 | MRR | NDCG@5 |",
+            "|---|---:|---|---:|---:|---:|",
             (
-                f"| STARD 8,000 文档受控子集 | Dense + BM25/z-score (α={baseline['alpha']}) "
-                f"| {baseline['channel_depth']} "
-                f"| {metrics['recall@1']:.4f} | {metrics['recall@5']:.4f} "
-                f"| {metrics['recall@10']:.4f} | {metrics['recall@20']:.4f} "
-                f"| {metrics['mrr']:.4f} | {metrics['ndcg@5']:.4f} |"
+                f"| STARD 8,000 文档受控子集（train+dev） | {final['n']:,} | {scheme} "
+                f"| {metrics['recall@20']:.4f} | {metrics['mrr']:.4f} "
+                f"| {metrics['ndcg@5']:.4f} |"
             ),
             TABLE_END,
             "",
@@ -77,6 +86,13 @@ def check() -> list[str]:
         problems.append("the canonical STARD controlled corpus must contain 8,000 documents")
     if report.get("split") != {"train": 1235, "validation": 300, "dev": 308}:
         problems.append("STARD query split must be train=1,235 / validation=300 / dev=308")
+    final = report.get("final_full_split") or {}
+    if final.get("n") != 1543:
+        problems.append("the published row must cover all 1,543 judged queries (train+dev)")
+    if not {"recall@20", "mrr", "ndcg@5"} <= set(final.get("metrics", {})):
+        problems.append("final_full_split must report recall@20, mrr and ndcg@5")
+    if not final.get("provenance", {}).get("measured_at"):
+        problems.append("final_full_split must record when it was measured")
     if "fraction" not in report.get("metric_definition", {}).get("recall", "").lower():
         problems.append("Recall@K must be defined as a fraction of all relevant qrels docids")
     summaries = sorted(EVALS.glob("stard-*.json"))

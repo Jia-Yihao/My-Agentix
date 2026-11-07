@@ -307,12 +307,12 @@ class _RetrievalSettingsCompat:
     # 唯一融合策略：Dense + BM25 原始分数 z-score；alpha 为 Dense 权重。
     RETRIEVAL_FUSION_ALPHA = float(os.getenv("RETRIEVAL_FUSION_ALPHA", "0.85"))
     RETRIEVAL_FUSION_TOP_N = int(os.getenv("RETRIEVAL_FUSION_TOP_N", "200"))
-    # 融合后分数闸（R-P4）：未设置 = 关（基线逐位等价）。刻意用 Optional 而非
-    # 「0 = 关」——z-score 融合分的均值就是 0，「只保留高于平均」是常见阈值，
-    # 用 0 兼作关闭值会让这个最有用的档位无法表达。仅在**双通道真融合**时生效
-    # ——单通道保留的是 dense 距离原分（越小越好），同一道闸会反向误杀。
+    # 融合后分数闸（R-P4）：默认 0.0 = 只保留高于平均（z-score 均值即 0），与
+    # 上表的最终档位同一套。刻意用 Optional 而非「0 = 关」——用 0 兼作关闭值会
+    # 让这个最有用的档位无法表达，因此「关」写成一个显式空值。仅在**双通道真融合**
+    # 时生效——单通道保留的是 dense 距离原分（越小越好），同一道闸会反向误杀。
     # 可设负值（如 -0.5）只砍明显低于平均的尾部；过滤后为空 fail-open 回退 Top1。
-    _raw_fusion_min_score = os.getenv("RETRIEVAL_FUSION_MIN_SCORE", "").strip()
+    _raw_fusion_min_score = os.getenv("RETRIEVAL_FUSION_MIN_SCORE", "0.0").strip()
     RETRIEVAL_FUSION_MIN_SCORE = (
         float(_raw_fusion_min_score) if _raw_fusion_min_score else None
     )
