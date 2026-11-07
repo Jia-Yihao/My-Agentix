@@ -394,6 +394,15 @@ bench/results/
 # 测试套件不随仓库发布（仅本地验证用）
 /tests/
 
+# 详细文档不随仓库发布，只在本地保留：设计说明、ADR、Runbook、实现细节、
+# 评测框架说明一律走这条。仓库对外只留声明性文档（README / LICENSE /
+# CONTRIBUTING / SECURITY / CODE_OF_CONDUCT 与各模块 README）。
+# 两个例外仍随仓库分发：README 用的配图，以及首页指标表所依据的评测汇总。
+/docs/*
+!/docs/assets/
+!/docs/evals/
+/evals/README.md
+
 # 运行时哨兵与跑批产物不入库
 kb_ingest/data/.*_ingested
 evals/reports/

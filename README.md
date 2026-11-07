@@ -134,7 +134,7 @@ cd web && npm install && npm run dev
 
 ## 5. 配置
 
-配置只有一处真源：`agentix/config/settings.py` 的 `Settings`（模块级单例，按精确大写名读环境变量、大小写敏感、读根目录 `.env`）。完整键表与回滚方式见 [配置管理](docs/architecture/配置管理.md)。
+配置只有一处真源：`agentix/config/settings.py` 的 `Settings`（模块级单例，按精确大写名读环境变量、大小写敏感、读根目录 `.env`）。键名、默认值与回滚语义都写在字段定义与注释里，`Settings` 之外没有第二处读环境变量的地方。
 
 ```bash
 # .env —— 起服务最少要这几项
@@ -168,7 +168,7 @@ make init-data      # 建运行时数据目录
 检索质量统一以公开数据集 STARD 的 8,000 文档受控子集和精确 docid qrels 为准。Recall@K 是每题检出的相关法条占该题全部相关法条的比例，再对题目宏平均，不是查询命中率或分类准确率。检索档位的选择只用 train 内固定 300 题 validation；官方 `dev` 308 题用来确认这次选择没有过拟合，本身不作对外指标。首页展示的是同一档位在全量 1,543 题（train+dev 合并）上的最终读数。
 
 <!-- STARD_TABLE_START -->
-> 本表由 `evals/stard_summary_governance.py` 从唯一基准报告自动生成；手工改动会被守卫拦下。
+> 本表由 `evals/stard_summary_governance.py` 从唯一基准报告生成，分布与题数改动后重跑脚本，不要手抄。
 
 | 数据集 | 题数 | 方案 | Recall@20 | MRR | NDCG@5 |
 |---|---:|---|---:|---:|---:|
@@ -183,7 +183,7 @@ make init-data      # 建运行时数据目录
 - **融合后分数闸**（`RETRIEVAL_FUSION_MIN_SCORE`）：只在双通道真融合时按 z-score 下限裁掉尾部，裁空了回退 Top-1，不制造空答。单通道保留的是距离原分，量纲与方向都不同，这道闸对它不生效。默认 `0.0`，即只留高于平均的候选，把池子从 50 压到 40 上下；显式置空即关闭。开与关在全量 Recall@20 上的差异不足千分之一，它省的是候选体积和精排送检量，不是分数。
 - **预算对齐装配**（`CONTEXT_BUDGET_TOKENS`）：按 token 预算贪心装配，并把引用列表、命中片段与评测 contexts 一起收窄到真正进了 Prompt 的那几条，避免引用模型没读过的文本、faithfulness 拿全量片段评估。本批片段确实经过精排时，`CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK` 让查询相关的精排顺序直接进预算，不被全局档位重排挤出窗口。默认预算 4,000 token，`0` 表示不限额。
 
-相对融合基线，精排在排序前端拿到的是全量 1,543 题 Recall@20 +3.0 个百分点、MRR +2.9、NDCG@5 +2.5。它只重排不增召回，候选池里本来没有的文档仍然找不回来，所以收益随首发召回率见顶。选参网格、dev 核对结果、指标口径与复现方式见[评测说明](evals/README.md)。
+相对融合基线，精排在排序前端拿到的是全量 1,543 题 Recall@20 +3.0 个百分点、MRR +2.9、NDCG@5 +2.5。它只重排不增召回，候选池里本来没有的文档仍然找不回来，所以收益随首发召回率见顶。选参网格与 dev 308 题上的过拟合核对只在本地记录，不随仓库发布。
 
 ```bash
 python evals/stard_default_retrieval.py --help # 唯一检索基准与调参评测
@@ -191,7 +191,7 @@ python evals/run_eval.py --help              # 离线打分（需一份题集，
 python evals/trajectory_regression.py --help # 轨迹前缀回归（-b 指向已录制的轨迹包目录）
 ```
 
-打分口径、覆盖矩阵、消融与回流见[评测说明](evals/README.md)。
+上面三个入口各自带 `--help`，参数含义写在脚本的 argparse 定义里；`evals/` 下的判分器、指标口径与消融脚本同样以代码和 docstring 为准。
 
 ## 8. 可观测性
 
@@ -211,7 +211,7 @@ python evals/trajectory_regression.py --help # 轨迹前缀回归（-b 指向已
 | 执行隔离 | 工具按 `ToolSpec.sandbox` 声明选执行位置，`subprocess` 档带资源闸与环境白名单；文件系统与网络不隔离，属已登记残留 |
 | 人工审批 | `HUMAN_REVIEW_ENABLED` 打开后高风险工具需审批 |
 
-逐条风险与缓解见 [SECURITY.md](SECURITY.md) 与[已知限制](docs/已知限制.md)。
+逐条风险与缓解见 [SECURITY.md](SECURITY.md)。
 
 ## 10. 项目结构
 
@@ -240,7 +240,7 @@ My-Agentix/
 │   └── performance/        性能与基准工具
 ├── bench/                  检索与性能对比脚本
 ├── data/                   领域数据（图谱种子与语料，由使用者填充）
-├── docs/                   架构、ADR、Runbook、实现手册
+├── docs/                   对外分发的配图与评测汇总（详细设计文档不入库）
 ├── docker/                 观测栈与 compose 覆盖文件
 ├── evals/                  评测脚本、门禁与消融
 ├── kb_ingest/              知识库入库独立服务
@@ -269,18 +269,16 @@ My-Agentix/
 
 ## 12. 文档
 
+仓库只放声明性文档：首页、许可证、贡献指南、安全策略与行为准则。设计说明、ADR、Runbook 与实现细节属内部资料，不随仓库分发；代码里的 docstring 与注释是这些口径的公开出处。
+
 | 文档 | 内容 |
 |---|---|
-| [架构总览](docs/architecture/README.md) | 设计原则与运行时架构图 |
-| [运行时护栏](docs/architecture/运行时护栏.md) | 上下文隔离、控制平面、工具限量、人工审批 |
-| [配置管理](docs/architecture/配置管理.md) | 配置真源与开关回滚表 |
-| [中间件选型](docs/architecture/中间件选型.md) | Redis 六类用途与分片、Celery broker 的两种失败语义、RabbitMQ 切换与死信验证 |
-| [ADR-0007 执行沙箱端口](docs/architecture/adr/0007-执行沙箱端口.md) | 执行位置做成可声明端口的决策与残留 |
-| [预发环境与配置矩阵](docs/runbooks/预发环境与配置矩阵.md) | 环境差异清单、降权与授权收紧的切换步骤、发布前验收 |
-| [subprocess 沙箱取证](docs/runbooks/子进程沙箱取证.md) | 资源闸、环境白名单、降权与延迟数字的复现方式 |
-| [本体 Schema](docs/design/测试数据域-本体Schema.md) | Neo4j 节点 Label、关系类型与属性契约 |
-| [已知限制](docs/已知限制.md) | 沙箱、门禁、覆盖缺口、路由兜底与边界 |
-| [评测说明](evals/README.md) | 打分口径、质量门禁、消融实验 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 开发流程、工程约定与合入门槛 |
+| [SECURITY.md](SECURITY.md) | 安全机制、已知边界与漏洞报告渠道 |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 社区行为准则 |
+| [bench/README.md](bench/README.md) | 基准入口与读数口径 |
+| [web/README.md](web/README.md) | 前端模块与构建方式 |
+| [LICENSE](LICENSE)、[NOTICE](NOTICE) | 许可与第三方归属 |
 
 ## 13. 已知限制
 
@@ -291,7 +289,6 @@ My-Agentix/
 - 评测门禁未武装：仓库内的题集是公开 MCQ 集，旧的人工金标已下线，门禁代码保留但不阻塞合入。
 - 消息链路有两条语义，切换时不互通：默认 Redis broker 靠 `visibility_timeout` 重投，RabbitMQ 靠 ack/nack 与 DLX；在飞的消息不会互相迁移，切换前须先跑完。死信链路需要真实 RabbitMQ，CI 不覆盖，验证方式见中间件选型文档 §5。
 - 前端测试不进 CI，CI 只做 lint 与构建。
-- 逐条展开见[已知限制](docs/已知限制.md)。
 
 ## 14. 参与贡献
 

@@ -2,7 +2,7 @@
 
 本文档说明本项目的开发流程、代码规范与提交约定。
 
-> 建议阅读顺序：本文件 → [README](README.md)（项目总览与快速开始）→ [架构总览](docs/architecture/README.md)。
+> 建议阅读顺序：本文件 → [README](README.md)（项目总览与快速开始）。
 
 ---
 
@@ -96,15 +96,15 @@ pytest tests/test_p17_domain_layer.py tests/test_p22_obs_scope.py -q
 1. **新开关默认关**：新增 Settings 字段一律以 `False` / `0` 起步，关闭时行为与改动前一致。行为变更走「新 flag + 默认关 + 显式启用」，不直接改默认行为。
 2. **辅助子系统 fail-open**：指标、记忆、指令、预算这类旁路出错不得影响主链路；捕获后降级（空串 / 跳过 / 回基线），并用 `logger.warning` 留痕。
 3. **指标标签有界**：新指标的 label 名先登记进 `tests/test_p100_genai_observability.py::ALLOWED_METRIC_LABELS`；用户、会话、trace、问答内容等高基数维度只进 span，不进指标。
-4. **配置键五处同步**：新增 Settings 字段需同步五处——`agentix/config/settings.py`、`agentix/config/selfcheck.py` 的 `DEFAULT_IGNORED_MISSING`、`.env.example`、`docs/architecture/配置管理.md` 的键表，以及 `tests/test_p41_doc_consistency.py::TestDocumentedConfigKeys` 的手写清单。
+4. **配置键三处同步**：新增 Settings 字段需同步三处——`agentix/config/settings.py` 的字段定义、`agentix/config/selfcheck.py` 的 `DEFAULT_IGNORED_MISSING`、`.env.example`。
 5. **改基线先确认**：任何对数据、脚本、测试基线的改动需先与维护者确认。
 6. **执行边界四条**：
    - ① 「先解析再执行」的入口，语法闸与资源闸必须各自独立存在。AST 白名单挡得住 `__import__`，挡不住 `9**9**9` 吃光内存；白名单也只覆盖它声明过的维度，连接串的 scheme 白名单不覆盖目的地，目的地白名单也不覆盖 `?local_infile=1` 这类让对端读走本机文件的客户端能力位。
    - ② `asyncio.wait_for` 只能截断已经让出事件循环的调用；非协程 handler 不下放线程时，`timeout_ms` 形同虚设。
    - ③ 承载凭据的字段不要过会回显调用方输入的 validator。pydantic 会把被拒输入放进 `errors()[].input`，FastAPI 默认写进 422 响应体，校验器就成了凭据回显器；校验点放服务层，错误 detail 只说为什么被拒。
    - ④ 诊断口径必须与执行链的判定同源，且只告警不设卡。
-7. **核对基准必须是生成物**：`docs/runbooks/预发环境与配置矩阵.md` 的配置矩阵由 `scripts/gen_staging_matrix.py` 从 `docker-compose.yml` 与 `docker/compose.override.staging.yml` 推导。改 compose、override 或这张表，都必须让 `python scripts/gen_staging_matrix.py --check` 退出 0。不要拿 `docker compose config` 的渲染结果当基准：它会展开宿主机 `.env`（密钥进日志），渲染值本身已被 `.env` 污染。
-8. **文档分层**：`README.md` 是唯一的现行总览，`docs/runbooks/` 放操作动作。新增文档不复述 README 已声明的事实（架构分层、默认开关、目录地图、测试基线、已知限制），只写指针；要补结构信息就改 README，要补操作就写 runbook。
+7. **核对基准必须是生成物**：服务清单、环境差异这类派生事实不手抄，`docker-compose.yml` 与 `docker/compose.override.staging.yml` 就是真源，改一处就得把跟着它写的地方一起改。不要拿 `docker compose config` 的渲染结果当基准：它会展开宿主机 `.env`（密钥进日志），渲染值本身已被 `.env` 污染。
+8. **文档分层**：`README.md` 是唯一对外总览，声明项目是什么、怎么跑、边界在哪。设计取舍、ADR、操作手册、实现细节属内部资料，只在本地保留、不入库。新增事实优先落进 README，其次落进代码 docstring 与注释；两处都没有，就等于没记录。
 
 ---
 
@@ -133,8 +133,8 @@ mypy agentix
 ### 命名与文档
 
 - 模块与函数级 docstring 用中文，说明设计依据而不只是描述行为
-- 公共 API 变更必须同步更新 `docs/`
-- 涉及架构决策的改动，补 `docs/architecture/` 下的说明或 ADR
+- 公共 API 变更同步更新 README 的对外口径
+- 涉及架构决策的改动，把决策理由写进模块 docstring 或紧邻的注释，不要只留在一份不随仓库走的文档里
 
 ---
 
@@ -180,7 +180,7 @@ Closes #42
 env -u PYTHONPATH python -m pytest -m "not integration" -q
 
 # 单文件 / 单用例
-python -m pytest tests/test_p41_doc_consistency.py -q
+python -m pytest tests/test_p101_integrity_guards.py -q
 
 # 覆盖率（本地自查用）
 python -m pytest --cov=agentix --cov-report=term-missing
@@ -220,7 +220,7 @@ python -m pytest --cov=agentix --cov-report=term-missing
 | 新增一个 LLM / Embedding / Reranker Provider | `agentix/infrastructure/registry.py` 的注册表模式 |
 | 新增一个 Agent 子图 / 节点 | `agentix/orchestration/` 的单层主图与节点注册 |
 | 迁移到新垂直领域 | 先开 Issue 讨论领域适配方案 |
-| 新增配置项 | [`docs/architecture/配置管理.md`](docs/architecture/配置管理.md) |
+| 新增配置项 | `agentix/config/settings.py` 的 `Settings` 字段与 `.env.example` |
 
 ---
 
