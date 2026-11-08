@@ -56,6 +56,9 @@ def hydrate_citations_from_stored(session: Session, stored) -> list[dict]:
                     "page_no": item.get("page_no"),
                     "snippet": item["snippet"],
                     "source": item.get("source"),
+                    # 召回溯源：标号与引用状态随历史透传（老数据无此键 → None）
+                    "ref": item.get("ref"),
+                    "cited": item.get("cited"),
                     # 有效性徽标/替代提示随历史透传（老数据无此键 → None，前端容错）
                     "effective_status": item.get("effective_status"),
                     "replaced_by": item.get("replaced_by"),
@@ -80,6 +83,8 @@ def hydrate_citations_from_stored(session: Session, stored) -> list[dict]:
                 "page_no": chunk.page_no,
                 "snippet": snippet,
                 "source": source_name or None,
+                "ref": item.get("ref"),
+                "cited": item.get("cited"),
                 "effective_status": item.get("effective_status"),
                 "replaced_by": item.get("replaced_by"),
                 **file_meta,

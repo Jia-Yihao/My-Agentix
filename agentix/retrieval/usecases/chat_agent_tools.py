@@ -48,6 +48,10 @@ class AgentToolContext:
     last_citations: list[dict] = field(default_factory=list)
     last_hit_chunks: list[dict] = field(default_factory=list)
     last_contexts: list[str] = field(default_factory=list)
+    # 召回溯源：最近一次装配的 [S1] 标号 → 来源记录（与 Prompt 同序）
+    last_provenance: list[dict] = field(default_factory=list)
+    # 召回溯源：出答后按标号对齐引用卡的报告（refs/cited/unresolved）
+    last_provenance_report: dict = field(default_factory=dict)
     # R3-5 Context Engine：最近一次 context 装配统计（ranking/budget/isolation）
     last_context_meta: dict = field(default_factory=dict)
     # R3-6 GroundingValidator：最近一次答案锚定校验报告（观测模式）
@@ -87,10 +91,18 @@ def build_agent_system_prompt(ctx: AgentToolContext) -> str:
     静态前缀：角色 / 能力 / 工具规范 / 规则。
     不随会话变化——动态范围信息（KB/文件夹/文档）经独立通道注入（用户消息前缀），
     不内嵌 system prompt（M3.2）。
+
+    召回溯源（``RAG_PROVENANCE_ENABLED``）开启时追加一条规则：检索片段带 ``[S1]``
+    标号，最终回复沿用标号，前端据此把回答对到引用卡。关闭时提示词与基线逐字一致。
     """
     tool_lines = "\n".join(
         f"{i}. **{name}** — {spec['desc']}"
         for i, (name, spec) in enumerate(TOOL_SPECS.items(), 1)
+    )
+    provenance_rule = (
+        "- 检索片段前的 [S1]、[S2] 是来源标号：回复里用到哪条就在句末保留该标号，不要自己编新标号\n"
+        if settings.RAG_PROVENANCE_ENABLED
+        else ""
     )
     return f"""你是 My Agentix 智能文档助手。当前对话已锁定范围，不可切换知识库或文件夹。
 
@@ -103,7 +115,7 @@ def build_agent_system_prompt(ctx: AgentToolContext) -> str:
 - list_scope_documents 最多显示 20 条，**不能**据此断定某个文件名不存在
 - 若 query_knowledge_base 已返回正文，最终回复必须基于该内容，**禁止**再说「未找到该文档」
 - 仅当用户要搜具体关键词时用 search_documents
-- 回答使用中文，简洁准确；若工具无结果，如实说明
+{provenance_rule}- 回答使用中文，简洁准确；若工具无结果，如实说明
 - 凡内容类问题必须先调 query_knowledge_base，禁止不查资料直接答
 """
 
@@ -245,6 +257,8 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
             isolate_threshold=settings.CONTEXT_ISOLATE_THRESHOLD,
             source="query_knowledge_base",
             truncate_ratio=settings.CONTEXT_BUDGET_TRUNCATE_RATIO,
+            # 召回溯源：片段带 [S1] 标号 + 来源行，模型才能在答案里标出处
+            provenance_enabled=settings.RAG_PROVENANCE_ENABLED,
         )
         if not ranking_enabled and settings.CONTEXT_AUTHORITY_RANKING_ENABLED:
             context_meta["authority_ranking_skipped_for_rerank"] = True
@@ -262,8 +276,11 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
         else:
             evidence_docs = docs
 
+        # 召回溯源：标号随装配结果回传，引用卡按 chunk_id 挂上同一个 [S1]
+        ctx.last_provenance = list(context_meta.get("provenance") or [])
+
         ctx.last_citations = await asyncio.to_thread(
-            get_citations_from_docs, evidence_docs, ctx.session
+            get_citations_from_docs, evidence_docs, ctx.session, ctx.last_provenance
         )
         ctx.last_hit_chunks = hit_chunks_from_docs(evidence_docs)
         ctx.last_contexts = (
@@ -283,6 +300,7 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
                 "retrieved": len(docs),
                 "final_chunks": context_meta.get("final_docs"),
             },
+            provenance=bool(ctx.last_provenance),
         )
         try:
             async with span("rag.generate", kb_id=ctx.kb_id, tool="query_knowledge_base"):
@@ -412,15 +430,18 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
         if not docs:
             return f"未找到与「{kw}」相关的文档片段。"
 
+        # 召回溯源：关键词检索同样给片段编号，引用卡与返回文本共用同一套 [S1]
+        from agentix.retrieval.domain.services.provenance import provenance_entries
+
+        ctx.last_provenance = provenance_entries(docs)
         ctx.last_citations = await asyncio.to_thread(
-            get_citations_from_docs, docs, ctx.session
+            get_citations_from_docs, docs, ctx.session, ctx.last_provenance
         )
         ctx.last_hit_chunks = hit_chunks_from_docs(docs)
         ctx.last_contexts = [d.page_content for d in docs]
 
         parts: list[str] = []
-        for i, doc in enumerate(docs[:5], 1):
-            source = doc.metadata.get("source", "未知来源")
+        for entry, doc in zip(ctx.last_provenance, docs[:5]):
             content = (doc.page_content or "").strip()
             highlighted = re.sub(
                 re.escape(kw),
@@ -428,7 +449,7 @@ def build_chat_agent_tools(ctx: AgentToolContext) -> list:
                 content,
                 flags=re.IGNORECASE,
             )
-            parts.append(f"[{i} - {source}]\n{highlighted}")
+            parts.append(f"{entry['label']}\n{highlighted}")
         return f"找到 {len(docs)} 条相关片段（显示前 {min(5, len(docs))} 条）：\n\n" + "\n\n".join(
             parts
         )

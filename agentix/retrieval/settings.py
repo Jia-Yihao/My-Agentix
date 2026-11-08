@@ -145,6 +145,9 @@ class _RetrievalSettingsCompat:
     )
     # 大文档隔离（复用 artifact_store）：0 = 关闭（默认——启用需配合取回通道）
     CONTEXT_ISOLATE_THRESHOLD = int(os.getenv("CONTEXT_ISOLATE_THRESHOLD", "0"))
+    # 召回溯源：片段进 Prompt 前加 `[S1] 文档名 · 第3页` 标号，模型据此在答案里标出处；
+    # 出答后按标号把引用卡排前（被引用的标 cited）。置 false = 回基线 Prompt（无标号）。
+    RAG_PROVENANCE_ENABLED = _bool_env("RAG_PROVENANCE_ENABLED", "true")
 
     # R3-6 GroundingValidator（架构文档 §104）：句子级证据锚定校验
     # 观测模式：只产出报告与低分 WARN，不改答案、不拦截（语义级 grounding 属后续演进）

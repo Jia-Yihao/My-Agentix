@@ -17,6 +17,10 @@
    ``isolate_threshold<=0`` 表示关闭（默认，行为不变——启用需配合
    取回通道，否则 LLM 看不到被隔离的正文）。
 
+另提供 **召回溯源**（``provenance_enabled``）：每条进 Prompt 的片段前面加一行
+``[S1] 文档名 · 第3页``，标号与来源随 meta 的 ``provenance`` 回传给调用方，
+用于出答后把引用卡对齐到模型真正标过的片段。默认关 ⇒ 装配结果逐字不变。
+
 另提供 **状态栏**（``build_status_bar``）：scope / 文档数 / 召回数 /
 案件阶段等单行字段，随 Prompt 注入（指南 L1⑦ 状态栏字段上线）。
 
@@ -28,6 +32,12 @@ from __future__ import annotations
 import hashlib
 import logging
 from typing import Any, Mapping, Optional
+
+from agentix.retrieval.domain.services.provenance import (
+    format_block,
+    provenance_entries,
+    provenance_label,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -280,12 +290,18 @@ def assemble_context(
     source: str = "",
     separator: str = "\n\n",
     truncate_ratio: Optional[float] = None,
+    provenance_enabled: bool = False,
 ) -> tuple[str, dict]:
     """检索片段 → Prompt 正文 的统一入口。
 
     返回 (context 字符串, meta 字典)。meta 除 ranking/budget/isolation 统计外，
     还回传 ``kept_doc_keys`` / ``kept_texts``——预算生效被裁剪时，调用方据此把
     引用列表与评测 contexts 收窄到模型真正看过的片段，避免「引用未读片段」。
+
+    ``provenance_enabled=True`` 时再回传 ``provenance``（与 context 同序的
+    ``[S1]`` 标号 + 来源记录）：片段正文前加一行标号，模型据此在答案里标注出处；
+    标号自身也占 token，故先按标号开销预留预算再装配。``False``（默认）
+    时 ``kept_texts`` 与 context 逐字等价于未引入溯源之前。
     """
     meta: dict[str, Any] = {
         "input_docs": len(docs),
@@ -320,12 +336,28 @@ def assemble_context(
     budget_kwargs: dict[str, Any] = {"budget_tokens": budget_tokens}
     if truncate_ratio is not None:
         budget_kwargs["truncate_ratio"] = truncate_ratio
+    if provenance_enabled and budget_tokens and budget_tokens > 0:
+        # 标号行同样进 Prompt：先按全部候选的标号开销预留预算，
+        # 装配完才不会因为多了几行 `[S1] 文档名 · 第3页` 而超窗。
+        overhead = sum(
+            estimate_tokens(provenance_label(getattr(d, "metadata", None), index=i))
+            for i, d in enumerate(ordered, 1)
+        )
+        budget_kwargs["budget_tokens"] = max(1, int(budget_tokens) - overhead)
     kept, budget_stats = apply_context_budget(wrapped, **budget_kwargs)
     meta["budget"] = budget_stats
     meta["kept_doc_keys"] = [getattr(d, "_src_key", "") for d, _, _ in kept]
     meta["kept_texts"] = [text for _, text, _ in kept]
 
-    context = separator.join(text for _, text, _ in kept)
+    if provenance_enabled:
+        entries = provenance_entries([d for d, _, _ in kept])
+        meta["provenance"] = entries
+        context = separator.join(
+            format_block(entry, text)
+            for entry, (_, text, _) in zip(entries, kept)
+        )
+    else:
+        context = separator.join(text for _, text, _ in kept)
     meta["final_docs"] = len(kept)
     return context, meta
 

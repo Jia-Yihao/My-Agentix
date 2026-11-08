@@ -789,17 +789,29 @@ async def retrieve_scoped_docs_cached(
     return result
 
 
-def get_citations_from_docs(docs, session: Session) -> list[dict]:
+def get_citations_from_docs(
+    docs, session: Session, provenance: list[dict] | None = None
+) -> list[dict]:
     """从检索结果构建引用信息（含文件级元信息，供前端悬浮卡片展示）。
 
     按 document 聚合：一次 IN 查全部 chunk、三次 IN 查全部文件级元信息，
     不再逐条 ``get_chunk_by_id`` + ``get_document_file_meta``（原本 2N 次查询）。
+
+    ``provenance`` 为装配层回传的溯源记录（``context_engine`` 的 ``meta["provenance"]``）：
+    按 chunk_id 把 ``[S1]`` 标号挂到引用卡上，前端据此展示「回答里的 [S1] ↔ 哪张卡」。
+    不传 ⇒ 引用卡不带 ``ref``（行为同引入溯源之前）。
     """
     from agentix.retrieval.infra.repos.document_repo import (
         _empty_file_meta,
         get_chunks_by_ids,
         get_document_file_metas,
     )
+
+    ref_by_chunk = {
+        str(entry.get("chunk_id")): entry.get("ref")
+        for entry in (provenance or [])
+        if entry.get("chunk_id") and entry.get("ref")
+    }
 
     metas = [dict(d.metadata or {}) for d in docs]
     chunk_ids = [m.get("chunk_id") for m in metas if m.get("chunk_id")]
@@ -831,6 +843,9 @@ def get_citations_from_docs(docs, session: Session) -> list[dict]:
                 "source": source_name,
                 "page_no": chunk.page_no if chunk else meta.get("page"),
                 "snippet": snippet,
+                # 召回溯源：本次召回里的标号（[S1] ↔ 这张卡）；未传溯源时为 None
+                "ref": ref_by_chunk.get(str(chunk_id)) if chunk_id else None,
+                "cited": False,
                 "effective_status": effective_status_of(meta or {}),
                 # 失效替代提示（前端 CitationPreviewCard 消费；无则 None）
                 "replaced_by": str(replaced) if replaced else None,
@@ -851,9 +866,16 @@ def build_prompt(
     *,
     target_document: str | None = None,
     status_fields: dict | None = None,
+    provenance: bool = False,
 ) -> str:
+    """拼装问答 Prompt。
+
+    ``provenance=True`` 时注入召回溯源指令：片段已带 ``[S1]`` 标号与来源行，
+    要求模型在用到某条片段时于句末标号。默认 ``False`` ⇒ Prompt 与基线逐字一致。
+    """
     # 企业化 P1-4.2 ①：文档数据定界包裹 + system 侧声明（数据 ≠ 指令）
     from agentix.config.settings import settings as main_settings
+    from agentix.retrieval.domain.services.provenance import PROVENANCE_INSTRUCTION
     from agentix.security.prompt_injection import build_boundary_notice, wrap_document_content
 
     boundary_notice = (
@@ -862,6 +884,7 @@ def build_prompt(
     wrapped_context = (
         wrap_document_content(context) if main_settings.PROMPT_INJECTION_DETECTION_ENABLED else context
     )
+    provenance_notice = f"{PROVENANCE_INSTRUCTION}\n" if provenance else ""
     prompt = f"""
     你是 My Agentix，一个基于文档的助手。请严格基于下方文档内容回答问题。
     {boundary_notice}
@@ -879,7 +902,7 @@ def build_prompt(
 
 """
     prompt += """
-相关文档：
+{provenance_notice}相关文档：
 {context}
 
 用户问题：
@@ -893,7 +916,10 @@ def build_prompt(
         if status_bar:
             prompt += "\n" + status_bar + "\n"
     return prompt.format(
-        history_text=history_text, context=wrapped_context, question=question
+        history_text=history_text,
+        context=wrapped_context,
+        question=question,
+        provenance_notice=provenance_notice,
     )
 
 
@@ -1398,6 +1424,34 @@ async def _post_process_and_persist(
     if stripped:
         logger.warning("stripped %d untraceable citations", len(stripped))
 
+    # 召回溯源：答案里的 [S1] 标号 ↔ 引用卡对齐——被模型真正标过的卡排前并标 cited，
+    # 其余保持检索序垫后（不删卡：引用卡是证据面，标号只是排序与高亮依据）。
+    # 模型没标号 / 标号对不上时原序返回，不抛错、不改答案。
+    if citations and getattr(tool_ctx, "last_provenance", None):
+        try:
+            from agentix.retrieval.domain.services.provenance import align_citations
+
+            citations, provenance_report = align_citations(
+                citations, tool_ctx.last_provenance, answer_text
+            )
+            tool_ctx.last_provenance_report = provenance_report
+            if provenance_report.get("unresolved"):
+                logger.warning(
+                    "provenance refs without citation: %s",
+                    provenance_report["unresolved"],
+                    extra={"stage": "provenance", "status": "unresolved"},
+                )
+            if provenance_report.get("cited"):
+                logger.info(
+                    "provenance aligned: %d/%d citations cited by answer (%s)",
+                    provenance_report["cited"],
+                    len(citations),
+                    ",".join(provenance_report["refs"]),
+                    extra={"stage": "provenance", "status": "aligned"},
+                )
+        except Exception:  # noqa: BLE001 - 溯源对齐故障不得影响答案交付
+            logger.warning("provenance alignment failed (non-fatal)", exc_info=True)
+
     # R1-2 引用验证器 v1（指南 §2.1.5⑥）：答案文本数据条目引用 ↔ 检索证据交叉核验，
     # 未核验通过的引用显式标注在答案尾部（核验失败绝不抛错、绝不阻断落库）。
     unverified_refs: list = []
@@ -1535,6 +1589,9 @@ async def _post_process_and_persist(
                 "page_no": c.get("page_no"),
                 "snippet": c.get("snippet"),
                 "source": c.get("source"),
+                # 召回溯源：标号与「答案是否标过这条」随引用卡落库，回放不再重算
+                "ref": c.get("ref"),
+                "cited": bool(c.get("cited")),
                 "document_title": c.get("document_title"),
                 "effective_status": c.get("effective_status"),
                 "replaced_by": c.get("replaced_by"),

@@ -52,7 +52,7 @@ My Agentix 是一套领域无关的 Agent 平台内核，不是某个垂直领�
 - **失败可恢复**：错误分类后走退避重试、模型与工具 Fallback 链，最后降级拒答，不会悬挂。
 - **统一的工具入口**：所有工具经 Tool Gateway 处理权限、风险、超时、重试与轨迹，支持 MCP 远端工具与本机 stdio Server。
 - **执行位置可声明**：`ToolSpec.sandbox` 决定工具在哪跑。`subprocess` 档一次调用一个进程，子进程侧先落 `RLIMIT_AS/CPU/FSIZE` 再加载业务代码，环境变量按白名单裁剪，取消时杀掉整个进程组；拿不到的档位直接拒绝执行，不会静默退回进程内。
-- **混合检索**：知识库检索统一走 Dense + BM25 的 z-score 融合（Dense 权重 α=0.85），之后可选交叉编码器精排与融合后分数闸；上下文按 token 预算装配，引用与评测 contexts 只取模型真正读过的片段。图谱 Cypher、Text2SQL 与社区摘要负责领域检索，结果回填成引用。
+- **混合检索**：知识库检索统一走 Dense + BM25 的 z-score 融合（Dense 权重 α=0.85），之后可选交叉编码器精排与融合后分数闸；上下文按 token 预算装配，引用与评测 contexts 只取模型真正读过的片段；片段带 `[S1]` 来源标号，回答与引用卡按标号对齐（引用溯源）。图谱 Cypher、Text2SQL 与社区摘要负责领域检索，结果回填成引用。
 - **分层记忆**：user / knowledge / task 三个 scope 分别写入与召回，写路径不留 PII，召回按 scope 过滤并按置信度排序。
 - **可评估的质量**：确定性打分（路由 / 引用 / 拒答 / 引用正确性 / must_contain / pass^k）、轨迹前缀回归、延迟基准与每日性能巡检。
 - **可观测的轨迹**：`trace_id` 贯穿全链路，步骤级轨迹落盘可回放，另有 Prometheus 指标与 OTel GenAI 语义 span。
@@ -182,6 +182,7 @@ make init-data      # 建运行时数据目录
 - **交叉编码器精排**（`RETRIEVAL_RERANK_ENABLED`）：把融合池前 50 条交给交叉编码器重打分，取前 20 条进回答。端点可以是按量计费的云端 text-rerank，也可以是自建的 `/v1/rerank` 服务。仓库附一个本地 CUDA 参考实现 `scripts/local_rerank_server.py`，输出 `sigmoid(logit)`，与云端 relevance_score 同量纲，`MIN_SCORE` 两边可以直接互换。超时、协议异常、无凭据时一律 fail-open 回融合原序：精排是加分项，不能把检索链拖挂或返回空结果。
 - **融合后分数闸**（`RETRIEVAL_FUSION_MIN_SCORE`）：只在双通道真融合时按 z-score 下限裁掉尾部，裁空了回退 Top-1，不制造空答。单通道保留的是距离原分，量纲与方向都不同，这道闸对它不生效。默认 `0.0`，即只留高于平均的候选，把池子从 50 压到 40 上下；显式置空即关闭。开与关在全量 Recall@20 上的差异不足千分之一，它省的是候选体积和精排送检量，不是分数。
 - **预算对齐装配**（`CONTEXT_BUDGET_TOKENS`）：按 token 预算贪心装配，并把引用列表、命中片段与评测 contexts 一起收窄到真正进了 Prompt 的那几条，避免引用模型没读过的文本、faithfulness 拿全量片段评估。本批片段确实经过精排时，`CONTEXT_AUTHORITY_RANKING_SKIP_ON_RERANK` 让查询相关的精排顺序直接进预算，不被全局档位重排挤出窗口。默认预算 4,000 token，`0` 表示不限额。
+- **引用溯源**（`RAG_PROVENANCE_ENABLED`）：每条进 Prompt 的片段前加一行 `[S1] 文档名 · 第3页`，模型在句末标号；出答后按标号把引用卡排前并标 `cited`，模型没标号时退回检索序。关闭即回到无标号的基线 Prompt。
 
 相对融合基线，精排在排序前端拿到的是全量 1,543 题 Recall@20 +3.0 个百分点、MRR +2.9、NDCG@5 +2.5。它只重排不增召回，候选池里本来没有的文档仍然找不回来，所以收益随首发召回率见顶。选参网格与 dev 308 题上的过拟合核对只在本地记录，不随仓库发布。
 
@@ -261,7 +262,7 @@ My-Agentix/
 | 前端 | Vue 3 · TypeScript · Vite · Vitest |
 | 存储 | PostgreSQL（结构化）· Redis Stack（缓存 / 任务队列 / 事件流 / Checkpointer / 限流，db0+db1 分片）· Neo4j（图谱）· Milvus（向量）· MySQL（统计） |
 | 消息 | Celery（默认 Redis broker；RabbitMQ 为 `mq` profile 下的可选 broker，改 URL 即切换，DLX 死信拓扑按 scheme 自动声明） |
-| 检索 | FAISS / Milvus 向量 · BM25 · Dense + BM25/z-score 混合召回 · 交叉编码器精排（可选）· token 预算装配 |
+| 检索 | FAISS / Milvus 向量 · BM25 · Dense + BM25/z-score 混合召回 · 交叉编码器精排（可选）· token 预算装配 · 引用溯源（`[S1]` 标号） |
 | 扩展 | MCP（stdio JSON-RPC）· 声明式 ToolRegistry |
 | 可观测 | Prometheus · Grafana · Alertmanager · OTel |
 | 质量 | pytest · ruff · black · mypy · 确定性打分 · 轨迹前缀回归 |
