@@ -12,6 +12,11 @@
       >
         <div class="citation-preview-head">
           <span class="citation-preview-icon"><IconFile :size="14" /></span>
+          <span
+            v-if="citation?.ref"
+            class="citation-preview-ref"
+            :title="citation.cited ? '回答中已引用该片段' : '本次召回的片段标号'"
+          >[{{ citation.ref }}]</span>
           <span class="citation-preview-source">{{ displayName }}</span>
           <span
             v-if="statusView"
@@ -241,6 +246,18 @@ onBeforeUnmount(detachListeners)
 .citation-preview-status.is-danger {
   background: #fdecec;
   color: #c0392b;
+}
+
+/* 召回溯源：片段标号（与答案里的 [S1] 对应） */
+.citation-preview-ref {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
 }
 
 .citation-preview-replaced {

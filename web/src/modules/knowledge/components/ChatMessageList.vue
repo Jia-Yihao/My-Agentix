@@ -102,6 +102,7 @@
           v-for="c in msg.citations"
           :key="`${msg.id}-${c.chunk_id}`"
           class="source-item"
+          :class="{ 'is-cited': c.cited }"
           tabindex="0"
           @mouseenter="openPreview(c, $event)"
           @mouseleave="scheduleHidePreview"
@@ -113,6 +114,11 @@
           </div>
           <div>
             <div>
+              <span
+                v-if="c.ref"
+                class="source-ref"
+                :title="c.cited ? '回答中已引用该片段' : '本次召回的片段标号'"
+              >[{{ c.ref }}]</span>
               {{ c.file_name || c.source || '文档片段' }} <span v-if="c.page_no">· 第{{ c.page_no }}页</span>
               <span
                 v-if="statusOf(c)"
@@ -965,6 +971,29 @@ onBeforeUnmount(unbindScrollSource)
 .source-status.is-danger {
   background: #fdecec;
   color: #c0392b;
+}
+
+/* 召回溯源：片段标号（回答里的 [S1] ↔ 这张引用卡） */
+.source-ref {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  vertical-align: 1px;
+}
+
+/* 被答案引用过的卡片略微提亮，与未引用的证据卡区分 */
+.source-item.is-cited {
+  background: #f3f7ff;
+}
+
+.source-item.is-cited:hover {
+  background: #eaf1ff;
 }
 
 /* 主聊天页（Home / History）样式 */

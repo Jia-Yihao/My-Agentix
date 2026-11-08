@@ -47,6 +47,49 @@ describe('ChatMessageList', () => {
     expect(wrapper.text()).toContain('引用片段')
   })
 
+  it('召回溯源：引用卡渲染 [S1] 标号，被答案引用的卡片加高亮类', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: '根据文档…见 [S1]',
+            citations: [
+              { chunk_id: 'c1', snippet: '被引用片段', source: 'a.pdf', ref: 'S1', cited: true },
+              { chunk_id: 'c2', snippet: '未引用片段', source: 'b.pdf', ref: 'S2', cited: false },
+            ],
+          },
+        ],
+      },
+    })
+
+    const items = wrapper.findAll('.source-item')
+    expect(items).toHaveLength(2)
+    expect(items[0].find('.source-ref').text()).toBe('[S1]')
+    expect(items[1].find('.source-ref').text()).toBe('[S2]')
+    expect(items[0].classes()).toContain('is-cited')
+    expect(items[1].classes()).not.toContain('is-cited')
+  })
+
+  it('召回溯源：未开启溯源时不渲染标号（老数据兼容）', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: '根据文档…',
+            citations: [{ chunk_id: 'c1', snippet: '片段', source: 'a.pdf' }],
+          },
+        ],
+      },
+    })
+
+    expect(wrapper.find('.source-ref').exists()).toBe(false)
+    expect(wrapper.find('.source-item').classes()).not.toContain('is-cited')
+  })
+
   it('pending 状态下进度条优先于占位渲染（审查批次 2026-09-28）', () => {
     // progress 帧只在正文出现前发出；原实现占位 v-if 抢占 → fast 模式下
     // 进度条（含阶段文案/百分比）永远不可达。

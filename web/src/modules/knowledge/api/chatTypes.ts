@@ -23,6 +23,13 @@ export type ChatCitation = {
   effective_status?: string | null
   /** 被何条目替代（expired/repealed 时的展示字段） */
   replaced_by?: string | null
+  /**
+   * 召回溯源：本次召回里的片段标号（形如 `S1`，回答中显示为 `[S1]`）。
+   * 与答案里的标号一一对应；未开启溯源时为 null/缺省。
+   */
+  ref?: string | null
+  /** 召回溯源：答案里是否标过这条片段（true 的引用卡排在前并高亮） */
+  cited?: boolean
 }
 
 export type StreamableMessage = {

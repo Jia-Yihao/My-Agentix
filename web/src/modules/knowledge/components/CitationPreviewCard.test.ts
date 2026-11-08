@@ -100,6 +100,24 @@ describe('引用来源悬浮预览卡片', () => {
     expect(cardInBody()).not.toBeNull()
   })
 
+  it('召回溯源：预览卡头部展示片段标号', async () => {
+    const wrapper = mountTrackedWith({ ...citation, ref: 'S2', cited: true })
+
+    await wrapper.find('.source-item').trigger('mouseenter')
+    await nextTick()
+
+    expect(cardInBody()?.querySelector('.citation-preview-ref')?.textContent).toBe('[S2]')
+  })
+
+  it('召回溯源：无标号时不渲染标号位（老数据兼容）', async () => {
+    const wrapper = mountTracked()
+
+    await wrapper.find('.source-item').trigger('mouseenter')
+    await nextTick()
+
+    expect(cardInBody()?.querySelector('.citation-preview-ref')).toBeNull()
+  })
+
   it('鼠标离开后延迟隐藏，指针移入卡片则保留', async () => {
     const wrapper = mountTracked()
 
